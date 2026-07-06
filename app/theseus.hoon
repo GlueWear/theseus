@@ -397,6 +397,28 @@
     (pe who.act)
   ::
       %init-moon
+    ::  provision the moon with real network context from our own Jael: the
+    ::  galaxy's key gives the moon a trust anchor so it can bootstrap (an
+    ::  empty czar leaves it unable to verify anyone).  Scries mirror the
+    ::  standard jael peek paths (see |moon and jael +scry).
+    =/  gal=ship
+      %-  rear
+      .^  (list ship)  %j
+        /(scot %p our.bowl)/saxo/(scot %da now.bowl)/(scot %p our.bowl)
+      ==
+    =/  gal-life=@ud
+      .^(@ud %j /(scot %p our.bowl)/life/(scot %da now.bowl)/(scot %p gal))
+    =/  gal-rift=@ud
+      .^(@ud %j /(scot %p our.bowl)/rift/(scot %da now.bowl)/(scot %p gal))
+    =/  gal-key=(unit [suite=@ud =pass])
+      .^  (unit [@ud pass])  %j
+        /(scot %p our.bowl)/puby/(scot %da now.bowl)/(scot %p gal)/(scot %ud gal-life)
+      ==
+    =/  czar=(map ship [rift=@ud life=@ud =pass])
+      ?~  gal-key  ~
+      (malt ~[[gal gal-rift gal-life pass.u.gal-key]])
+    =/  turves=(list turf)
+      .^((list turf) %j /(scot %p our.bowl)/turf/(scot %da now.bowl))
     ::  register the moon's public key with our Jael (self-sufficient
     ::  resident moon; no separate dingy agent). jael only accepts our moons.
     =/  reg-card=card
@@ -442,10 +464,11 @@
       =<  abet-pe:plow
       %-  push-events:(pe who.act)
       ^-  (list unix-event)
-      ::  boot %dawn with the real key (ring).  Minimal dawn-event: empty
-      ::  spon/czar/turf boots the identity without azimuth context; enough
-      ::  to sign packets.  feed %2 = [[%2 ~] who rift=0 [life=1 ring]~].
-      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act 0 [1 key.act]~] ~ ~ ~ 0 ~]
+      ::  boot %dawn with the real key (ring) + galaxy trust anchor (czar) and
+      ::  turf, scried from our Jael.  spon stays empty (jael doesn't expose
+      ::  full azimuth points); the galaxy key is enough to start bootstrap.
+      ::  feed %2 = [[%2 ~] who rift=0 [life=1 ring]~].
+      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act 0 [1 key.act]~] ~ czar turves 0 ~]
           [/b/behn/0v1n.2m9vh %born ~]
           [/i/http-client/0v1n.2m9vh %born ~]
           [/e/http-server/0v1n.2m9vh %born ~]
