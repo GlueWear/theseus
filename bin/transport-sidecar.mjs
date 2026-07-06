@@ -29,6 +29,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import dgram from 'node:dgram';
+import http from 'node:http';
 
 const args = parseArgs(process.argv.slice(2));
 const ship = stripSig(args.ship || process.env.URBIT_SHIP || 'zod');
@@ -217,47 +218,100 @@ function stripSig(s) { return String(s).replace(/^~/, ''); }
 function readCode(p) {
   try { return fs.readFileSync(path.join(p, '.urb', 'code'), 'utf8').trim(); } catch { return ''; }
 }
-async function login(baseUrl, password) {
-  const res = await fetch(`${baseUrl}/~/login`, {
-    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ password }), redirect: 'manual',
+// node's fetch/undici chokes on Eyre's chunked SSE ("Invalid character in
+// chunk size"); the http module de-chunks transparently and is lenient.
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+function httpRequest(method, urlStr, { headers = {}, body = null, timeoutMs = 15000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(urlStr);
+    const req = http.request(
+      { method, hostname: u.hostname, port: u.port || 80, path: u.pathname + u.search, headers },
+      (res) => {
+        let data = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => { data += c; });
+        res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
+      },
+    );
+    req.on('error', reject);
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`timeout ${timeoutMs}ms`)));
+    if (body != null) req.write(body);
+    req.end();
   });
-  const sc = res.headers.get('set-cookie');
-  if (!sc) fail(`Login returned no cookie. HTTP ${res.status}`);
-  return sc.split(';')[0];
+}
+async function login(baseUrl, password) {
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    try {
+      const res = await httpRequest('POST', `${baseUrl}/~/login`, {
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ password }).toString(),
+      });
+      const sc = res.headers['set-cookie'];
+      if (sc && sc.length) return String(sc[0]).split(';')[0];
+      console.error(`[transport] login ${attempt}: no cookie (HTTP ${res.status}), retry`);
+    } catch (e) {
+      console.error(`[transport] login ${attempt} failed: ${e.message}, retry`);
+    }
+    await sleep(2000);
+  }
+  fail('login failed after 6 attempts');
 }
 async function channelPut(commands) {
-  const res = await fetch(`${url}/~/channel/${uid}`, {
-    method: 'PUT', headers: { 'content-type': 'application/json', cookie },
+  const res = await httpRequest('PUT', `${url}/~/channel/${uid}`, {
+    headers: { 'content-type': 'application/json', cookie },
     body: JSON.stringify(commands),
   });
-  if (!res.ok) fail(`Channel PUT failed: HTTP ${res.status} ${await res.text().catch(() => '')}`);
+  if (res.status >= 300) console.error(`[transport] channel PUT HTTP ${res.status} ${res.body}`);
 }
 async function channelDelete() {
-  await fetch(`${url}/~/channel/${uid}`, { method: 'DELETE', headers: { cookie } });
+  try { await httpRequest('DELETE', `${url}/~/channel/${uid}`, { headers: { cookie } }); } catch {}
 }
 function readSse(endpoint, cookieHeader, onMessage) {
-  const controller = new AbortController();
-  const done = (async () => {
-    const res = await fetch(endpoint, {
-      headers: { accept: 'text/event-stream', cookie: cookieHeader }, signal: controller.signal,
-    });
-    if (!res.ok || !res.body) fail(`SSE failed: HTTP ${res.status}`);
-    const decoder = new TextDecoder();
-    let buffer = '';
-    for await (const chunk of res.body) {
-      buffer += decoder.decode(chunk, { stream: true });
-      let split;
-      while ((split = buffer.indexOf('\n\n')) >= 0) {
-        const raw = buffer.slice(0, split);
-        buffer = buffer.slice(split + 2);
-        const data = raw.split('\n').filter((l) => l.startsWith('data:'))
-          .map((l) => l.slice(5).trimStart()).join('\n');
-        if (data) onMessage(data);
-      }
-    }
-  })().catch((err) => { if (err.name !== 'AbortError') throw err; });
-  return { abort: () => controller.abort(), done };
+  const u = new URL(endpoint);
+  let aborted = false;
+  let curReq = null;
+  const done = new Promise((resolve) => {
+    const connect = () => {
+      if (aborted) { resolve(); return; }
+      curReq = http.get(
+        { hostname: u.hostname, port: u.port || 80, path: u.pathname + u.search,
+          headers: { accept: 'text/event-stream', cookie: cookieHeader } },
+        (res) => {
+          if (res.statusCode !== 200) {
+            console.error(`[transport] SSE HTTP ${res.statusCode}, reconnecting`);
+            res.resume(); setTimeout(connect, 1500); return;
+          }
+          res.setEncoding('utf8');
+          let buffer = '';
+          res.on('data', (chunk) => {
+            buffer += chunk;
+            let split;
+            while ((split = buffer.indexOf('\n\n')) >= 0) {
+              const raw = buffer.slice(0, split);
+              buffer = buffer.slice(split + 2);
+              const data = raw.split('\n').filter((l) => l.startsWith('data:'))
+                .map((l) => l.slice(5).trimStart()).join('\n');
+              if (data) onMessage(data);
+            }
+          });
+          res.on('end', () => {
+            if (aborted) { resolve(); return; }
+            console.error('[transport] SSE ended, reconnecting'); setTimeout(connect, 1500);
+          });
+          res.on('error', (e) => {
+            if (aborted) return;
+            console.error(`[transport] SSE error: ${e.message}, reconnecting`); setTimeout(connect, 1500);
+          });
+        },
+      );
+      curReq.on('error', (e) => {
+        if (aborted) return;
+        console.error(`[transport] SSE req error: ${e.message}, reconnecting`); setTimeout(connect, 1500);
+      });
+    };
+    connect();
+  });
+  return { abort: () => { aborted = true; try { curReq && curReq.destroy(); } catch {} }, done };
 }
 function extractFact(msg) {
   if (!msg || typeof msg !== 'object') return null;
