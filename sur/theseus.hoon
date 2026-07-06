@@ -56,6 +56,9 @@
   $%  ::  create or delete a ship
       ::
       [%init-ship who=ship cache=@tas]
+      ::  like %init-ship but boots %dawn with a real key (ring) so the
+      ::  virtual ship signs with a network-valid identity.  key = sec:ex ring.
+      [%init-moon who=ship cache=@tas key=@]
       [%kill-ships hers=(list ship)]
       ::  snapshot manipulation
       ::

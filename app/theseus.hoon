@@ -393,6 +393,58 @@
       ==
     (pe who.act)
   ::
+      %init-moon
+    =.  this  apex-theseus  =<  abet-theseus
+    =.  this  abet-pe:unpause:(publish-effect:(pe who.act) [/ %kill ~])
+    =/  clay  (clay-core who.act)
+    =.  ruf.clay
+      ~|  "{<cache.act>} cache doesn't exist, try %default cache"
+      (~(got by caches) cache.act)
+    :: have to get rid of the kids desk otherwise boot fails
+    =.  dos.rom.ruf.clay  (~(del by dos.rom.ruf.clay) %kids)
+    =/  new  (~(got by piers) who.act)
+    =.  sol.snap.new
+      ^-  soul
+      :*  [who.act *@da *@uvJ]                         ::  mien
+          &                                            ::  fad
+          :_  |                                        ::  zen
+          :-  [~.nonce /theseus]
+          :~  zuse+zuse
+              lull+lull
+              arvo+arvo
+              hoon+hoon-version
+              nock+4
+          ==
+          :^  files  !>(..lull)  !>(..zuse)            ::  mod
+          %-  ~(gas by *(map term vane))               ::  van.mod
+          :~  [%ames [!>((ames-core who.act)) *worm]]
+              [%behn [!>((behn-core who.act)) *worm]]
+              [%clay [!>(clay) *worm]]
+              [%dill [!>((dill-core who.act)) *worm]]
+              [%eyre [!>((eyre-core who.act)) *worm]]
+              [%gall [!>((gall-core who.act)) *worm]]
+              [%iris [!>((iris-core who.act)) *worm]]
+              [%jael [!>((jael-core who.act)) *worm]]
+              [%khan [!>((khan-core who.act)) *worm]]
+      ==  ==
+    =.  piers  (~(put by piers) who.act new)
+    =.  this
+      =<  abet-pe:plow
+      %-  push-events:(pe who.act)
+      ^-  (list unix-event)
+      ::  boot %dawn with the real key (ring).  Minimal dawn-event: empty
+      ::  spon/czar/turf boots the identity without azimuth context; enough
+      ::  to sign packets.  feed %2 = [[%2 ~] who rift=0 [life=1 ring]~].
+      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act 0 [1 key.act]~] ~ ~ ~ 0 ~]
+          [/b/behn/0v1n.2m9vh %born ~]
+          [/i/http-client/0v1n.2m9vh %born ~]
+          [/e/http-server/0v1n.2m9vh %born ~]
+          [/e/http-server/0v1n.2m9vh %live 8.080 `8.445]
+          [/a/newt/0v1n.2m9vh %born ~]
+          [/c/commit/(scot %p who.act) (prune-boot-park park)]
+      ==
+    (pe who.act)
+  ::
       %kill-ships
     =.  this
       %+  turn-ships  hers.act
