@@ -397,12 +397,19 @@
     (pe who.act)
   ::
       %init-moon
-    =.  this  apex-theseus  =<  abet-theseus
-    =.  this  abet-pe:unpause:(publish-effect:(pe who.act) [/ %kill ~])
-    =/  clay  (clay-core who.act)
-    =.  ruf.clay
-      ~|  "{<cache.act>} cache doesn't exist, try %default cache"
-      (~(got by caches) cache.act)
+    ::  register the moon's public key with our Jael (self-sufficient
+    ::  resident moon; no separate dingy agent). jael only accepts our moons.
+    =/  reg-card=card
+      :*  %pass  /theseus/moon/(scot %p who.act)  %arvo  %j
+          %moon  who.act  [*id:block:jael %keys [1 1 pub.act] %.n]
+      ==
+    =^  cards  state
+      =.  this  apex-theseus  =<  abet-theseus
+      =.  this  abet-pe:unpause:(publish-effect:(pe who.act) [/ %kill ~])
+      =/  clay  (clay-core who.act)
+      =.  ruf.clay
+        ~|  "{<cache.act>} cache doesn't exist, try %default cache"
+        (~(got by caches) cache.act)
     :: have to get rid of the kids desk otherwise boot fails
     =.  dos.rom.ruf.clay  (~(del by dos.rom.ruf.clay) %kids)
     =/  new  (~(got by piers) who.act)
@@ -446,7 +453,8 @@
           [/a/newt/0v1n.2m9vh %born ~]
           [/c/commit/(scot %p who.act) (prune-boot-park park)]
       ==
-    (pe who.act)
+      (pe who.act)
+    [[reg-card cards] state]
   ::
       %kill-ships
     =.  this

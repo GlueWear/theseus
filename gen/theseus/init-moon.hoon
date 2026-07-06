@@ -1,12 +1,11 @@
-:: Start a theseus ship with a real key (boots %dawn, signs network-valid).
+:: Start a theseus resident moon: generate a real key, register it with our
+:: Jael, and boot %dawn so the moon signs with a network-valid identity.
 :: Usage: :theseus|init-moon ~doznec-sampel-palnet
 ::        :theseus|init-moon ~M, =cache %my-cache
 ::
-:: For now the key is generated inline (mirroring gen/hood/moon.hoon).  Later
-:: this key comes from %dingy so the moon uses its registered resident key.
-::
+/+  dingy
 :-  %say
 |=  [[now=@da eny=@uvJ bec=beak] [her=ship ~] cache=@tas]
-=/  cub  (pit:nu:crub:crypto 512 (shaz (jam her life=1 eny)))
+=/  kp  (gen-keypair:dingy (key-seed:dingy her 0 eny))
 :-  %theseus-action
-[%init-moon her ?~(cache %default cache) sec:ex:cub]
+[%init-moon her ?~(cache %default cache) pub.kp priv.kp]
