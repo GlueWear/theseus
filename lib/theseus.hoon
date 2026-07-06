@@ -183,6 +183,9 @@
           ==
           [%lane-jam s+(scot %ux (jam lane.update))]
           [%blob s+(scot %ux blob.update)]
+          ::  blob is an atom; its hex loses the byte length when high bytes
+          ::  are zero.  Emit (met 3) so the sidecar rebuilds exact packet bytes.
+          [%blob-len (numb (met 3 blob.update))]
       ==
     ==
   ::
@@ -258,8 +261,8 @@
   ::  This builds an Ames ship lane [%.y from], which is enough for the
   ::  first userspace echo test.  The noun mark still supports arbitrary lanes.
   ::
-  ::  blob arrives as a "0x..."-prefixed hex string (enjs uses `scot %ux`),
-  ::  which `nu` cannot parse; decode with `slav %ux` instead.
+  ::  blob arrives as a canonical "0x..."-prefixed, dot-grouped hex string
+  ::  (as `scot %ux` emits); decode with `slav %ux`.
   ++  bl  |=(jon=json ?>(?=([%s *] jon) (slav %ux p.jon)))
   ::
   ++  ames-inbound
