@@ -397,26 +397,29 @@
     (pe who.act)
   ::
       %init-moon
-    ::  provision the moon with real network context from our own Jael: the
-    ::  galaxy's key gives the moon a trust anchor so it can bootstrap (an
-    ::  empty czar leaves it unable to verify anyone).  Scries mirror the
-    ::  standard jael peek paths (see |moon and jael +scry).
-    =/  gal=ship
-      %-  rear
-      .^  (list ship)  %j
-        /(scot %p our.bowl)/saxo/(scot %da now.bowl)/(scot %p our.bowl)
-      ==
-    =/  gal-life=@ud
-      .^(@ud %j /(scot %p our.bowl)/life/(scot %da now.bowl)/(scot %p gal))
-    =/  gal-rift=@ud
-      .^(@ud %j /(scot %p our.bowl)/rift/(scot %da now.bowl)/(scot %p gal))
-    =/  gal-key=(unit [suite=@ud =pass])
-      .^  (unit [@ud pass])  %j
-        /(scot %p our.bowl)/puby/(scot %da now.bowl)/(scot %p gal)/(scot %ud gal-life)
-      ==
+    ::  Provision the moon with correct CURRENT keys for its whole sponsor
+    ::  chain (us -> star -> galaxy), scried from our Jael.  A minimal czar
+    ::  (just the galaxy) left stale rift/life for the sponsor, causing
+    ::  %fine-mismatch on remote scry and breaking third-party key
+    ::  resolution.  Unit scries (%lyfe/%ryft/%puby) so an unknown ship is
+    ::  skipped, never crashing the poke.
+    =/  chain=(list ship)
+      .^((list ship) %j /(scot %p our.bowl)/saxo/(scot %da now.bowl)/(scot %p our.bowl))
     =/  czar=(map ship [rift=@ud life=@ud =pass])
-      ?~  gal-key  ~
-      (malt ~[[gal gal-rift gal-life pass.u.gal-key]])
+      %+  roll  chain
+      |=  [s=ship acc=(map ship [rift=@ud life=@ud =pass])]
+      =/  ul=(unit @ud)
+        .^((unit @ud) %j /(scot %p our.bowl)/lyfe/(scot %da now.bowl)/(scot %p s))
+      ?~  ul  acc
+      =/  ur=(unit @ud)
+        .^((unit @ud) %j /(scot %p our.bowl)/ryft/(scot %da now.bowl)/(scot %p s))
+      ?~  ur  acc
+      =/  uk=(unit [suite=@ud =pass])
+        .^  (unit [@ud pass])  %j
+          /(scot %p our.bowl)/puby/(scot %da now.bowl)/(scot %p s)/(scot %ud u.ul)
+        ==
+      ?~  uk  acc
+      (~(put by acc) s [u.ur u.ul pass.u.uk])
     =/  turves=(list turf)
       .^((list turf) %j /(scot %p our.bowl)/turf/(scot %da now.bowl))
     ::  register the moon's public key with our Jael (self-sufficient

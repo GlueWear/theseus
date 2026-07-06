@@ -31,6 +31,43 @@ import path from 'node:path';
 import dgram from 'node:dgram';
 import http from 'node:http';
 
+// ---- Ames packet header parser (lull +sift-shot) ------------------------
+// Defined at top (before the blocking `await sse.done`) so these consts are
+// initialized before the SSE callback ever calls parseShot. Label ships we
+// know by number; everything else shows as @<number>.
+const KNOWN_SHIPS = {
+  '162': '~nus', '674': 'star-674',
+  '3918463650': '~disden-talhes', '8213430946': '~doznec-disden-talhes',
+};
+const RANK_BYTES = [2, 4, 8, 16];
+function shipLabel(n) { const k = n.toString(); return KNOWN_SHIPS[k] || `@${k}`; }
+function leToBig(b) { let n = 0n; for (let i = b.length - 1; i >= 0; i -= 1) n = (n << 8n) | BigInt(b[i]); return n; }
+function parseShot(buf) {
+  if (!buf || buf.length < 6) return null;
+  // 32-bit header (4 bytes), bit-indexed per lull +sift-shot
+  const req = (buf[0] >> 2) & 1;
+  const sam = (buf[0] >> 3) & 1;
+  const version = (buf[0] >> 4) & 7;
+  const sndrSize = RANK_BYTES[((buf[0] >> 7) & 1) | ((buf[1] & 1) << 1)];
+  const rcvrSize = RANK_BYTES[(buf[1] >> 1) & 3];
+  const relayed = (buf[3] >> 7) & 1;
+  // NOTE: origin handling here is best-effort; sndr/rcvr sit right after the
+  // header+tick byte and decode reliably, which is all we use.
+  const body = buf.subarray(4);
+  const sndr = leToBig(body.subarray(1, 1 + sndrSize));                 // body[0] = ticks
+  const rcvr = leToBig(body.subarray(1 + sndrSize, 1 + sndrSize + rcvrSize));
+  const content = body.subarray(1 + sndrSize + rcvrSize);
+  const isKeys = content.length >= 4 && content[0] === 0x6b && content[1] === 0x65
+    && content[2] === 0x79 && content[3] === 0x73;                      // "keys"
+  return { sndr, rcvr, req, sam, version, relayed, isKeys, clen: content.length };
+}
+function describeShot(buf) {
+  const s = parseShot(buf);
+  if (!s) return '(unparsed)';
+  return `${shipLabel(s.sndr)}->${shipLabel(s.rcvr)}`
+    + `${s.isKeys ? ' %KEYS-REQ' : ''}${s.req ? ' req' : ''}${s.relayed ? ' relayed' : ''}`;
+}
+
 const args = parseArgs(process.argv.slice(2));
 const ship = stripSig(args.ship || process.env.URBIT_SHIP || 'zod');
 const url = trimSlash(args.url || process.env.URBIT_URL || 'http://localhost:8082');
@@ -141,7 +178,7 @@ function onChannel(raw) {
     sock.send(bytes, peer.port, peer.addr, (e) => {
       if (e) console.error('[transport] send err:', e);
     });
-    console.log(`[transport] OUT ~${from} -> ~${target} (${peer.addr}:${peer.port}) ${bytes.length}B`);
+    console.log(`[transport] OUT lane=~${target} ${bytes.length}B  [${describeShot(bytes)}]`);
   }
 }
 
@@ -151,7 +188,7 @@ function onUdp(buf, rinfo) {
   const moon = pickMoon();
   if (!moon) { console.log('[transport] inbound but no moon configured, drop'); return; }
   const hex = bufferLEToAtomHex(buf);
-  console.log(`[transport] IN  ${from} -> ~${moon} ${buf.length}B`);
+  console.log(`[transport] IN  ${buf.length}B  [${describeShot(buf)}]`);
   pokeInbound(moon, stripSig(from), hex).catch((e) => console.error('[transport] inbound poke fail:', e));
 }
 
