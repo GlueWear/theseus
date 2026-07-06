@@ -44,6 +44,16 @@ for (const p of asList(args.peer)) {
   const [who, hostport] = p.split('=');
   addPeer(who, hostport);
 }
+// gateway: catch-all uplink for any non-moon destination. On a real host this
+// is the host planet's own Ames port; its real Ames forwards the moon's
+// packets to the network (galaxy/remote) and forwards replies back.
+//   --gateway ~marmun-marmex=127.0.0.1:57173
+let gatewayShip = null;
+if (args.gateway) {
+  const [who, hostport] = String(args.gateway).split('=');
+  addPeer(who, hostport);
+  gatewayShip = who.startsWith('~') ? who : `~${who}`;
+}
 // reverse map "addr:port" -> ~ship, for inbound sender identification
 const peersByAddr = new Map();
 for (const [who, { addr, port }] of peers) peersByAddr.set(`${addr}:${port}`, who);
@@ -122,7 +132,8 @@ function onChannel(raw) {
       continue;
     }
     if (moons.has(target)) continue;           // internal virtual<->virtual, theseus routes it
-    const peer = peers.get(`~${target}`);
+    // explicit route, else the gateway uplink (host planet forwards it)
+    const peer = peers.get(`~${target}`) || (gatewayShip && peers.get(gatewayShip));
     if (!peer) { console.log(`[transport] no route for ~${target}, drop`); continue; }
 
     const bytes = atomHexToBufferLE(out.blob, Number(out['blob-len'] ?? 0));
