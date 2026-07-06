@@ -227,7 +227,10 @@
   ++  plow
     |-  ^+  ..abet-pe
     ?:  =(~ next-events)  ..abet-pe
-    ?:  paused  ~&(theseus+not-plowing-events+who ..abet-pe)
+    ::  Skip plowing into a paused/absent pier.  This is hit constantly and
+    ::  harmlessly when a moon's internal route targets a real (non-virtual)
+    ::  ship -- the sidecar does the real delivery -- so drop it quietly.
+    ?:  paused  ..abet-pe
     =^  ue  next-events  ~(get to next-events)
     =/  poke-result=(each vase tang)
       (mule |.((slym [-:!>(poke:arvo-adult) poke:snap] [now.bowl ue])))

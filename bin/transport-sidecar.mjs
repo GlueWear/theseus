@@ -55,6 +55,8 @@ const [bindAddr, bindPortStr] = (args.bind || '127.0.0.1:39999').split(':');
 const bindPort = Number(bindPortStr);
 
 let eventId = 1;
+let lastSeenId = 0;   // highest channel event id received
+let lastAckedId = 0;  // highest we've acked back to Eyre
 let cookie = args.cookie || process.env.URBIT_COOKIE || '';
 
 if (!code && !cookie) fail('No Urbit code or cookie. Pass --code / --cookie.');
@@ -76,8 +78,19 @@ await channelPut([
 ]);
 const sse = readSse(`${url}/~/channel/${uid}`, cookie, onChannel);
 
+// Ack received events so Eyre releases its buffer (otherwise it clogs under
+// bursty inbound, e.g. a Clay OTA). Cheap periodic ack of the high-water id.
+const ackTimer = setInterval(() => {
+  if (lastSeenId <= lastAckedId) return;
+  const id = lastSeenId;
+  channelPut([{ id: nextId(), action: 'ack', 'event-id': id }])
+    .then(() => { lastAckedId = id; })
+    .catch(() => {});
+}, 500);
+
 process.on('SIGINT', async () => {
   console.log('\n[transport] closing');
+  clearInterval(ackTimer);
   sse.abort();
   try { sock.close(); } catch {}
   try { await channelDelete(); } catch {}
@@ -91,6 +104,8 @@ function onChannel(raw) {
   let parsed;
   try { parsed = JSON.parse(raw); } catch { return; }
   for (const msg of Array.isArray(parsed) ? parsed : [parsed]) {
+    // track channel event ids so we can ack; without acks Eyre clogs
+    if (msg && typeof msg.id === 'number' && msg.id > lastSeenId) lastSeenId = msg.id;
     if (msg && msg.response === 'poke') {
       if (msg.err) console.error('[transport] POKE NACK:', msg.err);
       continue;
