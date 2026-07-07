@@ -16,57 +16,28 @@
  * transport layer, mapping ship -> ip:port. That mirrors how vere resolves
  * lanes for a real ship.
  *
- * Usage:
- *   node bin/transport-sidecar.mjs \
- *     --code lidlut-tabwed-pillex-ridrup \
- *     --moon ~doznec-dozzod-dozzod \
- *     --peer ~zod=127.0.0.1:31337 \
- *     --bind 127.0.0.1:39999
+ * Galaxies (stranger destinations) are dialed directly over DNS like vere:
+ * <galaxy>.<turf> on port (czarBase + galaxy-number). No hardcoded galaxy IPs.
+ * The host planet only handles the inbound return leg (--gateway).
  *
- * Defaults target the fake-galaxy loopback test (~zod at 127.0.0.1:31337).
+ * Usage (live mainnet):
+ *   node bin/transport-sidecar.mjs \
+ *     --url http://localhost:80 --ship disden-talhes \
+ *     --moon ~dozlet-disden-talhes \
+ *     --gateway disden-talhes=127.0.0.1:57284 \
+ *     --bind 0.0.0.0:39999
+ *
+ * Flags:
+ *   --turf <domain>      galaxy DNS suffix (default urbit.org)
+ *   --czar-base <port>   galaxy port base (live 13337, fake 31337)
+ *   --fake               fakenet: base 31337 + seed ~zod=127.0.0.1:31337
+ *   --peer ~s=ip:port    extra static route (non-galaxy)
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import dgram from 'node:dgram';
-import http from 'node:http';
-
-// ---- Ames packet header parser (lull +sift-shot) ------------------------
-// Defined at top (before the blocking `await sse.done`) so these consts are
-// initialized before the SSE callback ever calls parseShot. Label ships we
-// know by number; everything else shows as @<number>.
-const KNOWN_SHIPS = {
-  '162': '~nus', '674': 'star-674',
-  '3918463650': '~disden-talhes', '8213430946': '~doznec-disden-talhes',
-};
-const RANK_BYTES = [2, 4, 8, 16];
-function shipLabel(n) { const k = n.toString(); return KNOWN_SHIPS[k] || `@${k}`; }
-function leToBig(b) { let n = 0n; for (let i = b.length - 1; i >= 0; i -= 1) n = (n << 8n) | BigInt(b[i]); return n; }
-function parseShot(buf) {
-  if (!buf || buf.length < 6) return null;
-  // 32-bit header (4 bytes), bit-indexed per lull +sift-shot
-  const req = (buf[0] >> 2) & 1;
-  const sam = (buf[0] >> 3) & 1;
-  const version = (buf[0] >> 4) & 7;
-  const sndrSize = RANK_BYTES[((buf[0] >> 7) & 1) | ((buf[1] & 1) << 1)];
-  const rcvrSize = RANK_BYTES[(buf[1] >> 1) & 3];
-  const relayed = (buf[3] >> 7) & 1;
-  // NOTE: origin handling here is best-effort; sndr/rcvr sit right after the
-  // header+tick byte and decode reliably, which is all we use.
-  const body = buf.subarray(4);
-  const sndr = leToBig(body.subarray(1, 1 + sndrSize));                 // body[0] = ticks
-  const rcvr = leToBig(body.subarray(1 + sndrSize, 1 + sndrSize + rcvrSize));
-  const content = body.subarray(1 + sndrSize + rcvrSize);
-  const isKeys = content.length >= 4 && content[0] === 0x6b && content[1] === 0x65
-    && content[2] === 0x79 && content[3] === 0x73;                      // "keys"
-  return { sndr, rcvr, req, sam, version, relayed, isKeys, clen: content.length };
-}
-function describeShot(buf) {
-  const s = parseShot(buf);
-  if (!s) return '(unparsed)';
-  return `${shipLabel(s.sndr)}->${shipLabel(s.rcvr)}`
-    + `${s.isKeys ? ' %KEYS-REQ' : ''}${s.req ? ' req' : ''}${s.relayed ? ' relayed' : ''}`;
-}
+import dns from 'node:dns/promises';
 
 const args = parseArgs(process.argv.slice(2));
 const ship = stripSig(args.ship || process.env.URBIT_SHIP || 'zod');
@@ -75,9 +46,12 @@ const pier = args.pier || process.env.URBIT_PIER || '/Users/chris/Enviorment/urb
 const code = args.code || process.env.URBIT_CODE || readCode(pier);
 const uid = `theseus-transport-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
-// ship -> {addr, port} routing table (default: fake-galaxy ~zod loopback)
+// ship -> {addr, port} routing table for non-galaxy peers (gateway, moons).
+// Galaxies are NOT listed here -- they're resolved live via DNS (sendToGalaxy),
+// exactly like vere. No hardcoded galaxy IPs.
 const peers = new Map();
-addPeer('~zod', '127.0.0.1:31337');
+// fakenet loopback default only under --fake; live routes galaxies via DNS.
+if (args.fake) addPeer('~zod', '127.0.0.1:31337');
 for (const p of asList(args.peer)) {
   const [who, hostport] = p.split('=');
   addPeer(who, hostport);
@@ -99,7 +73,17 @@ for (const [who, { addr, port }] of peers) peersByAddr.set(`${addr}:${port}`, wh
 // virtual moons we serve (filters internal packets; inbound target)
 const moons = new Set(asList(args.moon).map(stripSig));
 
-const [bindAddr, bindPortStr] = (args.bind || '127.0.0.1:39999').split(':');
+// galaxy routing config (no hardcoded IPs): a galaxy destination is dialed at
+// <galaxy>.<turf> on port (czarBase + galaxy-number).  czarBase is a network
+// protocol constant (fake 31337, live 13337); turf is network config (default
+// urbit.org).  Both overridable; confirm czarBase against disden's live traffic.
+const turf = args.turf || process.env.URBIT_TURF || 'urbit.org';
+const czarBase = Number(args['czar-base'] || (args.fake ? 31337 : 13337));
+
+// Bind 0.0.0.0 (all interfaces) not loopback: galaxy replies arrive from the
+// real internet, so the socket must be reachable there. NAT/firewall must allow
+// the port for the direct-return path; otherwise replies come sponsor-routed.
+const [bindAddr, bindPortStr] = (args.bind || '0.0.0.0:39999').split(':');
 const bindPort = Number(bindPortStr);
 
 let eventId = 1;
@@ -110,13 +94,60 @@ let cookie = args.cookie || process.env.URBIT_COOKIE || '';
 if (!code && !cookie) fail('No Urbit code or cookie. Pass --code / --cookie.');
 if (!cookie) cookie = await login(url, code);
 
+// --- galaxy DNS routing (no hardcoded IPs) -------------------------------
+// Declared here (before `await sse.done` below) so the const initializers run
+// before the SSE callback can fire; otherwise galaxyNum hits GALAXIES in TDZ.
+// dex suffix-syllable table from sys/hoon.hoon ++po: index = galaxy number
+// (0-255). e.g. GALAXIES[143] === 'rus'  ->  ~rus.
+const GALAXIES = (
+  'zodnecbudwessevpersutletfulpensytdurwepserwylsun' +
+  'rypsyxdyrnuphebpeglupdepdysputlughecryttyvsydnex' +
+  'lunmeplutseppesdelsulpedtemledtulmetwenbynhexfeb' +
+  'pyldulhetmevruttylwydtepbesdexsefwycburderneppur' +
+  'rysrebdennutsubpetrulsynregtydsupsemwynrecmegnet' +
+  'secmulnymtevwebsummutnyxrextebfushepbenmuswyxsym' +
+  'selrucdecwexsyrwetdylmynmesdetbetbeltuxtugmyrpel' +
+  'syptermebsetdutdegtexsurfeltudnuxruxrenwytnubmed' +
+  'lytdusnebrumtynseglyxpunresredfunrevrefmectedrus' +
+  'bexlebduxrynnumpyxrygryxfeptyrtustyclegnemfermer' +
+  'tenlusnussyltecmexpubrymtucfyllepdebbermughuttun' +
+  'bylsudpemdevlurdefbusbeprunmelpexdytbyttyplevmyl' +
+  'wedducfurfexnulluclennerlexrupnedlecrydlydfenwel' +
+  'nydhusrelrudneshesfetdesretdunlernyrsebhulryllud' +
+  'remlysfynwerrycsugnysnyllyndyndemluxfedsedbecmun' +
+  'lyrtesmudnytbyrsenwegfyrmurtelreptegpecnelnevfes'
+).match(/.{3}/g);
+// galaxy @p name -> number (0-255), or -1 if the name isn't a galaxy.
+function galaxyNum(name) { return GALAXIES.indexOf(stripSig(name)); }
+
+const dnsCache = new Map(); // host -> { addr, exp }
+async function resolveHost(host) {
+  const now = Date.now();
+  const hit = dnsCache.get(host);
+  if (hit && hit.exp > now) return hit.addr;
+  try {
+    const { address } = await dns.lookup(host, { family: 4 });
+    dnsCache.set(host, { addr: address, exp: now + 60_000 });
+    return address;
+  } catch { return null; }
+}
+async function sendToGalaxy(name, gnum, bytes, from) {
+  const host = `${name}.${turf}`;
+  const port = czarBase + gnum;
+  const addr = await resolveHost(host);
+  if (!addr) { console.log(`[transport] DNS fail ${host}, drop`); return; }
+  sock.send(bytes, port, addr, (e) => { if (e) console.error('[transport] galaxy send err:', e); });
+  console.log(`[transport] OUT ~${from} -> ~${name} galaxy ${host}:${port} (${addr}) ${bytes.length}B`);
+}
+
 // --- UDP socket: the moon's transport endpoint ---------------------------
 const sock = dgram.createSocket('udp4');
 sock.on('message', onUdp);
 sock.on('error', (e) => console.error('[transport] udp error:', e));
 await new Promise((res) => sock.bind(bindPort, bindAddr, res));
 console.log(`[transport] udp bound ${bindAddr}:${bindPort}`);
-console.log(`[transport] peers: ${[...peers].map(([w, a]) => `${w}->${a.addr}:${a.port}`).join(', ')}`);
+console.log(`[transport] galaxies via DNS: *.${turf} port ${czarBase}+n${args.fake ? ' (fakenet)' : ''}`);
+console.log(`[transport] peers: ${[...peers].map(([w, a]) => `${w}->${a.addr}:${a.port}`).join(', ') || '(none)'}`);
 console.log(`[transport] moons: ${[...moons].map((m) => `~${m}`).join(', ') || '(none)'}`);
 
 // --- Eyre channel: watch outbound, poke inbound --------------------------
@@ -165,11 +196,30 @@ function onChannel(raw) {
 
     const from = stripSig(out.ship);           // the virtual moon sending
     const target = out['lane-ship'] ? stripSig(out['lane-ship']) : null;
-    if (!target) {                             // non-ship (raw address) lane: skip for now
-      console.log('[transport] skip non-ship lane from', from);
+    if (!target) {
+      // direct-address lane [%.n p]: the moon learned a peer's real transport
+      // address (from the origin disden stamps on forwarded replies) and wants
+      // to send straight there, like a NAT-punched ship. Decode p -> ip:port.
+      const la = decodeLane(out['lane-addr']);
+      if (la) {
+        const bytes = atomHexToBufferLE(out.blob, Number(out['blob-len'] ?? 0));
+        sock.send(bytes, la.port, la.addr, (e) => { if (e) console.error('[transport] direct send err:', e); });
+        console.log(`[transport] OUT ~${from} -> direct ${la.addr}:${la.port} ${bytes.length}B`);
+        continue;
+      }
+      console.log(`[transport] skip non-ship lane from ${from} (addr=${out['lane-addr'] ?? 'none'})`);
       continue;
     }
     if (moons.has(target)) continue;           // internal virtual<->virtual, theseus routes it
+    // galaxy destination: dial <name>.<turf>:(czarBase+num) directly over DNS,
+    // like vere. The moon routes strangers via their galaxy (lane [%.y galaxy]);
+    // this is the outbound leg the host planet won't relay, so we dial it here.
+    const gnum = galaxyNum(target);
+    if (gnum >= 0) {
+      const bytes = atomHexToBufferLE(out.blob, Number(out['blob-len'] ?? 0));
+      sendToGalaxy(target, gnum, bytes, from);
+      continue;
+    }
     // explicit route, else the gateway uplink (host planet forwards it)
     const peer = peers.get(`~${target}`) || (gatewayShip && peers.get(gatewayShip));
     if (!peer) { console.log(`[transport] no route for ~${target}, drop`); continue; }
@@ -178,7 +228,7 @@ function onChannel(raw) {
     sock.send(bytes, peer.port, peer.addr, (e) => {
       if (e) console.error('[transport] send err:', e);
     });
-    console.log(`[transport] OUT lane=~${target} ${bytes.length}B  [${describeShot(bytes)}]`);
+    console.log(`[transport] OUT ~${from} -> ~${target} (${peer.addr}:${peer.port}) ${bytes.length}B`);
   }
 }
 
@@ -188,7 +238,7 @@ function onUdp(buf, rinfo) {
   const moon = pickMoon();
   if (!moon) { console.log('[transport] inbound but no moon configured, drop'); return; }
   const hex = bufferLEToAtomHex(buf);
-  console.log(`[transport] IN  ${buf.length}B  [${describeShot(buf)}]`);
+  console.log(`[transport] IN  ${from} -> ~${moon} ${buf.length}B`);
   pokeInbound(moon, stripSig(from), hex).catch((e) => console.error('[transport] inbound poke fail:', e));
 }
 
@@ -203,9 +253,28 @@ async function pokeInbound(who, from, blobHex) {
   await channelPut([
     {
       id: nextId(), action: 'poke', ship, app: 'theseus', mark: 'theseus-ames-in',
-      json: { 'ames-inbound': { who: `~${who}`, from: `~${from}`, blob: blobHex } },
+      // addr required by the ames-inbound dejs. 0x0 -> moon uses ship-lane
+      // [%.y from], correct for sponsor-routed returns (reply via disden).
+      // A raw galaxy/peer addr here would teach the moon a bogus direct lane.
+      json: { 'ames-inbound': { who: `~${who}`, from: `~${from}`, addr: '0x0', blob: blobHex } },
     },
   ]);
+}
+
+// decode a direct-address lane atom p (from `scot %ux`, dot-grouped) into
+// ip:port.  ames packs it as ip=low 32 bits (@if, big-endian octets), port=
+// bits 32-47 (see ames.hoon: end [0 32] p / cut 0 [32 16] p).  Returns null
+// for empty/zero/portless addresses (nothing sendable).
+function decodeLane(scotHex) {
+  if (!scotHex) return null;
+  const clean = String(scotHex).replace(/^0x/i, '').replace(/\./g, '');
+  if (!clean) return null;
+  const p = BigInt('0x' + clean);
+  const ip = Number(p & 0xffffffffn);
+  const port = Number((p >> 32n) & 0xffffn);
+  const a = (ip >>> 24) & 0xff, b = (ip >>> 16) & 0xff, c = (ip >>> 8) & 0xff, d = ip & 0xff;
+  if (!port || (a === 0 && b === 0 && c === 0 && d === 0)) return null;
+  return { addr: `${a}.${b}.${c}.${d}`, port };
 }
 
 // ---- blob <-> bytes (little-endian atom) --------------------------------
@@ -255,100 +324,47 @@ function stripSig(s) { return String(s).replace(/^~/, ''); }
 function readCode(p) {
   try { return fs.readFileSync(path.join(p, '.urb', 'code'), 'utf8').trim(); } catch { return ''; }
 }
-// node's fetch/undici chokes on Eyre's chunked SSE ("Invalid character in
-// chunk size"); the http module de-chunks transparently and is lenient.
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-function httpRequest(method, urlStr, { headers = {}, body = null, timeoutMs = 15000 } = {}) {
-  return new Promise((resolve, reject) => {
-    const u = new URL(urlStr);
-    const req = http.request(
-      { method, hostname: u.hostname, port: u.port || 80, path: u.pathname + u.search, headers },
-      (res) => {
-        let data = '';
-        res.setEncoding('utf8');
-        res.on('data', (c) => { data += c; });
-        res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
-      },
-    );
-    req.on('error', reject);
-    req.setTimeout(timeoutMs, () => req.destroy(new Error(`timeout ${timeoutMs}ms`)));
-    if (body != null) req.write(body);
-    req.end();
-  });
-}
 async function login(baseUrl, password) {
-  for (let attempt = 1; attempt <= 6; attempt += 1) {
-    try {
-      const res = await httpRequest('POST', `${baseUrl}/~/login`, {
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ password }).toString(),
-      });
-      const sc = res.headers['set-cookie'];
-      if (sc && sc.length) return String(sc[0]).split(';')[0];
-      console.error(`[transport] login ${attempt}: no cookie (HTTP ${res.status}), retry`);
-    } catch (e) {
-      console.error(`[transport] login ${attempt} failed: ${e.message}, retry`);
-    }
-    await sleep(2000);
-  }
-  fail('login failed after 6 attempts');
+  const res = await fetch(`${baseUrl}/~/login`, {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ password }), redirect: 'manual',
+  });
+  const sc = res.headers.get('set-cookie');
+  if (!sc) fail(`Login returned no cookie. HTTP ${res.status}`);
+  return sc.split(';')[0];
 }
 async function channelPut(commands) {
-  const res = await httpRequest('PUT', `${url}/~/channel/${uid}`, {
-    headers: { 'content-type': 'application/json', cookie },
+  const res = await fetch(`${url}/~/channel/${uid}`, {
+    method: 'PUT', headers: { 'content-type': 'application/json', cookie },
     body: JSON.stringify(commands),
   });
-  if (res.status >= 300) console.error(`[transport] channel PUT HTTP ${res.status} ${res.body}`);
+  if (!res.ok) fail(`Channel PUT failed: HTTP ${res.status} ${await res.text().catch(() => '')}`);
 }
 async function channelDelete() {
-  try { await httpRequest('DELETE', `${url}/~/channel/${uid}`, { headers: { cookie } }); } catch {}
+  await fetch(`${url}/~/channel/${uid}`, { method: 'DELETE', headers: { cookie } });
 }
 function readSse(endpoint, cookieHeader, onMessage) {
-  const u = new URL(endpoint);
-  let aborted = false;
-  let curReq = null;
-  const done = new Promise((resolve) => {
-    const connect = () => {
-      if (aborted) { resolve(); return; }
-      curReq = http.get(
-        { hostname: u.hostname, port: u.port || 80, path: u.pathname + u.search,
-          headers: { accept: 'text/event-stream', cookie: cookieHeader } },
-        (res) => {
-          if (res.statusCode !== 200) {
-            console.error(`[transport] SSE HTTP ${res.statusCode}, reconnecting`);
-            res.resume(); setTimeout(connect, 1500); return;
-          }
-          res.setEncoding('utf8');
-          let buffer = '';
-          res.on('data', (chunk) => {
-            buffer += chunk;
-            let split;
-            while ((split = buffer.indexOf('\n\n')) >= 0) {
-              const raw = buffer.slice(0, split);
-              buffer = buffer.slice(split + 2);
-              const data = raw.split('\n').filter((l) => l.startsWith('data:'))
-                .map((l) => l.slice(5).trimStart()).join('\n');
-              if (data) onMessage(data);
-            }
-          });
-          res.on('end', () => {
-            if (aborted) { resolve(); return; }
-            console.error('[transport] SSE ended, reconnecting'); setTimeout(connect, 1500);
-          });
-          res.on('error', (e) => {
-            if (aborted) return;
-            console.error(`[transport] SSE error: ${e.message}, reconnecting`); setTimeout(connect, 1500);
-          });
-        },
-      );
-      curReq.on('error', (e) => {
-        if (aborted) return;
-        console.error(`[transport] SSE req error: ${e.message}, reconnecting`); setTimeout(connect, 1500);
-      });
-    };
-    connect();
-  });
-  return { abort: () => { aborted = true; try { curReq && curReq.destroy(); } catch {} }, done };
+  const controller = new AbortController();
+  const done = (async () => {
+    const res = await fetch(endpoint, {
+      headers: { accept: 'text/event-stream', cookie: cookieHeader }, signal: controller.signal,
+    });
+    if (!res.ok || !res.body) fail(`SSE failed: HTTP ${res.status}`);
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for await (const chunk of res.body) {
+      buffer += decoder.decode(chunk, { stream: true });
+      let split;
+      while ((split = buffer.indexOf('\n\n')) >= 0) {
+        const raw = buffer.slice(0, split);
+        buffer = buffer.slice(split + 2);
+        const data = raw.split('\n').filter((l) => l.startsWith('data:'))
+          .map((l) => l.slice(5).trimStart()).join('\n');
+        if (data) onMessage(data);
+      }
+    }
+  })().catch((err) => { if (err.name !== 'AbortError') throw err; });
+  return { abort: () => controller.abort(), done };
 }
 function extractFact(msg) {
   if (!msg || typeof msg !== 'object') return null;
