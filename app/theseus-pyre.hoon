@@ -38,13 +38,13 @@
         %send
       =/  out=update  [%ames-outbound who.ef p.q.uf.ef q.q.uf.ef]
       ~&  [%theseus-ames-outbound who=who.ef lane=p.q.uf.ef blob-size=(met 3 q.q.uf.ef)]
-      ?:  =(/sidecar-test p.uf.ef)
-        :_  this
-        ~[[%give %fact ~[/ames/outbound] %theseus-update !>(out)]]
+      ::  Every virtual ship we boot is a keyed moon meant for the REAL
+      ::  network, so never route internally: no virtual-to-virtual %hear
+      ::  inject, and no answering remote scries from the local namespace.
+      ::  Just emit the fact; the sidecar carries the packet out and the
+      ::  real response returns via a %ames-inbound poke.
       :_  this
-      %+  weld
-        ~[[%give %fact ~[/ames/outbound] %theseus-update !>(out)]]
-      (send:ames:hc who.ef uf.ef)
+      ~[[%give %fact ~[/ames/outbound] %theseus-update !>(out)]]
     ::  behn
         %doze
       =^  cards  behn-piers
@@ -289,7 +289,9 @@
     =?  header-list.request.req  ?=(^ cookie)
       [['cookie' u.cookie] header-list.request.req]
     %-  emit-theseus-events
-    [~nec /e/(scot %p who)/[rid] %request [secure address request]:req]~
+    ::  inject into the actual moon (who), not a hardcoded ~nec that isn't
+    ::  booted -- otherwise the request vanishes and the client hangs.
+    [who /e/(scot %p who)/[rid] %request [secure address request]:req]~
   ::
   ++  handle-response
     |=  [way=wire %response ev=http-event:http]

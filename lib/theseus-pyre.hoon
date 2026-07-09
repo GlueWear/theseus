@@ -3,11 +3,13 @@
 ++  parse-url
   |=  url=tape
   ^-  [ship cord]
-  ::  format must be /theseus/~sampel-palnet/...
-  =.  url  (slag 6 url)  :: cutting off "/theseus/"
+  ::  format: /theseus/~ship/rest...  ->  [~ship "/rest..."]
+  ::  locate the "~" that begins the ship @p (robust to prefix length),
+  ::  instead of a hardcoded offset that only fit "/theseus/".
+  =.  url  (slag (need (find "~" url)) url)  :: now "~ship/rest..."
   ?~  loc=(find "/" url)  [(slav %p (crip url)) '']
-  :-  (slav %p (crip (scag u.loc url))) :: ~nec
-  (crip (slag u.loc url)) :: has /theseus/~nec cut off
+  :-  (slav %p (crip (scag u.loc url)))
+  (crip (slag u.loc url))
 ::
 ++  has-cookie
   |=  hed=header-list:http
