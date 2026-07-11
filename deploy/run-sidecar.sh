@@ -12,6 +12,10 @@
 # Stop it:    pkill -f run-sidecar.sh ; pkill -f transport-sidecar.mjs
 set -u
 
+# launchd runs with a minimal PATH that lacks Homebrew, so `node` (and other
+# brew tools) aren't found -> exit 127. Prepend the usual brew bin dirs.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 HERE="$(cd "$(dirname "$0")/.." && pwd)"        # theseus repo root
 SIDECAR="$HERE/bin/transport-sidecar.mjs"
 LOG="${LOG:-$HERE/deploy/sidecar.log}"
