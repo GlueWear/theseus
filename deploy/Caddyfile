@@ -17,11 +17,22 @@
 # If you change the base domain, adjust the index.
 
 http://*.lvh.me:8090 {
-	rewrite * /theseus/~{http.request.host.labels.2}{uri}
-	reverse_proxy localhost:80 {
-		# match what worked via curl (the /theseus binding is path-based,
-		# so upstream Host is cosmetic). Browser origin stays the
-		# subdomain, which is what scopes cookies.
-		header_up Host localhost
+	# /broker -> broker login service (carve-out). It POSTs the moon's +code
+	# server-side and sets the moon's session cookie, so the user lands logged
+	# in without ever seeing the code. Must be on this subdomain origin so the
+	# cookie scopes correctly.
+	@broker path /broker /broker/*
+	handle @broker {
+		reverse_proxy localhost:8091
+	}
+	# everything else -> the moon, via the /theseus bridge
+	handle {
+		rewrite * /theseus/~{http.request.host.labels.2}{uri}
+		reverse_proxy localhost:80 {
+			# match what worked via curl (the /theseus binding is path-based,
+			# so upstream Host is cosmetic). Browser origin stays the
+			# subdomain, which is what scopes cookies.
+			header_up Host localhost
+		}
 	}
 }

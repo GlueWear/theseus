@@ -4,3 +4,4 @@
 # theseus deploy runtime artifacts
 deploy/*.log
 deploy/.sidecar-heartbeat
+deploy/broker-moons.json
