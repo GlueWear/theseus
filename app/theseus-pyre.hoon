@@ -37,7 +37,6 @@
     ::  ames
         %send
       =/  out=update  [%ames-outbound who.ef p.q.uf.ef q.q.uf.ef]
-      ~&  [%theseus-ames-outbound who=who.ef lane=p.q.uf.ef blob-size=(met 3 q.q.uf.ef)]
       ::  Every virtual ship we boot is a keyed moon meant for the REAL
       ::  network, so never route internally: no virtual-to-virtual %hear
       ::  inject, and no answering remote scries from the local namespace.

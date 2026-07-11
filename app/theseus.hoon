@@ -254,7 +254,7 @@
       ?^  sof=((soft unix-effect) i.effects)  (publish-effect u.sof)
       ?:  &(=(p.card.i.effects %unto) ?=(^ q.card.i.effects))
         ((slog (flop ;;(tang +.q.card.i.effects))) ~&(who=who ..abet-pe))
-      ~&(theseus+unknown-effect+who^i.effects ..abet-pe)
+      ..abet-pe
     $(effects t.effects)
   ::
   ++  publish-effect
@@ -553,9 +553,7 @@
   ::
       %ames-inbound
     ?.  (~(has by piers) who.act)
-      ~&  [%theseus-ames-inbound-missing who.act]
       `state
-    ~&  [%theseus-ames-inbound who=who.act lane=lane.act blob-size=(met 3 blob.act)]
     =.  this  apex-theseus  =<  abet-theseus
     =.  this
       =<  abet-pe:plow
