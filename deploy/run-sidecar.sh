@@ -56,7 +56,8 @@ while true; do
   rm -f "$HEARTBEAT"                              # clear any stale heartbeat
   node "$SIDECAR" \
     --url "$HOST_URL" --ship "$HOST_SHIP" --code "$CODE" \
-    --moon "$MOON" --gateway "$HOST_SHIP=127.0.0.1:$PORT" --bind "$BIND" \
+    --moons-map "$HERE/deploy/moons.json" \
+    --gateway "$HOST_SHIP=127.0.0.1:$PORT" --bind "$BIND" \
     --heartbeat "$HEARTBEAT" \
     >>"$LOG" 2>&1 &
   NODE_PID=$!

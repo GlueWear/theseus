@@ -70,8 +70,13 @@ if (args.gateway) {
 const peersByAddr = new Map();
 for (const [who, { addr, port }] of peers) peersByAddr.set(`${addr}:${port}`, who);
 
-// virtual moons we serve (filters internal packets; inbound target)
-const moons = new Set(asList(args.moon).map(stripSig));
+// virtual moons we serve, with their numeric @p for inbound rcvr-routing.
+//   --moons-map <json> : { "~name-a": 123, "~name-b": 456 }   (name -> @ud)
+const moonNums = loadMoonsMap(args);                   // { name(no ~): number }
+const moons = new Set([...Object.keys(moonNums), ...asList(args.moon).map(stripSig)]);
+const moonByNum = new Map();                            // bigint rcvr -> moon name
+for (const [name, num] of Object.entries(moonNums)) moonByNum.set(BigInt(num), name);
+const RANK_BYTES = [2, 4, 8, 16];                       // @p byte-rank sizes
 
 // galaxy routing config (no hardcoded IPs): a galaxy destination is dialed at
 // <galaxy>.<turf> on port (czarBase + galaxy-number).  czarBase is a network
@@ -259,18 +264,44 @@ function onChannel(raw) {
 // ---- inbound: UDP packet -> %ames-inbound poke --------------------------
 function onUdp(buf, rinfo) {
   const from = peersByAddr.get(`${rinfo.address}:${rinfo.port}`) || firstPeerShip();
-  const moon = pickMoon();
-  if (!moon) { console.log('[transport] inbound but no moon configured, drop'); return; }
+  const moon = pickMoon(buf);
+  if (!moon) { return; }  // couldn't route (unknown receiver); pickMoon logged it
   const hex = bufferLEToAtomHex(buf);
   console.log(`[transport] IN  ${from} -> ~${moon} ${buf.length}B`);
   pokeInbound(moon, stripSig(from), hex).catch((e) => console.error('[transport] inbound poke fail:', e));
 }
 
-function pickMoon() {
-  // TODO: parse rcvr @p from the Ames packet header for multi-moon.
-  if (moons.size === 1) return [...moons][0];
-  if (moons.size > 1) console.log('[transport] multiple moons; rcvr-parse not yet implemented, using first');
-  return moons.size ? [...moons][0] : null;
+// route inbound to the moon whose @p is the packet's receiver.
+function pickMoon(buf) {
+  const s = parseShot(buf);
+  if (s && moonByNum.has(s.rcvr)) return moonByNum.get(s.rcvr);
+  if (moons.size === 1) return [...moons][0];   // one moon -> unambiguous
+  if (s) console.log(`[transport] inbound for unknown receiver ${s.rcvr}; drop`);
+  return null;
+}
+
+// --- Ames packet parse (for multi-moon inbound routing) ------------------
+// Pull the receiver @p out of the packet header (little-endian), per lull
+// +sift-shot: sndr/rcvr sit right after the 4-byte header + 1 tick byte.
+function leToBig(b) { let n = 0n; for (let i = b.length - 1; i >= 0; i -= 1) n = (n << 8n) | BigInt(b[i]); return n; }
+function parseShot(buf) {
+  if (!buf || buf.length < 6) return null;
+  const sndrSize = RANK_BYTES[((buf[0] >> 7) & 1) | ((buf[1] & 1) << 1)];
+  const rcvrSize = RANK_BYTES[(buf[1] >> 1) & 3];
+  const body = buf.subarray(4);
+  const sndr = leToBig(body.subarray(1, 1 + sndrSize));
+  const rcvr = leToBig(body.subarray(1 + sndrSize, 1 + sndrSize + rcvrSize));
+  return { sndr, rcvr };
+}
+function loadMoonsMap(a) {
+  const out = {};
+  if (a['moons-map']) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(a['moons-map'], 'utf8'));
+      for (const [k, v] of Object.entries(raw)) out[stripSig(k)] = v;
+    } catch (e) { console.error('[transport] cannot read moons-map:', e.message); }
+  }
+  return out;
 }
 
 async function pokeInbound(who, from, blobHex) {

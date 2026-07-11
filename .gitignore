@@ -5,3 +5,4 @@
 deploy/*.log
 deploy/.sidecar-heartbeat
 deploy/broker-moons.json
+deploy/moons.json
