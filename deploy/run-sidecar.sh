@@ -24,8 +24,12 @@ MOON="${MOON:-~dozlet-disden-talhes}"
 CODE="${CODE:-winwyx-noslys-misryl-winryx}"
 BIND="${BIND:-0.0.0.0:39999}"
 GATEWAY_PORT="${GATEWAY_PORT:-59332}"           # fallback if auto-detect fails
+HEARTBEAT="${HEARTBEAT:-$HERE/deploy/.sidecar-heartbeat}"
+STALE_SECS="${STALE_SECS:-90}"                  # restart if heartbeat older than this
 
 log() { echo "[supervisor $(date '+%H:%M:%S')] $*" | tee -a "$LOG"; }
+# file mtime in epoch seconds (BSD stat on macOS, GNU stat on Linux)
+mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
 
 # find the host planet's live Ames UDP port: match its serf by pier, walk to
 # the king (which holds the socket), read the UDP port. Falls back to config.
@@ -45,10 +49,34 @@ log "starting; logging to $LOG"
 while true; do
   PORT="$(find_ames_port)"
   log "launching sidecar -> gateway 127.0.0.1:$PORT (moon $MOON)"
+  rm -f "$HEARTBEAT"                              # clear any stale heartbeat
   node "$SIDECAR" \
     --url "$HOST_URL" --ship "$HOST_SHIP" --code "$CODE" \
     --moon "$MOON" --gateway "$HOST_SHIP=127.0.0.1:$PORT" --bind "$BIND" \
-    >>"$LOG" 2>&1
-  log "sidecar exited (code $?); restarting in 2s"
+    --heartbeat "$HEARTBEAT" \
+    >>"$LOG" 2>&1 &
+  NODE_PID=$!
+
+  # watchdog: if the carrier's heartbeat goes stale (alive but wedged), kill it
+  # so this loop restarts it. Grace period first so startup isn't flagged.
+  (
+    sleep 45
+    while kill -0 "$NODE_PID" 2>/dev/null; do
+      if [ -f "$HEARTBEAT" ]; then
+        age=$(( $(date +%s) - $(mtime "$HEARTBEAT") ))
+        if [ "$age" -gt "$STALE_SECS" ]; then
+          log "carrier heartbeat stale (${age}s > ${STALE_SECS}s) -- killing to restart"
+          kill "$NODE_PID" 2>/dev/null
+          break
+        fi
+      fi
+      sleep 15
+    done
+  ) &
+  WATCH_PID=$!
+
+  wait "$NODE_PID"; code=$?
+  kill "$WATCH_PID" 2>/dev/null
+  log "sidecar exited (code $code); restarting in 2s"
   sleep 2
 done

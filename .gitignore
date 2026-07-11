@@ -1,2 +1,6 @@
 .DS_Store
 *.swp
+
+# theseus deploy runtime artifacts
+deploy/*.log
+deploy/.sidecar-heartbeat

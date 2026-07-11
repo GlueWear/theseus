@@ -155,6 +155,18 @@ console.log(`[transport] host=~${ship} url=${url}, watching %theseus-pyre /ames/
 await channelPut([
   { id: nextId(), action: 'subscribe', ship, app: 'theseus-pyre', path: '/ames/outbound' },
 ]);
+// --- health heartbeat -----------------------------------------------------
+// Touch a file whenever we prove we're actually alive AND our Eyre channel
+// works. An external watchdog restarts us if this goes stale, catching a
+// WEDGE (process alive but channel dead) -- crashes are already caught by the
+// supervisor's restart loop.
+const heartbeatFile = args.heartbeat || process.env.SIDECAR_HEARTBEAT || '';
+function beat() {
+  if (!heartbeatFile) return;
+  try { fs.writeFileSync(heartbeatFile, String(Date.now())); } catch {}
+}
+beat();  // startup
+
 const sse = readSse(`${url}/~/channel/${uid}`, cookie, onChannel);
 
 // Ack received events so Eyre releases its buffer (otherwise it clogs under
@@ -167,9 +179,20 @@ const ackTimer = setInterval(() => {
     .catch(() => {});
 }, 500);
 
+// Keepalive: periodically re-assert the channel (HTTP + cookie) is alive and
+// refresh the heartbeat. If this stops succeeding, the heartbeat goes stale
+// and the watchdog restarts us. (Idempotent ack; harmless if nothing new.)
+const beatTimer = setInterval(() => {
+  const p = lastSeenId > 0
+    ? channelPut([{ id: nextId(), action: 'ack', 'event-id': lastSeenId }])
+    : Promise.resolve();
+  p.then(beat).catch((e) => console.error('[transport] heartbeat channel check failed:', e.message));
+}, 20_000);
+
 process.on('SIGINT', async () => {
   console.log('\n[transport] closing');
   clearInterval(ackTimer);
+  clearInterval(beatTimer);
   sse.abort();
   try { sock.close(); } catch {}
   try { await channelDelete(); } catch {}
@@ -182,6 +205,7 @@ await sse.done;
 function onChannel(raw) {
   let parsed;
   try { parsed = JSON.parse(raw); } catch { return; }
+  beat();  // real SSE data flowing = channel healthy
   for (const msg of Array.isArray(parsed) ? parsed : [parsed]) {
     // track channel event ids so we can ack; without acks Eyre clogs
     if (msg && typeof msg.id === 'number' && msg.id > lastSeenId) lastSeenId = msg.id;
