@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Human Verification</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --card: #fffefb; --ink: #1b1a17; --muted: #8a8578;
+    --line: #e4e0d6; --accent: #1b1a17; --accent-ink: #fffefb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14130f; --card: #1d1c17; --ink: #eceadf;
+      --muted: #8f8a7c; --line: #2c2a23; --accent: #eceadf; --accent-ink: #14130f;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1.25rem; line-height: 1.55;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; max-width: 560px; width: 100%;
+    padding: 1.75rem 1.75rem 1.5rem; text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,.08);
+  }
+  .kicker {
+    font-size: .72rem; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 1rem;
+  }
+  .fig {
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    background: #fff; margin-bottom: 1.25rem;
+  }
+  .fig img { display: block; width: 100%; height: auto; }
+  .fig .missing {
+    padding: 2.5rem 1rem; color: var(--muted); font-size: .85rem;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  p.prompt { font-size: 1.02rem; margin: 0 0 1.4rem; }
+  p.prompt b { font-weight: 650; }
+  .buttons { display: flex; gap: .75rem; flex-wrap: wrap; }
+  button {
+    flex: 1 1 40%; min-width: 140px; cursor: pointer;
+    font-size: 1rem; font-weight: 600; padding: .85rem 1rem;
+    border-radius: 10px; border: 1px solid var(--line);
+    transition: transform .05s ease, background .15s ease;
+  }
+  button:active { transform: translateY(1px); }
+  .nothing { background: transparent; color: var(--muted); }
+  .nothing:hover { color: var(--ink); }
+  .lever { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .lever:hover { filter: brightness(1.08); }
+  .note { margin-top: 1rem; min-height: 1.2rem; color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="kicker">Human Verification</div>
+    <div class="fig">
+      <img src="/gate/trolley.png" alt="A trolley on a track with a lever; one path loops forever, the other breaks away."
+           onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'missing',textContent:'[ save your trolley image to deploy/gate/trolley.png ]'}))" />
+    </div>
+    <p class="prompt">
+      You control a lever which decides the direction of the trolley's future.
+      If you <b>do nothing</b>, the trolley stays on the predictable, continuous
+      loop &mdash; forever. If you <b>pull the lever</b>, the trolley makes history.
+    </p>
+    <div class="buttons">
+      <button class="nothing" onclick="doNothing()">Do nothing</button>
+      <button class="lever" onclick="pullLever()">Pull the lever</button>
+    </div>
+    <div class="note" id="note"></div>
+  </main>
+
+<script>
+  var loops = 0;
+  var lines = [
+    "The trolley continues its loop.",
+    "Still looping. Nothing has happened.",
+    "The loop is very predictable. Very safe. Very forever.",
+    "You could pull the lever, you know.",
+    "The trolley would like you to pull the lever.",
+  ];
+  function doNothing() {
+    var n = document.getElementById('note');
+    n.textContent = lines[Math.min(loops, lines.length - 1)];
+    loops++;
+  }
+  function pullLever() {
+    var n = document.getElementById('note');
+    n.textContent = "History it is. Booting your moon…";
+    // hand off to the broker, which logs you into your moon
+    window.location.href = '/broker';
+  }
+</script>
+</body>
+</html>

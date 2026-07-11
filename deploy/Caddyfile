@@ -17,6 +17,14 @@
 # If you change the base domain, adjust the index.
 
 http://*.lvh.me:8090 {
+	# /gate -> the funny captcha landing (static). This is the shareable link;
+	# "pull the lever" hands off to /broker.
+	@gate path /gate /gate/*
+	handle @gate {
+		root * /Users/chris/Enviorment/urbit-dev/ships/zod/theseus/deploy/gate
+		uri strip_prefix /gate
+		file_server
+	}
 	# /broker -> broker login service (carve-out). It POSTs the moon's +code
 	# server-side and sets the moon's session cookie, so the user lands logged
 	# in without ever seeing the code. Must be on this subdomain origin so the
