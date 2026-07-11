@@ -18,6 +18,10 @@ DEPLOY="$HERE/deploy"
 CADDY_MATCH="caddy run --config"     # our caddy invocation
 SUP_MATCH="run-sidecar.sh"           # the supervisor loop
 SIDE_MATCH="transport-sidecar.mjs"   # the carrier itself
+BROKER_MATCH="broker.mjs"            # the broker-login service
+
+# ensure node/caddy are found even under a minimal PATH
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 is_up() { pgrep -f "$1" >/dev/null 2>&1; }
 
@@ -37,6 +41,13 @@ start() {
     nohup "$DEPLOY/run-sidecar.sh" >/dev/null 2>&1 &
     echo "sidecar    : supervisor started (log: deploy/sidecar.log)"
   fi
+
+  if is_up "$BROKER_MATCH"; then
+    echo "broker     : already up"
+  else
+    nohup node "$DEPLOY/broker.mjs" --moons-file "$DEPLOY/broker-moons.json" --landing / >"$DEPLOY/broker.log" 2>&1 &
+    echo "broker     : started (log: deploy/broker.log)"
+  fi
   echo; status
 }
 
@@ -45,6 +56,7 @@ stop() {
   pkill -f "$SUP_MATCH"  2>/dev/null && echo "sidecar    : supervisor stopped" || echo "sidecar    : supervisor not running"
   pkill -f "$SIDE_MATCH" 2>/dev/null && echo "sidecar    : carrier stopped"    || true
   pkill -f "$CADDY_MATCH" 2>/dev/null && echo "caddy      : stopped"           || echo "caddy      : not running"
+  pkill -f "$BROKER_MATCH" 2>/dev/null && echo "broker     : stopped"          || echo "broker     : not running"
 }
 
 status() {
@@ -56,6 +68,7 @@ status() {
   else
     echo "carrier    : down"
   fi
+  is_up "$BROKER_MATCH" && echo "broker     : UP"   || echo "broker     : down"
   if lsof -nP -iUDP:39999 >/dev/null 2>&1; then
     echo "udp 39999  : bound"
   else
