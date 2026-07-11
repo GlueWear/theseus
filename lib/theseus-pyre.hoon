@@ -24,9 +24,12 @@
   ^-  header-list:http
   %+  murn  header-list
   |=  [key=@t value=@t]
+  ::  Caddy + the per-moon subdomain now own URL mapping, so pass the moon's
+  ::  response headers through untouched -- especially set-cookie (the browser
+  ::  holds the session, scoped to the subdomain origin) and location (clean
+  ::  root redirects resolve to the moon via the subdomain).  Only drop
+  ::  content-length, which conflicts with the chunked re-encode downstream.
   ?+  key  `[key value]
     %content-length  ~
-    %set-cookie      ~
-    %location  `[key (crip (weld "/theseus/~nec" (trip value)))]
-  == 
+  ==
 --

@@ -1,0 +1,27 @@
+# Theseus per-moon web access — local dev.
+#
+# Maps  <moon-@p>.lvh.me:8090  ->  the host planet's Eyre  /theseus/~<moon>/...
+# so each virtual moon gets its own subdomain origin (clean root URLs,
+# per-moon cookie scope). lvh.me is meant to resolve *.lvh.me -> 127.0.0.1,
+# but it can fail on some networks (NXDOMAIN) -- if so add a hosts line:
+#   127.0.0.1 <moon-@p>.lvh.me
+# Plain HTTP here; production swaps to *.your-domain with automatic TLS
+# (Caddy provisions wildcard/on-demand certs).
+#
+# Run from a STABLE checkout (not a live Clay mount, which can wipe it):
+#   caddy run --config deploy/Caddyfile
+# Open: http://dozlet-disden-talhes.lvh.me:8090/~/login
+#
+# Label index note: host "dozlet-disden-talhes.lvh.me" splits right-to-left
+# into me(0) lvh(1) dozlet-disden-talhes(2) -> the moon is labels.2.
+# If you change the base domain, adjust the index.
+
+http://*.lvh.me:8090 {
+	rewrite * /theseus/~{http.request.host.labels.2}{uri}
+	reverse_proxy localhost:80 {
+		# match what worked via curl (the /theseus binding is path-based,
+		# so upstream Host is cosmetic). Browser origin stays the
+		# subdomain, which is what scopes cookies.
+		header_up Host localhost
+	}
+}
