@@ -49,11 +49,11 @@
     flex: 1 1 40%; min-width: 140px; cursor: pointer;
     font-size: 1rem; font-weight: 600; padding: .85rem 1rem;
     border-radius: 10px; border: 1px solid var(--line);
-    transition: transform .05s ease, background .15s ease;
+    transition: transform .05s ease, background .15s ease, color .15s ease;
   }
   button:active { transform: translateY(1px); }
-  .lever { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-  .lever:hover { filter: brightness(1.08); }
+  .lever { background: transparent; color: var(--ink); border-color: var(--accent); }
+  .lever:hover { background: var(--accent); color: var(--accent-ink); }
   .aside { color: var(--muted); }
   .note { margin-top: 1rem; min-height: 1.2rem; color: var(--muted); font-size: .9rem; }
 </style>
