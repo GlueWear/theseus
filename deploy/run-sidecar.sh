@@ -29,6 +29,9 @@ CODE="${CODE:-winwyx-noslys-misryl-winryx}"
 BIND="${BIND:-0.0.0.0:39999}"
 GATEWAY_PORT="${GATEWAY_PORT:-59332}"           # fallback if auto-detect fails
 HEARTBEAT="${HEARTBEAT:-$HERE/deploy/.sidecar-heartbeat}"
+# lick transport (P2): default ON -> the theseus-pyre /ames socket. Set
+# LICK_SOCKET="" to fall back to the Eyre channel.
+LICK_SOCKET="${LICK_SOCKET-$HOST_PIER/.urb/dev/theseus-pyre/ames}"
 STALE_SECS="${STALE_SECS:-90}"                  # restart if heartbeat older than this
 
 log() { echo "[supervisor $(date '+%H:%M:%S')] $*" | tee -a "$LOG"; }
@@ -54,11 +57,13 @@ while true; do
   PORT="$(find_ames_port)"
   log "launching sidecar -> gateway 127.0.0.1:$PORT (moon $MOON)"
   rm -f "$HEARTBEAT"                              # clear any stale heartbeat
+  LICK_ARG=""; [ -n "$LICK_SOCKET" ] && LICK_ARG="--lick-socket $LICK_SOCKET"
   node "$SIDECAR" \
     --url "$HOST_URL" --ship "$HOST_SHIP" --code "$CODE" \
     --moons-map "$HERE/deploy/moons.json" \
     --gateway "$HOST_SHIP=127.0.0.1:$PORT" --bind "$BIND" \
     --heartbeat "$HEARTBEAT" \
+    $LICK_ARG \
     >>"$LOG" 2>&1 &
   NODE_PID=$!
 

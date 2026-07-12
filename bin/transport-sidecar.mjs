@@ -38,6 +38,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import dgram from 'node:dgram';
 import dns from 'node:dns/promises';
+import net from 'node:net';
+import { Atom, Cell, jam, cue_bytes, isCell } from '@urbit/nockjs';
 
 const args = parseArgs(process.argv.slice(2));
 const ship = stripSig(args.ship || process.env.URBIT_SHIP || 'zod');
@@ -91,13 +93,22 @@ const czarBase = Number(args['czar-base'] || (args.fake ? 31337 : 13337));
 const [bindAddr, bindPortStr] = (args.bind || '0.0.0.0:39999').split(':');
 const bindPort = Number(bindPortStr);
 
+// P2 lick transport: when set to theseus-pyre's /ames socket path, carry packets
+// over lick instead of the Eyre channel. Unset -> Eyre (the fallback).
+const lickSocket = args['lick-socket'] || '';
+// host planet @p number = low 32 bits of any served moon's number. Used as the
+// `from` on inbound lick frames (matches the eyre path's sponsor-routed lane).
+const hostNum = moonByNum.size ? ([...moonByNum.keys()][0] & 0xffffffffn) : 0n;
+
 let eventId = 1;
 let lastSeenId = 0;   // highest channel event id received
 let lastAckedId = 0;  // highest we've acked back to Eyre
 let cookie = args.cookie || process.env.URBIT_COOKIE || '';
 
-if (!code && !cookie) fail('No Urbit code or cookie. Pass --code / --cookie.');
-if (!cookie) cookie = await login(url, code);
+if (!lickSocket) {
+  if (!code && !cookie) fail('No Urbit code or cookie. Pass --code / --cookie.');
+  if (!cookie) cookie = await login(url, code);
+}
 
 // --- galaxy DNS routing (no hardcoded IPs) -------------------------------
 // Declared here (before `await sse.done` below) so the const initializers run
@@ -155,56 +166,46 @@ console.log(`[transport] galaxies via DNS: *.${turf} port ${czarBase}+n${args.fa
 console.log(`[transport] peers: ${[...peers].map(([w, a]) => `${w}->${a.addr}:${a.port}`).join(', ') || '(none)'}`);
 console.log(`[transport] moons: ${[...moons].map((m) => `~${m}`).join(', ') || '(none)'}`);
 
-// --- Eyre channel: watch outbound, poke inbound --------------------------
-console.log(`[transport] host=~${ship} url=${url}, watching %theseus-pyre /ames/outbound`);
-await channelPut([
-  { id: nextId(), action: 'subscribe', ship, app: 'theseus-pyre', path: '/ames/outbound' },
-]);
-// --- health heartbeat -----------------------------------------------------
-// Touch a file whenever we prove we're actually alive AND our Eyre channel
-// works. An external watchdog restarts us if this goes stale, catching a
-// WEDGE (process alive but channel dead) -- crashes are already caught by the
-// supervisor's restart loop.
+// --- health heartbeat (both transports) ----------------------------------
+// Touch a file when we prove we're alive AND our transport works, so the
+// supervisor watchdog can restart us on a WEDGE (not just a crash).
 const heartbeatFile = args.heartbeat || process.env.SIDECAR_HEARTBEAT || '';
-function beat() {
-  if (!heartbeatFile) return;
-  try { fs.writeFileSync(heartbeatFile, String(Date.now())); } catch {}
-}
+function beat() { if (!heartbeatFile) return; try { fs.writeFileSync(heartbeatFile, String(Date.now())); } catch {} }
 beat();  // startup
 
-const sse = readSse(`${url}/~/channel/${uid}`, cookie, onChannel);
-
-// Ack received events so Eyre releases its buffer (otherwise it clogs under
-// bursty inbound, e.g. a Clay OTA). Cheap periodic ack of the high-water id.
-const ackTimer = setInterval(() => {
-  if (lastSeenId <= lastAckedId) return;
-  const id = lastSeenId;
-  channelPut([{ id: nextId(), action: 'ack', 'event-id': id }])
-    .then(() => { lastAckedId = id; })
-    .catch(() => {});
-}, 500);
-
-// Keepalive: periodically re-assert the channel (HTTP + cookie) is alive and
-// refresh the heartbeat. If this stops succeeding, the heartbeat goes stale
-// and the watchdog restarts us. (Idempotent ack; harmless if nothing new.)
-const beatTimer = setInterval(() => {
-  const p = lastSeenId > 0
-    ? channelPut([{ id: nextId(), action: 'ack', 'event-id': lastSeenId }])
-    : Promise.resolve();
-  p.then(beat).catch((e) => console.error('[transport] heartbeat channel check failed:', e.message));
-}, 20_000);
-
-process.on('SIGINT', async () => {
-  console.log('\n[transport] closing');
-  clearInterval(ackTimer);
-  clearInterval(beatTimer);
-  sse.abort();
-  try { sock.close(); } catch {}
-  try { await channelDelete(); } catch {}
-  process.exit(0);
-});
-
-await sse.done;
+if (lickSocket) {
+  // --- lick transport (P2): OUT = read %spit, IN = write %soak -----------
+  await setupLickTransport(lickSocket);
+} else {
+  // --- Eyre channel (fallback): watch outbound, poke inbound -------------
+  console.log(`[transport] host=~${ship} url=${url}, watching %theseus-pyre /ames/outbound`);
+  await channelPut([
+    { id: nextId(), action: 'subscribe', ship, app: 'theseus-pyre', path: '/ames/outbound' },
+  ]);
+  const sse = readSse(`${url}/~/channel/${uid}`, cookie, onChannel);
+  // Ack received events so Eyre releases its buffer (else it clogs under burst).
+  const ackTimer = setInterval(() => {
+    if (lastSeenId <= lastAckedId) return;
+    const id = lastSeenId;
+    channelPut([{ id: nextId(), action: 'ack', 'event-id': id }])
+      .then(() => { lastAckedId = id; }).catch(() => {});
+  }, 500);
+  // Keepalive: re-assert the channel is alive + refresh the heartbeat.
+  const beatTimer = setInterval(() => {
+    const p = lastSeenId > 0
+      ? channelPut([{ id: nextId(), action: 'ack', 'event-id': lastSeenId }])
+      : Promise.resolve();
+    p.then(beat).catch((e) => console.error('[transport] heartbeat channel check failed:', e.message));
+  }, 20_000);
+  process.on('SIGINT', async () => {
+    console.log('\n[transport] closing');
+    clearInterval(ackTimer); clearInterval(beatTimer); sse.abort();
+    try { sock.close(); } catch {}
+    try { await channelDelete(); } catch {}
+    process.exit(0);
+  });
+  await sse.done;
+}
 
 // ---- outbound: /ames/outbound fact -> UDP send --------------------------
 function onChannel(raw) {
@@ -263,6 +264,7 @@ function onChannel(raw) {
 
 // ---- inbound: UDP packet -> %ames-inbound poke --------------------------
 function onUdp(buf, rinfo) {
+  if (lickSocket) { onUdpLick(buf); return; }
   const from = peersByAddr.get(`${rinfo.address}:${rinfo.port}`) || firstPeerShip();
   const moon = pickMoon(buf);
   if (!moon) { return; }  // couldn't route (unknown receiver); pickMoon logged it
@@ -359,6 +361,89 @@ function addPeer(who, hostport) {
   peers.set(who.startsWith('~') ? who : `~${who}`, { addr, port: Number(port) });
 }
 function firstPeerShip() { const k = peers.keys().next().value; return k || '~zod'; }
+
+// ---- lick transport (P2): native IPC over the /ames unix socket ---------
+let lickConn = null;
+async function setupLickTransport(sockPath) {
+  console.log(`[transport] lick mode -> ${sockPath}`);
+  await new Promise((resolve) => {
+    const c = net.connect(sockPath, () => { lickConn = c; beat(); console.log(`[transport] lick connected ${sockPath}`); resolve(); });
+    let acc = Buffer.alloc(0);
+    c.on('data', (chunk) => {
+      beat();
+      acc = Buffer.concat([acc, chunk]);
+      while (acc.length >= 5) {                 // frame = [0x00][u32 LE len][jam]
+        const len = acc.readUInt32LE(1);
+        if (acc.length < 5 + len) break;
+        onLickOut(acc.subarray(5, 5 + len));
+        acc = acc.subarray(5 + len);
+      }
+    });
+    c.on('error', (e) => console.error('[transport] lick socket error:', e.message));
+    c.on('close', () => { lickConn = null; console.error('[transport] lick socket closed; exiting for supervisor restart'); process.exit(1); });
+  });
+  setInterval(() => { if (lickConn) beat(); }, 15_000);
+  process.on('SIGINT', () => { try { sock.close(); } catch {} try { lickConn && lickConn.end(); } catch {} process.exit(0); });
+  await new Promise(() => {});   // keep the process alive on the socket
+}
+
+// outbound: a %spit'd [%ames-out [who lane blob]] -> UDP send (reuses the
+// galaxy-DNS / direct / gateway logic, but keyed by number instead of name).
+function onLickOut(payload) {
+  let noun;
+  try { noun = cue_bytes(new DataView(payload.buffer, payload.byteOffset, payload.byteLength)); }
+  catch (e) { console.error('[transport] lick cue failed:', e.message); return; }
+  if (!isCell(noun) || cordOf(atomBig(noun.head)) !== 'ames-out') return;
+  const who = atomBig(noun.tail.head);
+  const lane = noun.tail.tail.head;
+  const bytes = atomToLeBuf(atomBig(noun.tail.tail.tail));
+  const from = moonByNum.get(who) || String(who);
+  const tag = atomBig(lane.head);              // 0 = %.y ship, 1 = %.n addr
+  const val = atomBig(lane.tail);
+  if (tag === 1n) {                            // direct-address lane
+    const la = decodeLaneBig(val);
+    if (!la) return;
+    sock.send(bytes, la.port, la.addr, (e) => { if (e) console.error('[transport] direct send err:', e); });
+    console.log(`[transport] OUT ~${from} -> direct ${la.addr}:${la.port} ${bytes.length}B`);
+    return;
+  }
+  if (moonByNum.has(val)) return;              // internal virtual<->virtual
+  const N = Number(val);
+  if (N >= 0 && N < 256) { sendToGalaxy(GALAXIES[N], N, bytes, from); return; }
+  const p = gatewayShip && peers.get(gatewayShip);   // non-galaxy ship -> gateway
+  if (!p) { console.log(`[transport] OUT ~${from} no route (ship ${N}), drop`); return; }
+  sock.send(bytes, p.port, p.addr, (e) => { if (e) console.error('[transport] gw send err:', e); });
+  console.log(`[transport] OUT ~${from} -> ~${stripSig(gatewayShip)} gateway ${bytes.length}B`);
+}
+
+// inbound: a UDP packet -> %soak [%ames-in [who from addr blob]] over lick
+function onUdpLick(buf) {
+  const s = parseShot(buf);
+  let who;
+  if (s && moonByNum.has(s.rcvr)) who = s.rcvr;
+  else if (moonByNum.size === 1) who = [...moonByNum.keys()][0];
+  else { if (s) console.log(`[transport] inbound unknown rcvr ${s.rcvr}; drop`); return; }
+  if (!lickConn) return;
+  const A = (v) => Atom.fromInt(v);
+  const noun = new Cell(Atom.fromCord('ames-in'),
+                new Cell(A(who), new Cell(A(hostNum), new Cell(A(0n), A(leToBig(buf))))));
+  const jb = Buffer.from(jam(noun).bytes());
+  const frame = Buffer.alloc(5 + jb.length);   // [0x00][u32 LE len][jam]
+  frame.writeUInt32LE(jb.length, 1);
+  jb.copy(frame, 5);
+  lickConn.write(frame);
+  console.log(`[transport] IN  -> ~${moonByNum.get(who) || who} ${buf.length}B`);
+}
+
+function atomBig(x) { for (const k of ['number', 'big', 'n', 'value']) if (typeof x[k] === 'bigint') return x[k]; const v = x.valueOf && x.valueOf(); return typeof v === 'bigint' ? v : 0n; }
+function cordOf(bn) { let s = ''; while (bn > 0n) { s += String.fromCharCode(Number(bn & 0xffn)); bn >>= 8n; } return s; }
+function atomToLeBuf(bn) { const b = []; while (bn > 0n) { b.push(Number(bn & 0xffn)); bn >>= 8n; } return Buffer.from(b); }
+function decodeLaneBig(val) {
+  const ip = Number(val & 0xffffffffn), port = Number((val >> 32n) & 0xffffn);
+  const a = (ip >>> 24) & 0xff, b = (ip >>> 16) & 0xff, c = (ip >>> 8) & 0xff, d = ip & 0xff;
+  if (!port || (a === 0 && b === 0 && c === 0 && d === 0)) return null;
+  return { addr: `${a}.${b}.${c}.${d}`, port };
+}
 
 // ---- Eyre channel plumbing ---------------------------------------------
 function parseArgs(argv) {

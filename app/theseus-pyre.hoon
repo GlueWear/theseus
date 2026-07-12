@@ -124,9 +124,19 @@
   ::
       [%bind ~]  ?>(?=([%eyre %bound %.y *] sign-arvo) `this)
   ::
-      ::  lick /ames port: spin ack + %soak (connect/disconnect for now;
-      ::  inbound packets get handled here in P2).
-      [%ames ~]  `this
+      ::  lick /ames port. %spin ack + %connect/%disconnect soaks are ignored;
+      ::  an %ames-in %soak is an inbound packet from the sidecar -> inject it
+      ::  into the moon (poke %theseus with the same %ames-inbound action the
+      ::  eyre path used, but as a real noun -- no JSON, no dejs).
+      [%ames ~]
+    ?.  ?=([%lick %soak *] sign-arvo)  `this
+    ?.  =(%ames-in mark.sign-arvo)     `this
+    =/  inb  ;;([who=@p from=@p addr=@ blob=@] noun.sign-arvo)
+    =/  =lane:ames  ?:(=(0 addr.inb) [%& from.inb] [%| addr.inb])
+    :_  this
+    :~  :*  %pass  /ames/in  %agent  [our.bowl %theseus]  %poke
+            %theseus-action  !>(`action`[%ames-inbound who.inb lane blob.inb])
+    ==  ==
   ==
 ::
 ++  on-agent  on-agent:def
