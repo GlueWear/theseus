@@ -99,6 +99,9 @@ const lickSocket = args['lick-socket'] || '';
 // host planet @p number = low 32 bits of any served moon's number. Used as the
 // `from` on inbound lick frames (matches the eyre path's sponsor-routed lane).
 const hostNum = moonByNum.size ? ([...moonByNum.keys()][0] & 0xffffffffn) : 0n;
+// connected lick socket -- declared here (before setupLickTransport runs) to
+// avoid a temporal-dead-zone ReferenceError.
+let lickConn = null;
 
 let eventId = 1;
 let lastSeenId = 0;   // highest channel event id received
@@ -363,7 +366,6 @@ function addPeer(who, hostport) {
 function firstPeerShip() { const k = peers.keys().next().value; return k || '~zod'; }
 
 // ---- lick transport (P2): native IPC over the /ames unix socket ---------
-let lickConn = null;
 async function setupLickTransport(sockPath) {
   console.log(`[transport] lick mode -> ${sockPath}`);
   await new Promise((resolve) => {
