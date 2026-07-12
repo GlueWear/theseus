@@ -16,10 +16,20 @@
 ++  on-init
   ^-  (quip card _this)
   :_  this
-  [%pass /bind %arvo %e %connect `/theseus %theseus-pyre]~
+  :~  [%pass /bind %arvo %e %connect `/theseus %theseus-pyre]
+      ::  lick migration: open the /ames IPC port. vere materializes the socket
+      ::  at <pier>/.urb/dev/theseus-pyre/ames (Gall prefixes the agent name).
+      [%pass /ames %arvo %l %spin /ames]
+  ==
 ::
 ++  on-save  on-save:def
-++  on-load  on-load:def
+++  on-load
+  |=  =vase
+  ^-  (quip card _this)
+  ::  on-init does NOT run on a code upgrade, so (re)open the /ames lick port
+  ::  here too -- otherwise every %spit fails with "gen ... not found".
+  :_  this
+  [%pass /ames %arvo %l %spin /ames]~
 ++  on-poke
   |=  [=mark =vase]
   ^-  (quip card _this)
@@ -43,7 +53,11 @@
       ::  Just emit the fact; the sidecar carries the packet out and the
       ::  real response returns via a %ames-inbound poke.
       :_  this
-      ~[[%give %fact ~[/ames/outbound] %theseus-update !>(out)]]
+      :~  [%give %fact ~[/ames/outbound] %theseus-update !>(out)]
+          ::  P1 dual-emit: also spit the raw packet over lick, for parity with
+          ::  the eyre fact.  noun = [who lane blob].
+          [%pass /ames %arvo %l %spit /ames %ames-out [who.ef p.q.uf.ef q.q.uf.ef]]
+      ==
     ::  behn
         %doze
       =^  cards  behn-piers
@@ -109,6 +123,10 @@
     [cards this]
   ::
       [%bind ~]  ?>(?=([%eyre %bound %.y *] sign-arvo) `this)
+  ::
+      ::  lick /ames port: spin ack + %soak (connect/disconnect for now;
+      ::  inbound packets get handled here in P2).
+      [%ames ~]  `this
   ==
 ::
 ++  on-agent  on-agent:def

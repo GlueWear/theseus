@@ -1,0 +1,9 @@
+{
+  "name": "theseus-deploy",
+  "private": true,
+  "type": "module",
+  "description": "node-side helpers for the theseus transport (sidecar, broker, lick)",
+  "dependencies": {
+    "@urbit/nockjs": "^1.4.0"
+  }
+}
