@@ -34,6 +34,78 @@
     ++  arvo-adult  ..^load:+>.arvo-core
     ++  clay-types  (clay-core *ship)
     ++  gall-type   (tail (gall-core *ship))
+    ::  +fine-req-path: parse an inbound Ames blob; if it is a %fine REQUEST
+    ::  packet, produce [requester sndr-tick rcvr-tick origin requested-path],
+    ::  else ~.  Inlined from lull +sift-shot / +sift-wail because gall agents don't
+    ::  expose lull's arms.  Header (low 32 bits, LE): bit2=req bit3=sam (loobean,
+    ::  wire-bit 0 = yes); ranks at [7 2]/[9 2]; relayed at [31 1].
+    ++  fine-req-path
+      |=  blob=@
+      ^-  (unit [sndr=ship stik=@ rtik=@ origin=(unit @) pax=path])
+      =/  header  (end 5 blob)
+      ?.  ?&  =(0 (cut 0 [2 1] header))       ::  req = yes
+              =(1 (cut 0 [3 1] header))       ::  sam = no
+          ==
+        ~
+      =/  sndr-size  (bex +((cut 0 [7 2] header)))
+      =/  rcvr-size  (bex +((cut 0 [9 2] header)))
+      =/  relayed    =(1 (cut 0 [31 1] header))
+      =/  body0  (rsh 5 blob)
+      ::  relayed packets carry a 6-byte origin (the requester's real transport
+      ::  address) at the low end of the body -- respond to it as a direct lane
+      ::  so we don't have to DNS-dial the requesting ship.
+      =/  origin  ?:(relayed `(end [3 6] body0) ~)
+      =/  body   ?:(relayed (rsh [3 6] body0) body0)
+      =/  stik   (cut 0 [0 4] body)           ::  request sndr-tick (requester life)
+      =/  rtik   (cut 0 [4 4] body)           ::  request rcvr-tick (moon life)
+      =/  sndr   `@p`(cut 3 [1 sndr-size] body)
+      =/  off    (add 1 (add sndr-size rcvr-size))
+      =/  content  (cut 3 [off (sub (met 3 body) off)] body)
+      ::  wire wail = tag byte (0) + path text directly (no num/wid fields).
+      ?.  =(0 (end 3 content))  ~
+      =/  h2  (rsh 3 content)                 ::  drop the tag byte -> path text
+      =/  pax=(unit path)
+        (rush h2 ;~(pfix fas (most fas (cook crip (star ;~(less fas prn))))))
+      ?~  pax  ~
+      `[sndr stik rtik origin u.pax]
+    ::  +etch-response: build a %fine RESPONSE packet blob (inlined lull
+    ::  +etch-shot + ames +etch-peep).  content = purr = peep ++ meow(yowl).
+    ::  Response is sndr=moon rcvr=requester, req=%.n sam=%.n, ticks swapped
+    ::  from the request (response sndr-tick = request rcvr-tick, etc).
+    ++  etch-response
+      |=  [moon=ship rcvr=ship stik=@ rtik=@ frag=@ud pax=path yowl=@]
+      ^-  @
+      ::  peep = num(4) + wid(2) + path-text(wid)
+      =/  pat  (spat pax)
+      =/  wid  (met 3 pat)
+      =/  peep  (can 3 ~[4^frag 2^wid wid^`@`pat])
+      =/  content  (mix peep (lsh [3 (met 3 peep)] yowl))
+      ::  ship-meta -> [size rank]
+      =/  ssz  (met 3 moon)
+      =/  smt  ?:((lte ssz 2) [2 0] ?:((lte ssz 4) [4 1] ?:((lte ssz 8) [8 2] [16 3])))
+      =/  rsz  (met 3 rcvr)
+      =/  rmt  ?:((lte rsz 2) [2 0] ?:((lte rsz 4) [4 1] ?:((lte rsz 8) [8 2] [16 3])))
+      =/  body=@
+        ;:  mix
+          rtik                                ::  response sndr-tick = req rcvr-tick
+          (lsh 2 stik)                        ::  response rcvr-tick = req sndr-tick
+          (lsh 3 moon)
+          (lsh [3 +(-.smt)] rcvr)
+          (lsh [3 +((add -.smt -.rmt))] content)
+        ==
+      =/  cksum  (end [0 20] (mug body))
+      =/  head=@
+        %+  can  0
+        :~  [2 0]                             ::  reserved
+            [1 1]                             ::  req = %.n
+            [1 1]                             ::  sam = %.n
+            [3 0]                             ::  protocol-version %0
+            [2 +.smt]                         ::  sndr rank
+            [2 +.rmt]                         ::  rcvr rank
+            [20 cksum]
+            [1 0]                             ::  relayed = no
+        ==
+      (mix head (lsh 5 body))
     +$  pier
       $:  snap=_arvo-adult
           event-log=(list unix-timed-event)
@@ -554,6 +626,35 @@
       %ames-inbound
     ?.  (~(has by piers) who.act)
       `state
+    ::  serve-fine.  A %fine REQUEST packet is normally answered by vere;
+    ::  injecting it as %hear bails the moon's ames (%request-events-forbidden).
+    ::  Instead of injecting, we play vere's fine-responder role: scry the moon's
+    ::  OWN /x/fine/hunk endpoint (it signs with its own key), packetize the
+    ::  signed fragments, and send them back to the requester.  The moon kernel
+    ::  stays untouched.  Non-fine packets fall through to the %hear path below.
+    =/  fr  (fine-req-path blob.act)
+    ?^  fr
+      ::  request up to 64 fragments; fine/hunk returns one signed yowl (meow)
+      ::  per fragment, capped at the data's real fragment count.
+      =/  res  (remote-scry:(pe who.act) [%fine %hunk '1' '64' pax.u.fr])
+      ?~  res  `state              ::  absent path -> no response, like vere
+      ?~  u.res  `state
+      =/  yowls  !<((list @) q.u.u.res)
+      ?~  yowls  `state
+      ::  respond to the origin (direct NAT-punch lane) if relayed, else the ship
+      =/  lane  ?~(origin.u.fr [%& sndr.u.fr] [%| u.origin.u.fr])
+      ::  emit one response packet per fragment, each tagged with its 1-based index
+      =.  this  apex-theseus  =<  abet-theseus
+      =.  this
+        =/  pc  (pe who.act)
+        =/  fs=(list @)  yowls
+        =/  ix=@ud  1
+        |-  ^+  this
+        ?~  fs  abet-pe:pc
+        =/  bl  (etch-response who.act sndr.u.fr stik.u.fr rtik.u.fr ix pax.u.fr i.fs)
+        =.  pc  (publish-effect:pc [/ %send lane bl])
+        $(fs t.fs, ix +(ix))
+      (pe who.act)
     =.  this  apex-theseus  =<  abet-theseus
     =.  this
       =<  abet-pe:plow

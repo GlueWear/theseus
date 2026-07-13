@@ -176,10 +176,18 @@
         %ames-outbound
       %-  pairs
       :~  [%ship s+(scot %p who.update)]
+          ::  ship-name lane ([%.y ship]) -> lane-ship; raw-address lane
+          ::  ([%.n addr]) -> lane-addr.  The sidecar prefers lane-addr (direct
+          ::  transmit) and falls back to lane-ship (route via gateway).
           :-  %lane-ship
           ?-  -.lane.update
             %&  s+(scot %p p.lane.update)
             %|  ~
+          ==
+          :-  %lane-addr
+          ?-  -.lane.update
+            %&  ~
+            %|  s+(scot %ux p.lane.update)
           ==
           [%lane-jam s+(scot %ux (jam lane.update))]
           [%blob s+(scot %ux blob.update)]
@@ -265,11 +273,18 @@
   ::  (as `scot %ux` emits); decode with `slav %ux`.
   ++  bl  |=(jon=json ?>(?=([%s *] jon) (slav %ux p.jon)))
   ::
+  ::  addr is the sender's raw transport address (from the sidecar's UDP
+  ::  source).  If present, hand the moon a direct-address lane [%.n addr] so
+  ::  it learns the peer's REAL address and routes there directly, like a
+  ::  NAT'd ship — instead of only a name ([%.y from]) which forces a galaxy
+  ::  detour.  addr=0 falls back to the ship lane.
   ++  ames-inbound
     |=  jon=json
-    =/  dat=[who=ship from=ship blob=@]
-      ((ot ~[[%who (se %p)] [%from (se %p)] [%blob bl]]) jon)
-    [who.dat [%& from.dat] blob.dat]
+    =/  dat=[who=ship from=ship addr=@ blob=@]
+      ((ot ~[[%who (se %p)] [%from (se %p)] [%addr bl] [%blob bl]]) jon)
+    =/  =lane:ames
+      ?:(=(0 addr.dat) [%& from.dat] [%| addr.dat])
+    [who.dat lane blob.dat]
   ::
   ++  ames-test-inbound
     |=  jon=json

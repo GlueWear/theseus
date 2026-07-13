@@ -131,11 +131,14 @@
       [%ames ~]
     ?.  ?=([%lick %soak *] sign-arvo)  `this
     ?.  =(%ames-in mark.sign-arvo)     `this
-    =/  inb  ;;([who=@p from=@p addr=@ blob=@] noun.sign-arvo)
-    =/  =lane:ames  ?:(=(0 addr.inb) [%& from.inb] [%| addr.inb])
+    =/  inb  ;;([who=@p from=@p addr=@ux blob=@] noun.sign-arvo)
+    ::  build the lane inline ([%& ship] / [%| addr]); the `action` cast below
+    ::  types it as lane:ames.  (Can't write lane:ames here -- theseus-pyre has
+    ::  its own dead ++ames core that shadows lull's, so lane:ames doesn't find.)
+    =/  lan  ?:(=(0 addr.inb) [%& from.inb] [%| addr.inb])
     :_  this
     :~  :*  %pass  /ames/in  %agent  [our.bowl %theseus]  %poke
-            %theseus-action  !>(`action`[%ames-inbound who.inb lane blob.inb])
+            %theseus-action  !>(`action`[%ames-inbound who.inb lan blob.inb])
     ==  ==
   ==
 ::

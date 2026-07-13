@@ -418,7 +418,9 @@ function onLickOut(payload) {
   console.log(`[transport] OUT ~${from} -> ~${stripSig(gatewayShip)} gateway ${bytes.length}B`);
 }
 
-// inbound: a UDP packet -> %soak [%ames-in [who from addr blob]] over lick
+// inbound: a UDP packet -> %soak [%ames-in [who from addr blob]] over lick.
+// %fine remote-scry requests are intercepted + served in app/theseus.hoon (the
+// moon signs its own response); the sidecar just carries every packet through.
 function onUdpLick(buf) {
   const s = parseShot(buf);
   let who;
