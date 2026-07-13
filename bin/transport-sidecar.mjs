@@ -280,8 +280,9 @@ function onUdp(buf, rinfo) {
 function pickMoon(buf) {
   const s = parseShot(buf);
   if (s && moonByNum.has(s.rcvr)) return moonByNum.get(s.rcvr);
+  if (s && moonByNum.has(s.rcvrRelayed)) return moonByNum.get(s.rcvrRelayed);
   if (moons.size === 1) return [...moons][0];   // one moon -> unambiguous
-  if (s) console.log(`[transport] inbound for unknown receiver ${s.rcvr}; drop`);
+  if (s) console.log(`[transport] inbound for unknown receiver ${s.rcvr}/${s.rcvrRelayed}; drop`);
   return null;
 }
 
@@ -293,10 +294,15 @@ function parseShot(buf) {
   if (!buf || buf.length < 6) return null;
   const sndrSize = RANK_BYTES[((buf[0] >> 7) & 1) | ((buf[1] & 1) << 1)];
   const rcvrSize = RANK_BYTES[(buf[1] >> 1) & 3];
+  // body = [origin(6, relayed only)] + tick(1) + sndr + rcvr + content. Packets
+  // arrive in two layouts (with/without the 6-byte relayed origin), and the
+  // header's relayed bit is unreliable to decode here, so we compute the
+  // receiver @p at BOTH offsets and let the caller route to whichever matches a
+  // known moon. Verified against live traffic: doznec's @p lands at the plain
+  // offset for most packets and at +6 for the relayed ones.
+  const rcvrAt = (b) => leToBig(b.subarray(1 + sndrSize, 1 + sndrSize + rcvrSize));
   const body = buf.subarray(4);
-  const sndr = leToBig(body.subarray(1, 1 + sndrSize));
-  const rcvr = leToBig(body.subarray(1 + sndrSize, 1 + sndrSize + rcvrSize));
-  return { sndr, rcvr };
+  return { rcvr: rcvrAt(body), rcvrRelayed: rcvrAt(body.subarray(6)) };
 }
 function loadMoonsMap(a) {
   const out = {};
@@ -423,10 +429,12 @@ function onLickOut(payload) {
 // moon signs its own response); the sidecar just carries every packet through.
 function onUdpLick(buf) {
   const s = parseShot(buf);
+  // route by receiver @p, trying both packet layouts (plain / +6 relayed origin)
   let who;
   if (s && moonByNum.has(s.rcvr)) who = s.rcvr;
+  else if (s && moonByNum.has(s.rcvrRelayed)) who = s.rcvrRelayed;
   else if (moonByNum.size === 1) who = [...moonByNum.keys()][0];
-  else { if (s) console.log(`[transport] inbound unknown rcvr ${s.rcvr}; drop`); return; }
+  else { if (s) console.log(`[transport] inbound unknown rcvr ${s.rcvr}/${s.rcvrRelayed}; drop`); return; }
   if (!lickConn) return;
   const A = (v) => Atom.fromInt(v);
   const noun = new Cell(Atom.fromCord('ames-in'),
