@@ -39,14 +39,21 @@
     ::  else ~.  Inlined from lull +sift-shot / +sift-wail because gall agents don't
     ::  expose lull's arms.  Header (low 32 bits, LE): bit2=req bit3=sam (loobean,
     ::  wire-bit 0 = yes); ranks at [7 2]/[9 2]; relayed at [31 1].
+    ::  +is-fine-req: cheap header-only test -- is this a %fine REQUEST packet?
+    ::  (req=yes bit2=0, sam=no bit3=1).  Distinct from fine-req-path, which
+    ::  ALSO parses the scry path and can fail on request shapes we don't serve
+    ::  yet.  A fine-request must NEVER be injected as %hear (ames bails), even
+    ::  when we can't parse/serve it -- so the handler gates on this first.
+    ++  is-fine-req
+      |=  blob=@
+      ^-  ?
+      =/  header  (end 5 blob)
+      &(=(0 (cut 0 [2 1] header)) =(1 (cut 0 [3 1] header)))
     ++  fine-req-path
       |=  blob=@
       ^-  (unit [sndr=ship stik=@ rtik=@ origin=(unit @) pax=path])
+      ?.  (is-fine-req blob)  ~
       =/  header  (end 5 blob)
-      ?.  ?&  =(0 (cut 0 [2 1] header))       ::  req = yes
-              =(1 (cut 0 [3 1] header))       ::  sam = no
-          ==
-        ~
       =/  sndr-size  (bex +((cut 0 [7 2] header)))
       =/  rcvr-size  (bex +((cut 0 [9 2] header)))
       =/  relayed    =(1 (cut 0 [31 1] header))
@@ -655,6 +662,9 @@
         =.  pc  (publish-effect:pc [/ %send lane bl])
         $(fs t.fs, ix +(ix))
       (pe who.act)
+    ::  a %fine request we could NOT parse/serve: drop it, never inject %hear
+    ::  (any fine-request bails the moon's ames).  vere would just decline it.
+    ?:  (is-fine-req blob.act)  `state
     =.  this  apex-theseus  =<  abet-theseus
     =.  this
       =<  abet-pe:plow
