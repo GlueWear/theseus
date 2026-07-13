@@ -26,10 +26,13 @@
 ++  on-load
   |=  =vase
   ^-  (quip card _this)
-  ::  on-init does NOT run on a code upgrade, so (re)open the /ames lick port
-  ::  here too -- otherwise every %spit fails with "gen ... not found".
+  ::  on-init does NOT run on a code upgrade, so (re)do its setup here too --
+  ::  otherwise these are lost across upgrades: %spit fails ("gen not found"),
+  ::  and the /theseus eyre bridge 404s (browser access to moons breaks).
   :_  this
-  [%pass /ames %arvo %l %spin /ames]~
+  :~  [%pass /ames %arvo %l %spin /ames]
+      [%pass /bind %arvo %e %connect `/theseus %theseus-pyre]
+  ==
 ++  on-poke
   |=  [=mark =vase]
   ^-  (quip card _this)
@@ -122,7 +125,9 @@
       abet:(take-sigh-httr:(iris:hc who) num red fuf)
     [cards this]
   ::
-      [%bind ~]  ?>(?=([%eyre %bound %.y *] sign-arvo) `this)
+      ::  bind ack. on-load re-issues %connect every upgrade; eyre returns
+      ::  %.n when /theseus is already bound to us -- that's fine, don't crash.
+      [%bind ~]  ?>(?=([%eyre %bound *] sign-arvo) `this)
   ::
       ::  lick /ames port. %spin ack + %connect/%disconnect soaks are ignored;
       ::  an %ames-in %soak is an inbound packet from the sidecar -> inject it

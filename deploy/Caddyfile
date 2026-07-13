@@ -36,7 +36,7 @@ http://*.lvh.me:8090 {
 	# everything else -> the moon, via the /theseus bridge
 	handle {
 		rewrite * /theseus/~{http.request.host.labels.2}{uri}
-		reverse_proxy localhost:80 {
+		reverse_proxy localhost:8085 {
 			# match what worked via curl (the /theseus binding is path-based,
 			# so upstream Host is cosmetic). Browser origin stays the
 			# subdomain, which is what scopes cookies.

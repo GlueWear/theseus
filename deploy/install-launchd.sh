@@ -15,6 +15,10 @@ AGENTS="$HOME/Library/LaunchAgents"
 CADDY="$(command -v caddy || true)"
 NODE="$(command -v node || true)"
 GUID="gui/$(id -u)"
+# broker: host planet's Eyre URL (mignes-magtel = :8085; disden was :80) and the
+# per-moon post-login landing path (noltbook's Landscape app path).
+BROKER_HOST_URL="${BROKER_HOST_URL:-http://localhost:8085}"
+BROKER_LANDING="${BROKER_LANDING:-/apps/noltbook/}"
 
 mkdir -p "$AGENTS"
 
@@ -58,7 +62,7 @@ else
 fi
 
 if [ -n "$NODE" ]; then
-  write_plist com.theseus.broker "$DEPLOY/broker.launchd.log" "$NODE" "$DEPLOY/broker.mjs" --moons-file "$DEPLOY/broker-moons.json" --landing /
+  write_plist com.theseus.broker "$DEPLOY/broker.launchd.log" "$NODE" "$DEPLOY/broker.mjs" --moons-file "$DEPLOY/broker-moons.json" --host-url "$BROKER_HOST_URL" --landing "$BROKER_LANDING"
 else
   echo "WARNING: node not found; skipping broker agent"
 fi
