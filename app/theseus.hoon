@@ -58,7 +58,8 @@
       =/  header  (end 5 blob)
       =/  sndr-size  (bex +((cut 0 [7 2] header)))
       =/  rcvr-size  (bex +((cut 0 [9 2] header)))
-      =/  relayed    =(1 (cut 0 [31 1] header))
+      ::  The wire bit is loobean: 0 means yes/relayed, 1 means no.
+      =/  relayed    =(0 (cut 0 [31 1] header))
       =/  body0  (rsh 5 blob)
       ::  relayed packets carry a 6-byte origin (the requester's real transport
       ::  address) at the low end of the body -- respond to it as a direct lane
@@ -649,8 +650,31 @@
       %ames-inbound
     ?.  (~(has by piers) who.act)
       `state
-    ::  TEMP 408 smoke-test: serve-fine is disabled, but fine requests must
-    ::  still be dropped.  Injecting a fine request as %hear bails Ames.
+    ::  A %fine request is normally answered by vere before Arvo sees it.
+    ::  Virtual moons have no vere, so ask the moon's own /x/fine/hunk
+    ::  responder to scry and sign the requested data, then carry each signed
+    ::  fragment back through the existing sidecar.  Never inject a fine
+    ::  request as %hear: Ames deliberately rejects that event shape.
+    =/  fr  (fine-req-path blob.act)
+    ?^  fr
+      =/  res  (remote-scry:(pe who.act) [%fine %hunk '1' '64' pax.u.fr])
+      ?~  res  `state
+      ?~  u.res  `state
+      =/  yowls  !<((list @) q.u.u.res)
+      ?~  yowls  `state
+      =/  lane  ?~(origin.u.fr [%& sndr.u.fr] [%| u.origin.u.fr])
+      =.  this  apex-theseus  =<  abet-theseus
+      =.  this
+        =/  pc  (pe who.act)
+        =/  fs=(list @)  yowls
+        =/  ix=@ud  1
+        |-  ^+  this
+        ?~  fs  abet-pe:pc
+        =/  bl
+          (etch-response who.act sndr.u.fr stik.u.fr rtik.u.fr ix pax.u.fr i.fs)
+        =.  pc  (publish-effect:pc [/ %send lane bl])
+        $(fs t.fs, ix +(ix))
+      (pe who.act)
     ?:  (is-fine-req blob.act)  `state
     =.  this  apex-theseus  =<  abet-theseus
     =.  this
