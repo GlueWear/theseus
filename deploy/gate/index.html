@@ -66,10 +66,10 @@
            onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'missing',textContent:'[ save your trolley image to deploy/gate/trolley.png ]'}))" />
     </div>
     <p class="prompt">
-      You control the lever which decides the direction of the trolley's future.
-      If you <b>do nothing</b>, the trolley stays on the predictable, continuous
-      loop &mdash; forever. If you <b>pull the lever</b>, the trolley makes history.
-      <span class="aside">(and runs over a few people)*</span>
+      You control the lever that decides the trolley's future. <b>Do nothing</b>,
+      and it remains on its predictable, endless loop forever. <b>Pull the lever</b>,
+      and the trolley makes history.
+      <span class="aside">(and runs over a few people.)</span>
     </p>
     <div class="buttons">
       <button class="lever" onclick="doNothing()">Do nothing</button>
@@ -95,8 +95,9 @@
   function pullLever() {
     var n = document.getElementById('note');
     n.textContent = "History it is. Booting your moon…";
-    // hand off to the broker, which logs you into your moon
-    window.location.href = '/broker';
+    // hand off to the broker's assigner, which picks a free moon from the pool
+    // and redirects you to its subdomain /broker (code-free login).
+    window.location.href = '/assign';
   }
 </script>
 </body>

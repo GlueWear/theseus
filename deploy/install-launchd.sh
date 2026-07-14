@@ -15,10 +15,14 @@ AGENTS="$HOME/Library/LaunchAgents"
 CADDY="$(command -v caddy || true)"
 NODE="$(command -v node || true)"
 GUID="gui/$(id -u)"
-# broker: host planet's Eyre URL (mignes-magtel = :8085; disden was :80) and the
+# broker: host planet's Eyre URL (mignes-magtel = :8082; disden was :80) and the
 # per-moon post-login landing path (noltbook's Landscape app path).
-BROKER_HOST_URL="${BROKER_HOST_URL:-http://localhost:8085}"
+BROKER_HOST_URL="${BROKER_HOST_URL:-http://localhost:8082}"
 BROKER_LANDING="${BROKER_LANDING:-/apps/noltbook/}"
+# assignment: public wildcard base for building the assigned-moon redirect URL,
+# and the JSON file tracking which pool moons are already claimed.
+BROKER_PUBLIC_BASE="${BROKER_PUBLIC_BASE:-100-10-2-63.nip.io}"
+BROKER_ASSIGN_FILE="${BROKER_ASSIGN_FILE:-$DEPLOY/broker-assignments.json}"
 
 mkdir -p "$AGENTS"
 
@@ -62,7 +66,7 @@ else
 fi
 
 if [ -n "$NODE" ]; then
-  write_plist com.theseus.broker "$DEPLOY/broker.launchd.log" "$NODE" "$DEPLOY/broker.mjs" --moons-file "$DEPLOY/broker-moons.json" --host-url "$BROKER_HOST_URL" --landing "$BROKER_LANDING"
+  write_plist com.theseus.broker "$DEPLOY/broker.launchd.log" "$NODE" "$DEPLOY/broker.mjs" --moons-file "$DEPLOY/broker-moons.json" --host-url "$BROKER_HOST_URL" --landing "$BROKER_LANDING" --public-base "$BROKER_PUBLIC_BASE" --scheme https --assignments-file "$BROKER_ASSIGN_FILE"
 else
   echo "WARNING: node not found; skipping broker agent"
 fi

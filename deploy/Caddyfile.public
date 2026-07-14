@@ -1,0 +1,116 @@
+# Theseus PUBLIC web access — internet-reachable demo via port-forward + nip.io.
+#
+# No domain purchase: nip.io gives free wildcard DNS off your public IP.
+#   <moon-@p>.100-10-2-63.nip.io  ->  100.10.2.63  (your house)  ->  router
+#   ->  this Mac's Caddy  ->  the /theseus bridge for that moon.
+#
+# TLS: Caddy auto-fetches a real Let's Encrypt cert PER moon-hostname via the
+# TLS-ALPN-01 challenge (all on 443), so port 80 stays free for the legacy
+# disden ship. No root needed: Caddy serves HTTPS on 8443 and the ROUTER maps
+# public 443 -> 192.168.1.169:8443.
+#
+# ROUTER PORT-FORWARD REQUIRED (do this in your router admin):
+#   external TCP 443  ->  192.168.1.169 : 8443
+# (If your router can only forward same-port 443->443, tell me — we switch to
+#  Caddy-on-443 which needs sudo.)
+#
+# Run:  caddy run --config deploy/Caddyfile.public
+# Test: from your PHONE ON CELLULAR (home routers usually block hairpin NAT, so
+#       the public hostname often won't resolve back to you from your own wifi).
+#
+# Label index: host "dozbud-mignes-magtel.100-10-2-63.nip.io" splits into
+#   io(0) nip(1) 100-10-2-63(2) dozbud-mignes-magtel(3)  ->  moon = labels.3.
+# Add a new moon = add its full hostname to the site address list below.
+
+{
+	# Don't spawn the :80 HTTP-redirect vhost (disden owns :80). Auto-HTTPS
+	# still provisions certs; we just skip the http->https redirect listener.
+	auto_https disable_redirects
+	# Serve HTTPS on 8443 (unprivileged); router maps public 443 -> 8443.
+	https_port 8443
+	# HTTP/3 (QUIC/UDP) isn't forwarded and just muddies TLS-ALPN; drop it.
+	servers {
+		protocols h1 h2
+	}
+}
+
+# --- ENTRY host: the shareable link. Captcha gate -> /assign picks a free
+#     moon from the pool and redirects the visitor to that moon's /broker. ---
+join.100-10-2-63.nip.io {
+	tls {
+		issuer acme {
+			dir https://acme-v02.api.letsencrypt.org/directory
+			disable_http_challenge
+		}
+	}
+	# /gate -> captcha landing (shareable link). "Pull lever" -> /assign.
+	@gate path /gate /gate/*
+	handle @gate {
+		root * /Users/chris/Enviorment/urbit-dev/ships/zod/theseus/deploy/gate
+		uri strip_prefix /gate
+		file_server
+	}
+	# /assign -> broker picks a free moon, 302 to <moon>.<base>/broker
+	@assign path /assign /assign/*
+	handle @assign {
+		reverse_proxy localhost:8091
+	}
+	# bare / -> the gate
+	handle {
+		redir / /gate/ 302
+		respond 404
+	}
+}
+
+# --- PUBLIC moons (one hostname per live moon) ---------------------------
+dozbud-mignes-magtel.100-10-2-63.nip.io,
+doznec-mignes-magtel.100-10-2-63.nip.io {
+	# Only 443->8443 is forwarded (not 80), so force the TLS-ALPN-01 challenge
+	# (all on 443) and disable HTTP-01 (which would need port 80 open).
+	tls {
+		issuer acme {
+			dir https://acme-v02.api.letsencrypt.org/directory
+			disable_http_challenge
+		}
+	}
+	# /gate -> captcha landing (the shareable link); "pull lever" -> /broker.
+	@gate path /gate /gate/*
+	handle @gate {
+		root * /Users/chris/Enviorment/urbit-dev/ships/zod/theseus/deploy/gate
+		uri strip_prefix /gate
+		file_server
+	}
+	# /broker -> code-free login service; sets the moon's session cookie
+	# server-side. Must be on this subdomain origin so the cookie scopes right.
+	@broker path /broker /broker/*
+	handle @broker {
+		reverse_proxy localhost:8091
+	}
+	# everything else -> the moon, via the /theseus bridge on mignes Eyre.
+	handle {
+		rewrite * /theseus/~{http.request.host.labels.3}{uri}
+		reverse_proxy localhost:8082 {
+			header_up Host localhost
+		}
+	}
+}
+
+# --- LOCAL dev (lvh.me on :8090, unchanged) — moon = labels.2 -----------
+http://*.lvh.me:8090 {
+	@gate path /gate /gate/*
+	handle @gate {
+		root * /Users/chris/Enviorment/urbit-dev/ships/zod/theseus/deploy/gate
+		uri strip_prefix /gate
+		file_server
+	}
+	@broker path /broker /broker/*
+	handle @broker {
+		reverse_proxy localhost:8091
+	}
+	handle {
+		rewrite * /theseus/~{http.request.host.labels.2}{uri}
+		reverse_proxy localhost:8082 {
+			header_up Host localhost
+		}
+	}
+}

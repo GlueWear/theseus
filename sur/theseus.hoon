@@ -4,6 +4,14 @@
 ::  'timed' events/effects include the time of the event, used for logs
 ::
 |%
+::  Structural copy of +lane:pact from 408 %lull packet serialization.
+::  We keep it local because +pact is not directly name-resolvable from this sur.
+::
++$  mesa-lane  $@  @ux
+               $%  [%if p=@ifF q=@udE]
+                   [%is p=@isH q=@udE]
+               ==
+::
 ::  like unix-event:pill-lib but for all tasks
 ::
 +$  unix-event
@@ -80,6 +88,9 @@
       ::  sidecar -> virtual Ames packet injection.  The sidecar should not need
       ::  to know Theseus' internal newt wire; it supplies target moon, lane, blob.
       [%ames-inbound who=ship lane=lane:ames blob=@]
+      ::  Mesa-era inbound packet injection. 408 Ames receives pact packets via
+      ::  %heer with a pact lane, distinct from legacy %hear/+.lane.
+      [%mesa-inbound who=ship lane=mesa-lane blob=@]
       ::  sidecar smoke-test path.  This proves the outbound fact -> sidecar ->
       ::  inbound poke loop without claiming the blob is a valid Ames packet.
       [%ames-test-inbound who=ship from=ship blob=@]
@@ -102,6 +113,7 @@
 ::  runtime coercion crashes.  Widened to $action at compile time in on-poke.
 +$  ames-in
   $%  [%ames-inbound who=ship lane=lane:ames blob=@]
+      [%mesa-inbound who=ship lane=mesa-lane blob=@]
       [%ames-test-inbound who=ship from=ship blob=@]
   ==
 ::

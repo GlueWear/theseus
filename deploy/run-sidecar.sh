@@ -21,13 +21,13 @@ SIDECAR="$HERE/bin/transport-sidecar.mjs"
 LOG="${LOG:-$HERE/deploy/sidecar.log}"
 
 # --- config (override via env) ------------------------------------------
-HOST_SHIP="${HOST_SHIP:-disden-talhes}"
-HOST_PIER="${HOST_PIER:-/Users/chris/disden-talhes}"
-HOST_URL="${HOST_URL:-http://localhost:80}"
-MOON="${MOON:-~dozlet-disden-talhes}"
+HOST_SHIP="${HOST_SHIP:-mignes-magtel}"
+HOST_PIER="${HOST_PIER:-/Users/chris/Enviorment/urbit-dev/ships/mignes-magtel}"
+HOST_URL="${HOST_URL:-http://localhost:8082}"
+MOON="${MOON:-~dozbud-mignes-magtel}"
 CODE="${CODE:-winwyx-noslys-misryl-winryx}"
-BIND="${BIND:-0.0.0.0:39999}"
-GATEWAY_PORT="${GATEWAY_PORT:-59332}"           # fallback if auto-detect fails
+BIND="${BIND:-0.0.0.0:39998}"
+GATEWAY_PORT="${GATEWAY_PORT:-65429}"           # fallback if auto-detect fails
 HEARTBEAT="${HEARTBEAT:-$HERE/deploy/.sidecar-heartbeat}"
 # lick transport (P2): default ON -> the theseus-pyre /ames socket. Set
 # LICK_SOCKET="" to fall back to the Eyre channel.
@@ -60,7 +60,7 @@ while true; do
   LICK_ARG=""; [ -n "$LICK_SOCKET" ] && LICK_ARG="--lick-socket $LICK_SOCKET"
   node "$SIDECAR" \
     --url "$HOST_URL" --ship "$HOST_SHIP" --code "$CODE" \
-    --moons-map "$HERE/deploy/moons.json" \
+    --moons-map "${MOONS_MAP:-$HERE/deploy/moons-mignes.json}" \
     --gateway "$HOST_SHIP=127.0.0.1:$PORT" --bind "$BIND" \
     --heartbeat "$HEARTBEAT" \
     $LICK_ARG \

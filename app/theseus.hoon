@@ -47,6 +47,8 @@
     ++  is-fine-req
       |=  blob=@
       ^-  ?
+      ::  Header-only fine request detector.  Good enough for smoke: drop fine
+      ::  requests instead of injecting them as %hear while serve-fine is disabled.
       =/  header  (end 5 blob)
       &(=(0 (cut 0 [2 1] header)) =(1 (cut 0 [3 1] header)))
     ++  fine-req-path
@@ -314,8 +316,12 @@
     =/  poke-result=(each vase tang)
       (mule |.((slym [-:!>(poke:arvo-adult) poke:snap] [now.bowl ue])))
     ?:  ?=(%| -.poke-result)  ((slog >%theseus-crash< >who< p.poke-result) $)
-    ::  NOTE: this is extremely dangerous
-    =.  snap  !<(_arvo-adult [-:!>(*_arvo-adult) +.q.p.poke-result])
+    ::  NOTE: this is extremely dangerous.  408 smoke: keep the cast inside
+    ::  mule too, so a bad %hear result drops instead of crashing lick %soak.
+    =/  snap-result=(each _snap tang)
+      (mule |.(!<(_arvo-adult [-:!>(*_arvo-adult) +.q.p.poke-result])))
+    ?:  ?=(%| -.snap-result)  ((slog >%theseus-snap-cast-crash< >who< p.snap-result) $)
+    =.  snap  p.snap-result
     =.  scry-time  now.bowl
     =.  ..abet-pe  (publish-event now.bowl ue)
     =.  ..abet-pe
@@ -476,6 +482,16 @@
     (pe who.act)
   ::
       %init-moon
+    ::  Re-initializing a moon is a key rotation, not another life-1
+    ::  registration.  Jael keeps the existing key for a repeated life, while
+    ::  %dawn would boot with the newly generated ring; that split identity is
+    ::  rejected by peers as %evil.  Advance the registered/booted life in
+    ::  lockstep when this moon already exists in our public-key state.
+    =/  old-life=(unit @ud)
+      .^  (unit @ud)  %j
+        /(scot %p our.bowl)/lyfe/(scot %da now.bowl)/(scot %p who.act)
+      ==
+    =/  moon-life=@ud  ?~(old-life 1 +(u.old-life))
     ::  Provision the moon with correct CURRENT keys for its whole sponsor
     ::  chain (us -> star -> galaxy), scried from our Jael.  A minimal czar
     ::  (just the galaxy) left stale rift/life for the sponsor, causing
@@ -505,7 +521,7 @@
     ::  resident moon; no separate dingy agent). jael only accepts our moons.
     =/  reg-card=card
       :*  %pass  /theseus/moon/(scot %p who.act)  %arvo  %j
-          %moon  who.act  [*id:block:jael %keys [1 1 pub.act] %.n]
+          %moon  who.act  [*id:block:jael %keys [moon-life 1 pub.act] %.n]
       ==
     =^  cards  state
       =.  this  apex-theseus  =<  abet-theseus
@@ -549,8 +565,8 @@
       ::  boot %dawn with the real key (ring) + galaxy trust anchor (czar) and
       ::  turf, scried from our Jael.  spon stays empty (jael doesn't expose
       ::  full azimuth points); the galaxy key is enough to start bootstrap.
-      ::  feed %2 = [[%2 ~] who rift=0 [life=1 ring]~].
-      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act 0 [1 key.act]~] ~ czar turves 0 ~]
+      ::  feed %2 = [[%2 ~] who rift=0 [life ring]~].
+      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act 0 [moon-life key.act]~] ~ czar turves 0 ~]
           [/b/behn/0v1n.2m9vh %born ~]
           [/i/http-client/0v1n.2m9vh %born ~]
           [/e/http-server/0v1n.2m9vh %born ~]
@@ -595,7 +611,7 @@
       |=  [who=ship thus=_this]
       =.  this  thus
       (publish-effect:(pe who) [/ %kill ~])
-    =.  piers  (~(got by fleet-snaps) path.act)
+    =.  piers  (~(uni by piers) (~(got by fleet-snaps) path.act))
     ~&  theseus+restore-snap+path.act
     abet-theseus
   ::
@@ -633,43 +649,24 @@
       %ames-inbound
     ?.  (~(has by piers) who.act)
       `state
-    ::  serve-fine.  A %fine REQUEST packet is normally answered by vere;
-    ::  injecting it as %hear bails the moon's ames (%request-events-forbidden).
-    ::  Instead of injecting, we play vere's fine-responder role: scry the moon's
-    ::  OWN /x/fine/hunk endpoint (it signs with its own key), packetize the
-    ::  signed fragments, and send them back to the requester.  The moon kernel
-    ::  stays untouched.  Non-fine packets fall through to the %hear path below.
-    =/  fr  (fine-req-path blob.act)
-    ?^  fr
-      ::  request up to 64 fragments; fine/hunk returns one signed yowl (meow)
-      ::  per fragment, capped at the data's real fragment count.
-      =/  res  (remote-scry:(pe who.act) [%fine %hunk '1' '64' pax.u.fr])
-      ?~  res  `state              ::  absent path -> no response, like vere
-      ?~  u.res  `state
-      =/  yowls  !<((list @) q.u.u.res)
-      ?~  yowls  `state
-      ::  respond to the origin (direct NAT-punch lane) if relayed, else the ship
-      =/  lane  ?~(origin.u.fr [%& sndr.u.fr] [%| u.origin.u.fr])
-      ::  emit one response packet per fragment, each tagged with its 1-based index
-      =.  this  apex-theseus  =<  abet-theseus
-      =.  this
-        =/  pc  (pe who.act)
-        =/  fs=(list @)  yowls
-        =/  ix=@ud  1
-        |-  ^+  this
-        ?~  fs  abet-pe:pc
-        =/  bl  (etch-response who.act sndr.u.fr stik.u.fr rtik.u.fr ix pax.u.fr i.fs)
-        =.  pc  (publish-effect:pc [/ %send lane bl])
-        $(fs t.fs, ix +(ix))
-      (pe who.act)
-    ::  a %fine request we could NOT parse/serve: drop it, never inject %hear
-    ::  (any fine-request bails the moon's ames).  vere would just decline it.
+    ::  TEMP 408 smoke-test: serve-fine is disabled, but fine requests must
+    ::  still be dropped.  Injecting a fine request as %hear bails Ames.
     ?:  (is-fine-req blob.act)  `state
     =.  this  apex-theseus  =<  abet-theseus
     =.  this
       =<  abet-pe:plow
       %-  push-events:(pe who.act)
       ~[[/a/newt/0v1n.2m9vh %hear lane.act blob.act]]
+    (pe who.act)
+  ::
+      %mesa-inbound
+    ?.  (~(has by piers) who.act)
+      `state
+    =.  this  apex-theseus  =<  abet-theseus
+    =.  this
+      =<  abet-pe:plow
+      %-  push-events:(pe who.act)
+      ~[[/a/newt/0v1n.2m9vh %heer lane.act blob.act]]
     (pe who.act)
   ::
       %ames-test-inbound
@@ -687,7 +684,7 @@
         =|  =raft:clay-types
         =+  ruf=raft:(pe u.who.act)
         %=    raft
-            fad  fad.ruf
+            ::  408 Clay no longer exposes .fad/flow in raft; keep default empty fad.
             ran  ran.ruf
             dos.rom
           |-
@@ -703,8 +700,7 @@
       ::  take cache from host ship
       ::
       =|  =raft:clay-types
-      =.  fad.raft
-        .^(flow:clay %cx /(scot %p our.bowl)//(scot %da now.bowl)/flow)
+      ::  408 Clay no longer exposes /flow as a public scry; keep default empty fad.
       =.  ran.raft
         .^(rang:clay %cx /(scot %p our.bowl)//(scot %da now.bowl)/rang)
       =.  dos.rom.raft
@@ -755,7 +751,7 @@
           van.mod.sol.snap
         =+  !<  cay=(tail clay-types)
             vase:(~(got by van.mod.sol.snap.pier) %clay)
-        =.  fad.ruf.cay  fad.raf
+        ::  408 Clay no longer exposes .fad/flow in raft; keep default empty fad.
         =.  ran.ruf.cay  ran.raf
         =.  dos.rom.ruf.cay
           =/  desks  ~(tap in desks)

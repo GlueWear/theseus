@@ -267,7 +267,7 @@ function onChannel(raw) {
 
 // ---- inbound: UDP packet -> %ames-inbound poke --------------------------
 function onUdp(buf, rinfo) {
-  if (lickSocket) { onUdpLick(buf); return; }
+  if (lickSocket) { onUdpLick(buf, rinfo); return; }
   const from = peersByAddr.get(`${rinfo.address}:${rinfo.port}`) || firstPeerShip();
   const moon = pickMoon(buf);
   if (!moon) { return; }  // couldn't route (unknown receiver); pickMoon logged it
@@ -424,32 +424,52 @@ function onLickOut(payload) {
   console.log(`[transport] OUT ~${from} -> ~${stripSig(gatewayShip)} gateway ${bytes.length}B`);
 }
 
-// inbound: a UDP packet -> %soak [%ames-in [who from addr blob]] over lick.
-// %fine remote-scry requests are intercepted + served in app/theseus.hoon (the
-// moon signs its own response); the sidecar just carries every packet through.
-function onUdpLick(buf) {
+// inbound: classify the wire protocol, then inject through the matching 408
+// Ames unix task.  Legacy shots use %hear with an opaque direct-address lane;
+// Mesa pacts use %heer with a structured pact lane.  The pact serializer has a
+// stable 32-bit magic at bytes 4..7 (see +head:de:pact in 408 %lull).
+function onUdpLick(buf, rinfo) {
+  const isMesa = buf.length >= 8 && buf.readUInt32LE(4) === 0x67e00200;
   const s = parseShot(buf);
-  // route by receiver @p, trying both packet layouts (plain / +6 relayed origin)
+  // Legacy shots expose their receiver in the fixed header/body layout.  Never
+  // route an unmatched legacy packet to the only configured moon: old traffic
+  // for a previously hosted moon will otherwise be injected into the new moon
+  // and fail authentication as %evil.  Mesa receiver parsing is still pending,
+  // so the single-moon fallback is limited to positively identified pacts.
   let who;
-  if (s && moonByNum.has(s.rcvr)) who = s.rcvr;
-  else if (s && moonByNum.has(s.rcvrRelayed)) who = s.rcvrRelayed;
-  else if (moonByNum.size === 1) who = [...moonByNum.keys()][0];
-  else { if (s) console.log(`[transport] inbound unknown rcvr ${s.rcvr}/${s.rcvrRelayed}; drop`); return; }
+  if (isMesa && moonByNum.size === 1) who = [...moonByNum.keys()][0];
+  else if (!isMesa && s && moonByNum.has(s.rcvr)) who = s.rcvr;
+  else if (!isMesa && s && moonByNum.has(s.rcvrRelayed)) who = s.rcvrRelayed;
+  else {
+    console.log(`[transport] inbound ${isMesa ? 'mesa' : 'ames'} unknown rcvr ${s?.rcvr ?? '?'}/${s?.rcvrRelayed ?? '?'}; drop`);
+    return;
+  }
   if (!lickConn) return;
   const A = (v) => Atom.fromInt(v);
-  const noun = new Cell(Atom.fromCord('ames-in'),
-                new Cell(A(who), new Cell(A(hostNum), new Cell(A(0n), A(leToBig(buf))))));
+  const ip = ipv4Big(rinfo.address);
+  let noun;
+  if (isMesa) {
+    const lane = new Cell(Atom.fromCord('if'), new Cell(A(ip), A(BigInt(rinfo.port))));
+    noun = new Cell(Atom.fromCord('mesa-in'),
+             new Cell(A(who), new Cell(lane, A(leToBig(buf)))));
+  } else {
+    // Legacy Ames address = IPv4 in low 32 bits, UDP port in bits 32..47.
+    const addr = ip | (BigInt(rinfo.port) << 32n);
+    noun = new Cell(Atom.fromCord('ames-in'),
+             new Cell(A(who), new Cell(A(hostNum), new Cell(A(addr), A(leToBig(buf))))));
+  }
   const jb = Buffer.from(jam(noun).bytes());
   const frame = Buffer.alloc(5 + jb.length);   // [0x00][u32 LE len][jam]
   frame.writeUInt32LE(jb.length, 1);
   jb.copy(frame, 5);
   lickConn.write(frame);
-  console.log(`[transport] IN  -> ~${moonByNum.get(who) || who} ${buf.length}B`);
+  console.log(`[transport] IN ${isMesa ? 'mesa' : 'ames'} -> ~${moonByNum.get(who) || who} ${buf.length}B lane=${rinfo.address}:${rinfo.port}`);
 }
 
 function atomBig(x) { for (const k of ['number', 'big', 'n', 'value']) if (typeof x[k] === 'bigint') return x[k]; const v = x.valueOf && x.valueOf(); return typeof v === 'bigint' ? v : 0n; }
 function cordOf(bn) { let s = ''; while (bn > 0n) { s += String.fromCharCode(Number(bn & 0xffn)); bn >>= 8n; } return s; }
 function atomToLeBuf(bn) { const b = []; while (bn > 0n) { b.push(Number(bn & 0xffn)); bn >>= 8n; } return Buffer.from(b); }
+function ipv4Big(addr) { const p = String(addr).split('.').map((x) => Number(x)); return BigInt(((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3]); }
 function decodeLaneBig(val) {
   const ip = Number(val & 0xffffffffn), port = Number((val >> 32n) & 0xffffn);
   const a = (ip >>> 24) & 0xff, b = (ip >>> 16) & 0xff, c = (ip >>> 8) & 0xff, d = ip & 0xff;

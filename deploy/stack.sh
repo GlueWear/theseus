@@ -45,7 +45,7 @@ start() {
   if is_up "$BROKER_MATCH"; then
     echo "broker     : already up"
   else
-    nohup node "$DEPLOY/broker.mjs" --moons-file "$DEPLOY/broker-moons.json" --landing / >"$DEPLOY/broker.log" 2>&1 &
+    nohup node "$DEPLOY/broker.mjs" --moons-file "$DEPLOY/broker-moons.json" --host-url http://localhost:8082 --landing / >"$DEPLOY/broker.log" 2>&1 &
     echo "broker     : started (log: deploy/broker.log)"
   fi
   echo; status
@@ -69,10 +69,10 @@ status() {
     echo "carrier    : down"
   fi
   is_up "$BROKER_MATCH" && echo "broker     : UP"   || echo "broker     : down"
-  if lsof -nP -iUDP:39999 >/dev/null 2>&1; then
-    echo "udp 39999  : bound"
+  if lsof -nP -iUDP:39998 >/dev/null 2>&1; then
+    echo "udp 39998  : bound"
   else
-    echo "udp 39999  : FREE (carrier not listening)"
+    echo "udp 39998  : FREE (carrier not listening)"
   fi
 }
 

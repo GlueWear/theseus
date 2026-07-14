@@ -135,6 +135,12 @@
       ::  eyre path used, but as a real noun -- no JSON, no dejs).
       [%ames ~]
     ?.  ?=([%lick %soak *] sign-arvo)  `this
+    ?:  =(%mesa-in mark.sign-arvo)
+      =/  inb  ;;([who=@p lane=mesa-lane blob=@] noun.sign-arvo)
+      :_  this
+      :~  :*  %pass  /ames/in  %agent  [our.bowl %theseus]  %poke
+              %theseus-action  !>(`action`[%mesa-inbound who.inb lane.inb blob.inb])
+      ==  ==
     ?.  =(%ames-in mark.sign-arvo)     `this
     =/  inb  ;;([who=@p from=@p addr=@ux blob=@] noun.sign-arvo)
     ::  build the lane inline ([%& ship] / [%| addr]); the `action` cast below
@@ -320,9 +326,11 @@
   ::
   ++  pass-request
     |=  [rid=@t req=inbound-request:^eyre]
-    ::  add auth cookie to request, if we have it
-    =?  header-list.request.req  ?=(^ cookie)
-      [['cookie' u.cookie] header-list.request.req]
+    ::  NO server-side cookie injection: the browser/broker is the sole session
+    ::  holder. A single shared `cookie` field broke multi-moon (moon B's request
+    ::  got moon A's last-captured cookie -> "bad session auth"), and a snapshot
+    ::  restore left a stale one. Response set-cookie still passes through to the
+    ::  browser (lib parse-headers), so login works statelessly.
     %-  emit-theseus-events
     ::  inject into the actual moon (who), not a hardcoded ~nec that isn't
     ::  booted -- otherwise the request vanishes and the client hangs.
@@ -340,7 +348,6 @@
     ::   rather than editing the login page within eyre. This should be easy
         %start
       =*  hed  response-header.ev
-      =.  cookie  ?~(new=(has-cookie:theseus-pyre headers.hed) cookie new)
       =.  headers.hed  (parse-headers:theseus-pyre headers.hed)
       =.  this
         %-  emit-cards
