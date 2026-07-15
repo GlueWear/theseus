@@ -249,6 +249,8 @@
     :~  [%ames-inbound ames-inbound]
         [%ames-test-inbound ames-test-inbound]
     ==
+  ++  recycle
+    (ot ~[[%who (se %p)] [%path pa]])
   ::
   ++  action
     %-  of

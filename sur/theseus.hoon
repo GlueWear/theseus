@@ -59,6 +59,7 @@
 +$  theseus-effects  [who=ship ufs=(list unix-effect)]
 +$  theseus-effect   [who=ship uf=unix-effect]
 +$  theseus-boths    [who=ship ub=(list unix-both)]
++$  recycle          [who=ship path=path]
 ::
 +$  action
   $%  ::  create or delete a ship

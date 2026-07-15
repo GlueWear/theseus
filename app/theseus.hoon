@@ -181,6 +181,16 @@
       ?+  mark  ~|([%theseus-bad-mark mark] !!)
         %theseus-events  (poke-theseus-events:hc !<((list theseus-event) vase))
         %theseus-action  (poke-action:hc !<(action vase))
+        ::  Narrow JSON control surface for the external recycle orchestrator.
+        ::  Refuse a missing, multi-ship, or wrong-ship snapshot before restore.
+        %theseus-recycle
+          =/  rec  !<(recycle vase)
+          =/  sip  (~(get by fleet-snaps) path.rec)
+          ?~  sip  ~|([%theseus-recycle-missing path.rec] !!)
+          =/  hers  (turn ~(tap by u.sip) head)
+          ?.  =(~[who.rec] hers)
+            ~|([%theseus-recycle-snapshot-mismatch who.rec path.rec hers] !!)
+          (poke-action:hc [%restore-snap path.rec])
         ::  sidecar Ames injection: widen the tiny $ames-in to $action (a
         ::  compile-time nest, so no task-arvo runtime coercion) and reuse
         ::  the existing %ames-inbound / %ames-test-inbound handlers.
