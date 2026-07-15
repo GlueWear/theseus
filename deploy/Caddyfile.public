@@ -63,7 +63,8 @@ join.100-10-2-63.nip.io {
 }
 
 # --- PUBLIC moons (one hostname per live moon) ---------------------------
-dozwes-mignes-magtel.100-10-2-63.nip.io {
+dozwes-mignes-magtel.100-10-2-63.nip.io,
+dozsev-mignes-magtel.100-10-2-63.nip.io {
 	# Only 443->8443 is forwarded (not 80), so force the TLS-ALPN-01 challenge
 	# (all on 443) and disable HTTP-01 (which would need port 80 open).
 	tls {
