@@ -150,21 +150,48 @@ async function resolveHost(host) {
     return address;
   } catch { return null; }
 }
-async function sendToGalaxy(name, gnum, bytes, from) {
+async function sendToGalaxy(udp, name, gnum, bytes, from) {
   const host = `${name}.${turf}`;
   const port = czarBase + gnum;
   const addr = await resolveHost(host);
   if (!addr) { console.log(`[transport] DNS fail ${host}, drop`); return; }
-  sock.send(bytes, port, addr, (e) => { if (e) console.error('[transport] galaxy send err:', e); });
+  udp.send(bytes, port, addr, (e) => { if (e) console.error('[transport] galaxy send err:', e); });
   console.log(`[transport] OUT ~${from} -> ~${name} galaxy ${host}:${port} (${addr}) ${bytes.length}B`);
 }
 
-// --- UDP socket: the moon's transport endpoint ---------------------------
-const sock = dgram.createSocket('udp4');
-sock.on('message', onUdp);
-sock.on('error', (e) => console.error('[transport] udp error:', e));
-await new Promise((res) => sock.bind(bindPort, bindAddr, res));
-console.log(`[transport] udp bound ${bindAddr}:${bindPort}`);
+// --- UDP sockets: one transport endpoint per virtual moon -----------------
+// A Mesa %page response does not contain the requesting ship's identity;
+// vere knows its recipient from the UDP socket that received it.  Sharing one
+// socket between virtual moons therefore cannot be demultiplexed reliably.
+// Give each moon its own socket, exactly as separate vere processes would.
+// Ports are deterministic for a stable moons map: numeric @p ascending, from
+// --bind's base port upward.
+const udpRecords = [];
+const udpByName = new Map();
+const udpByNum = new Map();
+const moonNames = [...moons].sort((a, b) => {
+  const an = moonNums[a] == null ? null : BigInt(moonNums[a]);
+  const bn = moonNums[b] == null ? null : BigInt(moonNums[b]);
+  if (an == null && bn == null) return a.localeCompare(b);
+  if (an == null) return 1;
+  if (bn == null) return -1;
+  return an < bn ? -1 : an > bn ? 1 : 0;
+});
+if (!moonNames.length) fail('No virtual moons configured. Pass --moons-map or --moon.');
+for (let i = 0; i < moonNames.length; i += 1) {
+  const name = moonNames[i];
+  const num = moonNums[name] == null ? null : BigInt(moonNums[name]);
+  const port = bindPort + i;
+  const udp = dgram.createSocket('udp4');
+  const rec = { name, num, port, udp };
+  udp.on('message', (buf, rinfo) => onUdpForMoon(rec, buf, rinfo));
+  udp.on('error', (e) => console.error(`[transport] udp ~${name} error:`, e));
+  await new Promise((res) => udp.bind(port, bindAddr, res));
+  udpRecords.push(rec);
+  udpByName.set(name, rec);
+  if (num != null) udpByNum.set(num, rec);
+  console.log(`[transport] udp ~${name} bound ${bindAddr}:${port}`);
+}
 console.log(`[transport] galaxies via DNS: *.${turf} port ${czarBase}+n${args.fake ? ' (fakenet)' : ''}`);
 console.log(`[transport] peers: ${[...peers].map(([w, a]) => `${w}->${a.addr}:${a.port}`).join(', ') || '(none)'}`);
 console.log(`[transport] moons: ${[...moons].map((m) => `~${m}`).join(', ') || '(none)'}`);
@@ -203,7 +230,7 @@ if (lickSocket) {
   process.on('SIGINT', async () => {
     console.log('\n[transport] closing');
     clearInterval(ackTimer); clearInterval(beatTimer); sse.abort();
-    try { sock.close(); } catch {}
+    for (const rec of udpRecords) { try { rec.udp.close(); } catch {} }
     try { await channelDelete(); } catch {}
     process.exit(0);
   });
@@ -228,6 +255,8 @@ function onChannel(raw) {
     if (!out || !out.blob) continue;
 
     const from = stripSig(out.ship);           // the virtual moon sending
+    const rec = udpByName.get(from) || (udpRecords.length === 1 ? udpRecords[0] : null);
+    if (!rec) { console.log(`[transport] no UDP endpoint for ~${from}, drop`); continue; }
     const target = out['lane-ship'] ? stripSig(out['lane-ship']) : null;
     if (!target) {
       // direct-address lane [%.n p]: the moon learned a peer's real transport
@@ -236,21 +265,29 @@ function onChannel(raw) {
       const la = decodeLane(out['lane-addr']);
       if (la) {
         const bytes = atomHexToBufferLE(out.blob, Number(out['blob-len'] ?? 0));
-        sock.send(bytes, la.port, la.addr, (e) => { if (e) console.error('[transport] direct send err:', e); });
+        rec.udp.send(bytes, la.port, la.addr, (e) => { if (e) console.error('[transport] direct send err:', e); });
         console.log(`[transport] OUT ~${from} -> direct ${la.addr}:${la.port} ${bytes.length}B`);
         continue;
       }
       console.log(`[transport] skip non-ship lane from ${from} (addr=${out['lane-addr'] ?? 'none'})`);
       continue;
     }
-    if (moons.has(target)) continue;           // internal virtual<->virtual, theseus routes it
+    if (moons.has(target)) {
+      const dest = udpByName.get(target);
+      if (!dest) { console.log(`[transport] no local endpoint for ~${target}, drop`); continue; }
+      rec.udp.send(bytes, dest.port, '127.0.0.1', (e) => {
+        if (e) console.error('[transport] local moon send err:', e);
+      });
+      console.log(`[transport] LOCAL ~${from} -> ~${target} ${bytes.length}B`);
+      continue;
+    }
     // galaxy destination: dial <name>.<turf>:(czarBase+num) directly over DNS,
     // like vere. The moon routes strangers via their galaxy (lane [%.y galaxy]);
     // this is the outbound leg the host planet won't relay, so we dial it here.
     const gnum = galaxyNum(target);
     if (gnum >= 0) {
       const bytes = atomHexToBufferLE(out.blob, Number(out['blob-len'] ?? 0));
-      sendToGalaxy(target, gnum, bytes, from);
+      sendToGalaxy(rec.udp, target, gnum, bytes, from);
       continue;
     }
     // explicit route, else the gateway uplink (host planet forwards it)
@@ -258,7 +295,7 @@ function onChannel(raw) {
     if (!peer) { console.log(`[transport] no route for ~${target}, drop`); continue; }
 
     const bytes = atomHexToBufferLE(out.blob, Number(out['blob-len'] ?? 0));
-    sock.send(bytes, peer.port, peer.addr, (e) => {
+    rec.udp.send(bytes, peer.port, peer.addr, (e) => {
       if (e) console.error('[transport] send err:', e);
     });
     console.log(`[transport] OUT ~${from} -> ~${target} (${peer.addr}:${peer.port}) ${bytes.length}B`);
@@ -266,25 +303,36 @@ function onChannel(raw) {
 }
 
 // ---- inbound: UDP packet -> %ames-inbound poke --------------------------
-function onUdp(buf, rinfo) {
-  if (lickSocket) { onUdpLick(buf, rinfo); return; }
-  const from = peersByAddr.get(`${rinfo.address}:${rinfo.port}`) || firstPeerShip();
-  const moon = pickMoon(buf);
-  if (!moon) { return; }  // couldn't route (unknown receiver); pickMoon logged it
-  const hex = bufferLEToAtomHex(buf);
-  console.log(`[transport] IN  ${from} -> ~${moon} ${buf.length}B`);
-  pokeInbound(moon, stripSig(from), hex).catch((e) => console.error('[transport] inbound poke fail:', e));
+function onUdpForMoon(rec, buf, rinfo) {
+  if (lickSocket) { onUdpLick(rec, buf, rinfo); return; }
+  onUdp(rec, buf, rinfo);
 }
 
-// route inbound to the moon whose @p is the packet's receiver.
-function pickMoon(buf) {
-  const s = parseShot(buf);
-  if (s && moonByNum.has(s.rcvr)) return moonByNum.get(s.rcvr);
-  if (s && moonByNum.has(s.rcvrRelayed)) return moonByNum.get(s.rcvrRelayed);
-  if (moons.size === 1) return [...moons][0];   // one moon -> unambiguous
-  if (s) console.log(`[transport] inbound for unknown receiver ${s.rcvr}/${s.rcvrRelayed}; drop`);
-  return null;
+function onUdp(rec, buf, rinfo) {
+  const isMesa = isMesaPact(buf);
+  if (isMesa) {
+    console.log(`[transport] inbound mesa for ~${rec.name} requires lick mode; drop`);
+    return;
+  }
+  if (!legacyTargets(rec, buf)) return;
+  const from = peersByAddr.get(`${rinfo.address}:${rinfo.port}`) || firstPeerShip();
+  const hex = bufferLEToAtomHex(buf);
+  console.log(`[transport] IN  ${from} -> ~${rec.name} ${buf.length}B udp=:${rec.port}`);
+  pokeInbound(rec.name, stripSig(from), hex).catch((e) => console.error('[transport] inbound poke fail:', e));
 }
+
+// Legacy Ames shots carry a receiver @p, so retain the parser as a defensive
+// cross-check against stale/cross-socket traffic. Mesa pacts are routed by the
+// receiving UDP socket because %page responses do not encode their recipient.
+function legacyTargets(rec, buf) {
+  if (rec.num == null) return udpRecords.length === 1;
+  const s = parseShot(buf);
+  if (s && (s.rcvr === rec.num || s.rcvrRelayed === rec.num)) return true;
+  console.log(`[transport] inbound ames cross-socket for ~${rec.name} rcvr=${s?.rcvr ?? '?'}/${s?.rcvrRelayed ?? '?'}; drop`);
+  return false;
+}
+
+function isMesaPact(buf) { return buf.length >= 8 && buf.readUInt32LE(4) === 0x67e00200; }
 
 // --- Ames packet parse (for multi-moon inbound routing) ------------------
 // Pull the receiver @p out of the packet header (little-endian), per lull
@@ -391,7 +439,11 @@ async function setupLickTransport(sockPath) {
     c.on('close', () => { lickConn = null; console.error('[transport] lick socket closed; exiting for supervisor restart'); process.exit(1); });
   });
   setInterval(() => { if (lickConn) beat(); }, 15_000);
-  process.on('SIGINT', () => { try { sock.close(); } catch {} try { lickConn && lickConn.end(); } catch {} process.exit(0); });
+  process.on('SIGINT', () => {
+    for (const rec of udpRecords) { try { rec.udp.close(); } catch {} }
+    try { lickConn && lickConn.end(); } catch {}
+    process.exit(0);
+  });
   await new Promise(() => {});   // keep the process alive on the socket
 }
 
@@ -406,21 +458,31 @@ function onLickOut(payload) {
   const lane = noun.tail.tail.head;
   const bytes = atomToLeBuf(atomBig(noun.tail.tail.tail));
   const from = moonByNum.get(who) || String(who);
+  const rec = udpByNum.get(who) || (udpRecords.length === 1 ? udpRecords[0] : null);
+  if (!rec) { console.log(`[transport] no UDP endpoint for ~${from}, drop`); return; }
   const tag = atomBig(lane.head);              // 0 = %.y ship, 1 = %.n addr
   const val = atomBig(lane.tail);
   if (tag === 1n) {                            // direct-address lane
     const la = decodeLaneBig(val);
     if (!la) return;
-    sock.send(bytes, la.port, la.addr, (e) => { if (e) console.error('[transport] direct send err:', e); });
+    rec.udp.send(bytes, la.port, la.addr, (e) => { if (e) console.error('[transport] direct send err:', e); });
     console.log(`[transport] OUT ~${from} -> direct ${la.addr}:${la.port} ${bytes.length}B`);
     return;
   }
-  if (moonByNum.has(val)) return;              // internal virtual<->virtual
+  if (moonByNum.has(val)) {
+    const dest = udpByNum.get(val);
+    if (!dest) { console.log(`[transport] no local endpoint for ${val}, drop`); return; }
+    rec.udp.send(bytes, dest.port, '127.0.0.1', (e) => {
+      if (e) console.error('[transport] local moon send err:', e);
+    });
+    console.log(`[transport] LOCAL ~${from} -> ~${dest.name} ${bytes.length}B`);
+    return;
+  }
   const N = Number(val);
-  if (N >= 0 && N < 256) { sendToGalaxy(GALAXIES[N], N, bytes, from); return; }
+  if (N >= 0 && N < 256) { sendToGalaxy(rec.udp, GALAXIES[N], N, bytes, from); return; }
   const p = gatewayShip && peers.get(gatewayShip);   // non-galaxy ship -> gateway
   if (!p) { console.log(`[transport] OUT ~${from} no route (ship ${N}), drop`); return; }
-  sock.send(bytes, p.port, p.addr, (e) => { if (e) console.error('[transport] gw send err:', e); });
+  rec.udp.send(bytes, p.port, p.addr, (e) => { if (e) console.error('[transport] gw send err:', e); });
   console.log(`[transport] OUT ~${from} -> ~${stripSig(gatewayShip)} gateway ${bytes.length}B`);
 }
 
@@ -428,22 +490,14 @@ function onLickOut(payload) {
 // Ames unix task.  Legacy shots use %hear with an opaque direct-address lane;
 // Mesa pacts use %heer with a structured pact lane.  The pact serializer has a
 // stable 32-bit magic at bytes 4..7 (see +head:de:pact in 408 %lull).
-function onUdpLick(buf, rinfo) {
-  const isMesa = buf.length >= 8 && buf.readUInt32LE(4) === 0x67e00200;
-  const s = parseShot(buf);
-  // Legacy shots expose their receiver in the fixed header/body layout.  Never
-  // route an unmatched legacy packet to the only configured moon: old traffic
-  // for a previously hosted moon will otherwise be injected into the new moon
-  // and fail authentication as %evil.  Mesa receiver parsing is still pending,
-  // so the single-moon fallback is limited to positively identified pacts.
-  let who;
-  if (isMesa && moonByNum.size === 1) who = [...moonByNum.keys()][0];
-  else if (!isMesa && s && moonByNum.has(s.rcvr)) who = s.rcvr;
-  else if (!isMesa && s && moonByNum.has(s.rcvrRelayed)) who = s.rcvrRelayed;
-  else {
-    console.log(`[transport] inbound ${isMesa ? 'mesa' : 'ames'} unknown rcvr ${s?.rcvr ?? '?'}/${s?.rcvrRelayed ?? '?'}; drop`);
+function onUdpLick(rec, buf, rinfo) {
+  const isMesa = isMesaPact(buf);
+  if (!isMesa && !legacyTargets(rec, buf)) return;
+  if (rec.num == null) {
+    console.log(`[transport] no numeric @p for ~${rec.name}; inbound drop`);
     return;
   }
+  const who = rec.num;
   if (!lickConn) return;
   const A = (v) => Atom.fromInt(v);
   const ip = ipv4Big(rinfo.address);
@@ -463,7 +517,7 @@ function onUdpLick(buf, rinfo) {
   frame.writeUInt32LE(jb.length, 1);
   jb.copy(frame, 5);
   lickConn.write(frame);
-  console.log(`[transport] IN ${isMesa ? 'mesa' : 'ames'} -> ~${moonByNum.get(who) || who} ${buf.length}B lane=${rinfo.address}:${rinfo.port}`);
+  console.log(`[transport] IN ${isMesa ? 'mesa' : 'ames'} -> ~${rec.name} ${buf.length}B udp=:${rec.port} lane=${rinfo.address}:${rinfo.port}`);
 }
 
 function atomBig(x) { for (const k of ['number', 'big', 'n', 'value']) if (typeof x[k] === 'bigint') return x[k]; const v = x.valueOf && x.valueOf(); return typeof v === 'bigint' ? v : 0n; }
