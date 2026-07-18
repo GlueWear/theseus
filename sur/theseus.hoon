@@ -36,7 +36,8 @@
   %+  pair  wire
   $%  ::  vere effects (%gifts) that %theseus-pyre can handle
       ::
-      [%send p=lane:ames q=@]                 ::  ames send packet
+      [%send p=lane:ames q=@]                 ::  legacy Ames packet
+      [%push p=(list mesa-lane) q=@]          ::  408 Mesa packet + route set
       [%doze p=(unit @da)]                    ::  behn set timer
       [%ergo p=@tas q=mode:clay]              ::  clay ???
       [%blit p=(list blit:dill)]              ::  dill console effect
@@ -47,6 +48,7 @@
       ::  theseus specific effect
       ::
       [%kill ~]                               :: stop ship
+      [%restart ~]                            :: reset outer runtime + inject %born
   ==
 ::
 +$  unix-both

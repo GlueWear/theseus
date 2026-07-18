@@ -71,11 +71,16 @@
       =/  sndr   `@p`(cut 3 [1 sndr-size] body)
       =/  off    (add 1 (add sndr-size rcvr-size))
       =/  content  (cut 3 [off (sub (met 3 body) off)] body)
-      ::  wire wail = tag byte (0) + path text directly (no num/wid fields).
+      ::  wire wail = tag byte (0) + peep[num(4) len(2) path(len)].
+      ::  This must mirror 408 +sift-wail/+sift-peep exactly; treating the
+      ::  bytes after the tag as raw path text makes every real request fail
+      ::  parsing and get silently dropped by the header-only guard below.
       ?.  =(0 (end 3 content))  ~
-      =/  h2  (rsh 3 content)                 ::  drop the tag byte -> path text
+      =/  peep  (rsh 3 content)               ::  drop the %0 wail tag
+      =/  len   (cut 3 [4 2] peep)
+      =/  pat   (cut 3 [6 len] peep)
       =/  pax=(unit path)
-        (rush h2 ;~(pfix fas (most fas (cook crip (star ;~(less fas prn))))))
+        (rush pat ;~(pfix fas (most fas (cook crip (star ;~(less fas prn))))))
       ?~  pax  ~
       `[sndr stik rtik origin u.pax]
     ::  +etch-response: build a %fine RESPONSE packet blob (inlined lull
@@ -113,33 +118,231 @@
             [2 +.smt]                         ::  sndr rank
             [2 +.rmt]                         ::  rcvr rank
             [20 cksum]
-            [1 0]                             ::  relayed = no
+            [1 1]                             ::  relayed = no (wire bit 1)
         ==
       (mix head (lsh 5 body))
+    ::  +pier is the typed, in-memory view used while executing a moon.
+    ::  %2/%3 stored the Arvo noun as *, then recovered it with ;;.  That cast
+    ::  normalizes the noun to the mold's bunt on 408, silently erasing the
+    ::  vane map.  %4 stores a vase instead: the noun remains opaque at load,
+    ::  while its type is carried alongside it for an exact !< recovery.
     +$  pier
+      $:  snap=_arvo-adult
+          next-events=(qeu unix-event)
+          paused=?
+          scry-time=@da
+      ==
+    +$  opaque-saved-pier
+      $:  snap=*
+          next-events=(qeu unix-event)
+          paused=?
+          scry-time=@da
+      ==
+    +$  opaque-fleet  (map ship opaque-saved-pier)
+    +$  runtime-id  wynn
+    +$  opaque-fleet-snapshot
+      $:  created-at=@da
+          runtime=runtime-id
+          ships=opaque-fleet
+      ==
+    +$  saved-pier
+      $:  snap=vase
+          next-events=(qeu unix-event)
+          paused=?
+          scry-time=@da
+      ==
+    +$  fleet  (map ship saved-pier)
+    +$  fleet-snapshot
+      $:  created-at=@da
+          runtime=runtime-id
+          ships=fleet
+      ==
+    +$  moon-health
+      $:  who=ship
+          status=?(%healthy %degraded %empty)
+          vanes=(set term)
+          queued=@ud
+          paused=?
+          identity-ok=?
+      ==
+    ::  Legacy %0/%1 state deeply typed the Arvo core and retained an
+    ::  ever-growing event log.  These molds exist only for the one-way %2
+    ::  migration.
+    +$  legacy-pier
       $:  snap=_arvo-adult
           event-log=(list unix-timed-event)
           next-events=(qeu unix-event)
           paused=?
           scry-time=@da
       ==
-    +$  fleet  (map ship pier)          
+    +$  legacy-fleet  (map ship legacy-pier)
     +$  state-0
       $:  %0
-          piers=fleet
-          fleet-snaps=(map path fleet)
+          piers=legacy-fleet
+          fleet-snaps=(map path legacy-fleet)
           :: quickboot caching
           ::
           files=(axal (cask))
           park=task:clay :: TODO should be $>(%park task:clay)
           caches=(map @tas =raft:clay-types)
       ==
-    +$  versioned-state  $%(state-0)
+    +$  state-1
+      $:  %1
+          piers=legacy-fleet
+          fleet-snaps=(map path legacy-fleet)
+          :: quickboot caching
+          ::
+          files=(axal (cask))
+          park=task:clay :: TODO should be $>(%park task:clay)
+          caches=(map @tas =raft:clay-types)
+      ==
+    +$  state-2
+      $:  %2
+          piers=opaque-fleet
+          fleet-snaps=(map path opaque-fleet)
+          :: quickboot caching
+          ::
+          files=(axal (cask))
+          park=task:clay :: TODO should be $>(%park task:clay)
+          caches=(map @tas =raft:clay-types)
+      ==
+    +$  state-3
+      $:  %3
+          piers=opaque-fleet
+          fleet-snaps=(map path opaque-fleet-snapshot)
+          :: quickboot caching
+          ::
+          files=(axal (cask))
+          park=task:clay :: TODO should be $>(%park task:clay)
+          caches=(map @tas =raft:clay-types)
+      ==
+    +$  state-4
+      $:  %4
+          piers=fleet
+          fleet-snaps=(map path fleet-snapshot)
+          :: quickboot caching
+          ::
+          files=(axal (cask))
+          park=task:clay :: TODO should be $>(%park task:clay)
+          caches=(map @tas =raft:clay-types)
+      ==
+    +$  versioned-state  $%(state-0 state-1 state-2 state-3 state-4)
+    ++  current-runtime
+      ^-  runtime-id
+      :~  zuse+zuse
+          lull+lull
+          arvo+arvo
+          hoon+hoon-version
+          nock+4
+      ==
+    ++  pack-pier
+      |=  run=pier
+      ^-  saved-pier
+      :*  !>(snap.run)
+          next-events.run
+          paused.run
+          scry-time.run
+      ==
+    ++  unpack-pier
+      |=  saved=saved-pier
+      ^-  pier
+      :*  !<(_arvo-adult snap.saved)
+          next-events.saved
+          paused.saved
+          scry-time.saved
+      ==
+    ++  wrap-opaque-snap
+      |=  raw=*
+      ^-  vase
+      [-:!>(*_arvo-adult) raw]
+    ++  convert-opaque-pier
+      |=  old=opaque-saved-pier
+      ^-  saved-pier
+      :*  (wrap-opaque-snap snap.old)
+          next-events.old
+          paused.old
+          scry-time.old
+      ==
+    ++  convert-opaque-fleet
+      |=  old=opaque-fleet
+      ^-  fleet
+      %-  malt
+      %+  turn  ~(tap by old)
+      |=  [who=ship old-pier=opaque-saved-pier]
+      [who (convert-opaque-pier old-pier)]
+    ++  convert-opaque-snaps
+      |=  old=(map path opaque-fleet)
+      ^-  (map path fleet)
+      %-  malt
+      %+  turn  ~(tap by old)
+      |=  [pax=path old-fleet=opaque-fleet]
+      [pax (convert-opaque-fleet old-fleet)]
+    ++  convert-opaque-sealed-snaps
+      |=  old=(map path opaque-fleet-snapshot)
+      ^-  (map path fleet-snapshot)
+      %-  malt
+      %+  turn  ~(tap by old)
+      |=  [pax=path old-shot=opaque-fleet-snapshot]
+      :_  [created-at.old-shot runtime.old-shot (convert-opaque-fleet ships.old-shot)]
+      pax
+    ++  slim-fleet
+      |=  old=legacy-fleet
+      ^-  fleet
+      %-  malt
+      %+  turn  ~(tap by old)
+      |=  [who=ship old-pier=legacy-pier]
+      :-  who
+      :*  !>(snap.old-pier)
+          next-events.old-pier
+          paused.old-pier
+          scry-time.old-pier
+      ==
+    ++  slim-snaps
+      |=  old=(map path legacy-fleet)
+      ^-  (map path fleet)
+      %-  malt
+      %+  turn  ~(tap by old)
+      |=  [pax=path old-fleet=legacy-fleet]
+      [pax (slim-fleet old-fleet)]
+    ++  seal-old-snaps
+      |=  [created=@da old=(map path fleet)]
+      ^-  (map path fleet-snapshot)
+      %-  malt
+      %+  turn  ~(tap by old)
+      |=  [pax=path old-fleet=fleet]
+      [pax [created current-runtime old-fleet]]
+    ++  health-of
+      |=  [who=ship saved=saved-pier]
+      ^-  moon-health
+      =/  got=(unit pier)  (mole |.((unpack-pier saved)))
+      ?~  got
+        [who %empty *(set term) 0 paused.saved |]
+      =/  run=pier  u.got
+      =/  vanes=(set term)  ~(key by van.mod.sol.snap.run)
+      =/  wanted=(set term)
+        (sy ~[%ames %behn %clay %dill %eyre %gall %iris %jael %khan])
+      =/  queued=@ud  (lent ~(tap to next-events.run))
+      =/  identity-ok=?  =(who our.sol.snap.run)
+      =/  okay=?
+        ?&  identity-ok
+            =(wanted vanes)
+        ==
+      =/  status=?(%healthy %degraded %empty)
+        ?:(okay %healthy ?:(=(~ vanes) %empty %degraded))
+      [who status vanes queued paused.run identity-ok]
+    ++  snapshot-ready
+      |=  [who=ship saved=saved-pier]
+      ^-  ?
+      =/  hel  (health-of who saved)
+      ?&  =(%healthy status.hel)
+          paused.hel
+          =(0 queued.hel)
+      ==
     ::
     +$  card  $+(card card:agent:gall)
     --
 ::
-=|  state-0
+=|  state-4
 =*  state  -
 =<
   %-  agent:dbug
@@ -167,12 +370,34 @@
   ++  on-load
     |=  old-vase=vase
     ^-  (quip card _this)
-    ::  state management
-    =+  (mule |.(!<(versioned-state old-vase)))
-    ?-  -.-
-      %&  `this(state +.-)
-      %|  on-init
-    ==
+    ::  Never turn a failed state load into a successful empty on-init.  Gall
+    ::  already preserves the previous agent when on-load bails; swallowing a
+    ::  cast failure here used to erase every pier and every snapshot.
+    ?:  ?=([%0 *] q.old-vase)
+      =/  old  !<(state-0 old-vase)
+      =/  old-snaps  (slim-snaps fleet-snaps.old)
+      ~&  [%theseus-state-migrate %0 %4]
+      `this(state [%4 (slim-fleet piers.old) (seal-old-snaps now.bowl old-snaps) files.old park.old caches.old])
+    ?:  ?=([%1 *] q.old-vase)
+      =/  old  !<(state-1 old-vase)
+      =/  old-snaps  (slim-snaps fleet-snaps.old)
+      ~&  [%theseus-state-migrate %1 %4]
+      `this(state [%4 (slim-fleet piers.old) (seal-old-snaps now.bowl old-snaps) files.old park.old caches.old])
+    ?:  ?=([%2 *] q.old-vase)
+      =/  old  !<(state-2 old-vase)
+      =/  old-snaps  (convert-opaque-snaps fleet-snaps.old)
+      ~&  [%theseus-state-migrate %2 %4]
+      `this(state [%4 (convert-opaque-fleet piers.old) (seal-old-snaps now.bowl old-snaps) files.old park.old caches.old])
+    ?:  ?=([%3 *] q.old-vase)
+      =/  old  !<(state-3 old-vase)
+      ~&  [%theseus-state-migrate %3 %4]
+      `this(state [%4 (convert-opaque-fleet piers.old) (convert-opaque-sealed-snaps fleet-snaps.old) files.old park.old caches.old])
+    ?:  ?=([%4 *] q.old-vase)
+      =/  old  !<(state-4 old-vase)
+      ~&  [%theseus-state-load %4]
+      `this(state old)
+    ~|  [%theseus-unknown-state -.q.old-vase]
+    !!
   ::
   ++  on-poke
     |=  [=mark =vase]
@@ -187,7 +412,7 @@
           =/  rec  !<(recycle vase)
           =/  sip  (~(get by fleet-snaps) path.rec)
           ?~  sip  ~|([%theseus-recycle-missing path.rec] !!)
-          =/  hers  (turn ~(tap by u.sip) head)
+          =/  hers  (turn ~(tap by ships.u.sip) head)
           ?.  =(~[who.rec] hers)
             ~|([%theseus-recycle-snapshot-mismatch who.rec path.rec hers] !!)
           (poke-action:hc [%restore-snap path.rec])
@@ -217,7 +442,21 @@
       :^  ~  ~  %theseus-update
       !>  ^-  update
       ?~  sips  ~
-      [%snap-ships t.t.path (turn ~(tap by u.sips) head)]
+      [%snap-ships t.t.path (turn ~(tap by ships.u.sips) head)]
+    ::  operational health; never exposes the embedded Arvo noun
+    ::
+        [%x %health ~]
+      =/  health=(list moon-health)
+        %+  turn  ~(tap by piers)
+        |=  [who=ship saved=saved-pier]
+        (health-of who saved)
+      ``noun+!>(health)
+    ::
+        [%x %health @ ~]
+      =/  who  (slav %p i.t.t.path)
+      =/  saved  (~(get by piers) who)
+      ?~  saved  ``noun+!>(~)
+      ``noun+!>(`moon-health`(health-of who u.saved))
     ::  cache scries
     ::
         [%x %caches ~]   ``noun+!>((turn ~(tap by caches) head))
@@ -274,7 +513,12 @@
 ::
 ++  pe
   |=  who=ship
-  =+  (~(gut by piers) who *pier)
+  ::  Missing piers are never materialized implicitly.  Only an init action
+  ::  may insert a new pier; all other callers must target an existing one.
+  =/  saved  (~(got by piers) who)
+  ::  Recover the exact typed noun carried by the vase.  Do not use ;; here:
+  ::  on 408 it normalizes an opaque Arvo noun to the empty mold bunt.
+  =+  (unpack-pier saved)
   =*  pier-data  -
   |%
   ::
@@ -282,7 +526,8 @@
   ::
   ++  abet-pe
     ^+  this
-    =.  piers  (~(put by piers) who pier-data)
+    =/  out=saved-pier  (pack-pier pier-data)
+    =.  piers  (~(put by piers) who out)
     this
   ::
   ++  slap-gall
@@ -347,7 +592,14 @@
     ^+  ..abet-pe
     ?~  effects  ..abet-pe
     =.  ..abet-pe
-      ?^  sof=((soft unix-effect) i.effects)  (publish-effect u.sof)
+      ?^  sof=((soft unix-effect) i.effects)
+        ?:  =(%push -.q.u.sof)
+          ~&  [%theseus-captured-push who]
+          (publish-effect u.sof)
+        (publish-effect u.sof)
+      ?:  =(p.card.i.effects %push)
+        ~&  [%theseus-rejected-push who]
+        ..abet-pe
       ?:  &(=(p.card.i.effects %unto) ?=(^ q.card.i.effects))
         ((slog (flop ;;(tang +.q.card.i.effects))) ~&(who=who ..abet-pe))
       ..abet-pe
@@ -363,7 +615,6 @@
   ++  publish-event
     |=  ute=unix-timed-event
     ^+  ..abet-pe
-    =.  event-log  [ute event-log]
     =.  unix-events  (~(add ja unix-events) who ute)
     =.  unix-boths  (~(add ja unix-boths) who [%event ute])
     ..abet-pe
@@ -433,10 +684,36 @@
   |=  events=(list theseus-event)
   ^-  (quip card _state)
   =.  this  apex-theseus  =<  abet-theseus
-  %+  turn-events  events
-  |=  [pev=theseus-event thus=_this]
-  =.  this  thus
-  (push-events:(pe who.pev) [ue.pev]~)
+  ::  Runtime events can race a kill/restore.  Drop events for absent piers
+  ::  instead of letting an external timer, browser request, or packet create
+  ::  a default ghost pier (or crash the whole batch).
+  =/  known=(list theseus-event)
+    %+  skim  events
+    |=  pev=theseus-event
+    (~(has by piers) who.pev)
+  ::  Thread the parent Theseus core explicitly.  The generic +turn-events
+  ::  callback returned a nested +pe core; after state %4 moved the Arvo noun
+  ::  into a vase, that polymorphic callback could lose the parent fleet
+  ::  subject and +pe would see a missing ship that +health could still scry.
+  =.  this
+    =/  pending  known
+    |-  ^+  this
+    ?~  pending  this
+    =.  this
+      abet-pe:(push-events:(pe who.i.pending) [ue.i.pending]~)
+    $(pending t.pending, this this)
+  ::  Drain every unpaused moon after the whole batch has been enqueued.
+  |-
+  =/  active=(unit ship)
+    =/  pers  ~(tap by piers)
+    |-
+    ?~  pers  ~
+    ?:  &(?=(^ next-events.q.i.pers) !paused.q.i.pers)
+      `p.i.pers
+    $(pers t.pers)
+  ?~  active  this
+  =.  this  abet-pe:plow:(pe u.active)
+  $
 ::
 ++  poke-action
   |=  act=action
@@ -445,14 +722,15 @@
   ::
       %init-ship
     =.  this  apex-theseus  =<  abet-theseus
-    =.  this  abet-pe:unpause:(publish-effect:(pe who.act) [/ %kill ~])
+    ?:  (~(has by piers) who.act)
+      ~|([%theseus-init-existing who.act] !!)
     =/  clay  (clay-core who.act)
     =.  ruf.clay
       ~|  "{<cache.act>} cache doesn't exist, try %default cache"
       (~(got by caches) cache.act)
     :: have to get rid of the kids desk otherwise boot fails
     =.  dos.rom.ruf.clay  (~(del by dos.rom.ruf.clay) %kids)
-    =/  new  (~(got by piers) who.act)
+    =/  new=pier  *pier
     =.  sol.snap.new
       ^-  soul
       :*  [who.act *@da *@uvJ]                         ::  mien
@@ -477,7 +755,7 @@
               [%jael [!>((jael-core who.act)) *worm]]
               [%khan [!>((khan-core who.act)) *worm]]
       ==  ==
-    =.  piers  (~(put by piers) who.act new)
+    =.  piers  (~(put by piers) who.act (pack-pier new))
     =.  this
       =<  abet-pe:plow
       %-  push-events:(pe who.act)
@@ -493,16 +771,29 @@
     (pe who.act)
   ::
       %init-moon
-    ::  Re-initializing a moon is a key rotation, not another life-1
-    ::  registration.  Jael keeps the existing key for a repeated life, while
-    ::  %dawn would boot with the newly generated ring; that split identity is
-    ::  rejected by peers as %evil.  Advance the registered/booted life in
-    ::  lockstep when this moon already exists in our public-key state.
+    ?:  (~(has by piers) who.act)
+      ~|([%theseus-init-existing who.act] !!)
+    ::  Re-initializing a moon discards its Arvo state, so it is a breach as
+    ::  well as a key rotation.  Advancing only life falsely preserves the
+    ::  old continuity namespace: remote peers can then request Clay revisions
+    ::  from the discarded pier (for example /c/z/2/kids) that the new pier
+    ::  cannot serve.  Advance rift and life together, and boot %dawn with the
+    ::  exact pair registered in the host's Jael.
     =/  old-life=(unit @ud)
       .^  (unit @ud)  %j
         /(scot %p our.bowl)/lyfe/(scot %da now.bowl)/(scot %p who.act)
       ==
-    =/  moon-life=@ud  ?~(old-life 1 +(u.old-life))
+    =/  prior=(unit [rift=@ud life=@ud])
+      ?~  old-life  ~
+      =/  old-rift=(unit @ud)
+        .^  (unit @ud)  %j
+          /(scot %p our.bowl)/ryft/(scot %da now.bowl)/(scot %p who.act)
+        ==
+      ~|  [%theseus-init-missing-rift who.act u.old-life]
+      =/  old-rift-val=@ud  (need old-rift)
+      `[old-rift-val u.old-life]
+    =/  moon-rift=@ud  ?~(prior 0 +(rift.u.prior))
+    =/  moon-life=@ud  ?~(prior 1 +(life.u.prior))
     ::  Provision the moon with correct CURRENT keys for its whole sponsor
     ::  chain (us -> star -> galaxy), scried from our Jael.  A minimal czar
     ::  (just the galaxy) left stale rift/life for the sponsor, causing
@@ -530,21 +821,28 @@
       .^((list turf) %j /(scot %p our.bowl)/turf/(scot %da now.bowl))
     ::  register the moon's public key with our Jael (self-sufficient
     ::  resident moon; no separate dingy agent). jael only accepts our moons.
-    =/  reg-card=card
+    =/  rift-card=card
+      :*  %pass  /theseus/moon-rift/(scot %p who.act)  %arvo  %j
+          %moon  who.act  [*id:block:jael %rift moon-rift %.n]
+      ==
+    =/  key-card=card
       :*  %pass  /theseus/moon/(scot %p who.act)  %arvo  %j
           %moon  who.act  [*id:block:jael %keys [moon-life 1 pub.act] %.n]
       ==
+    =/  reg-cards=(list card)
+      ?~(prior [key-card ~] [rift-card key-card ~])
     =^  cards  state
       =.  this  apex-theseus  =<  abet-theseus
-      =.  this  abet-pe:unpause:(publish-effect:(pe who.act) [/ %kill ~])
-      =/  clay  (clay-core who.act)
-      =.  ruf.clay
-        ~|  "{<cache.act>} cache doesn't exist, try %default cache"
-        (~(got by caches) cache.act)
+    =/  clay  (clay-core who.act)
+    =.  ruf.clay
+      ~|  "{<cache.act>} cache doesn't exist, try %default cache"
+      (~(got by caches) cache.act)
     :: have to get rid of the kids desk otherwise boot fails
     =.  dos.rom.ruf.clay  (~(del by dos.rom.ruf.clay) %kids)
-    =/  new  (~(got by piers) who.act)
-    =.  sol.snap.new
+    ::  Build the complete typed pier off-map.  Never expose an empty placeholder:
+    ::  if construction fails, no fleet record exists; if it succeeds, the first
+    ::  visible record already contains all nine vanes.
+    =/  moon-soul=soul
       ^-  soul
       :*  [who.act *@da *@uvJ]                         ::  mien
           &                                            ::  fad
@@ -568,7 +866,14 @@
               [%jael [!>((jael-core who.act)) *worm]]
               [%khan [!>((khan-core who.act)) *worm]]
       ==  ==
-    =.  piers  (~(put by piers) who.act new)
+    =/  new=pier  *pier
+    =.  new  new(sol.snap moon-soul, paused |)
+    =/  built-vanes=(set term)  ~(key by van.mod.sol.snap.new)
+    =/  wanted-vanes=(set term)
+      (sy ~[%ames %behn %clay %dill %eyre %gall %iris %jael %khan])
+    ?.  =(wanted-vanes built-vanes)
+      ~|([%theseus-init-vane-build-failed who.act built-vanes] !!)
+    =.  piers  (~(put by piers) who.act (pack-pier new))
     =.  this
       =<  abet-pe:plow
       %-  push-events:(pe who.act)
@@ -576,8 +881,8 @@
       ::  boot %dawn with the real key (ring) + galaxy trust anchor (czar) and
       ::  turf, scried from our Jael.  spon stays empty (jael doesn't expose
       ::  full azimuth points); the galaxy key is enough to start bootstrap.
-      ::  feed %2 = [[%2 ~] who rift=0 [life ring]~].
-      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act 0 [moon-life key.act]~] ~ czar turves 0 ~]
+      ::  feed %2 = [[%2 ~] who rift [life ring]~].
+      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act moon-rift [moon-life key.act]~] ~ czar turves 0 ~]
           [/b/behn/0v1n.2m9vh %born ~]
           [/i/http-client/0v1n.2m9vh %born ~]
           [/e/http-server/0v1n.2m9vh %born ~]
@@ -586,45 +891,84 @@
           [/c/commit/(scot %p who.act) (prune-boot-park park)]
       ==
       (pe who.act)
-    [[reg-card cards] state]
+    [(weld reg-cards cards) state]
   ::
       %kill-ships
-    =.  this
-      %+  turn-ships  hers.act
-      |=  [who=ship thus=_this]
-      ~&  theseus+killed+who
-      =.  this  thus
-      (publish-effect:(pe who) [/ %kill ~])
+    ::  Killing is an administrative operation, not a moon event.  Never cast
+    ::  or plow the target: a corrupt/empty record must still be removable, and
+    ::  a valid moon must not run queued work on its way out.
+    =/  missing=(list ship)
+      %+  skim  hers.act
+      |=  who=ship
+      !(~(has by piers) who)
+    ?^  missing
+      ~|([%theseus-kill-missing missing] !!)
+    =/  kill-cards=(list card)
+      %+  turn  hers.act
+      |=  who=ship
+      :^  %pass  /theseus-pyre  %agent
+      :+  [our.bowl %theseus-pyre]  %poke
+      theseus-effect+!>(`theseus-effect`[who [/ %kill ~]])
     =.  piers
       %-  ~(dif by piers)
       %-  ~(gas by *fleet)
-      (turn hers.act |=(=ship [ship *pier]))
-    `state
+      (turn hers.act |=(=ship [ship *saved-pier]))
+    ~&  [%theseus-killed hers.act]
+    [kill-cards state]
   ::
       %snap-ships
+    ?:  =(~ hers.act)
+      ~|([%theseus-snapshot-empty path.act] !!)
+    ?:  (~(has by fleet-snaps) path.act)
+      ~|([%theseus-snapshot-exists path.act] !!)
+    =/  requested=(set ship)  (~(gas in *(set ship)) hers.act)
+    ?.  =((lent hers.act) ~(wyt in requested))
+      ~|([%theseus-snapshot-duplicate-ship path.act] !!)
+    =/  selected=fleet
+      %-  malt
+      %+  turn  hers.act
+      |=  her=ship
+      [her (~(got by piers) her)]
+    =/  bad=(list ship)
+      %+  skim  hers.act
+      |=  her=ship
+      !(snapshot-ready her (~(got by selected) her))
+    ?^  bad
+      ~|([%theseus-snapshot-not-ready path.act bad] !!)
     =.  fleet-snaps
       %+  ~(put by fleet-snaps)  path.act
-      %-  malt
-      %+  murn  hers.act
-      |=  her=ship
-      ^-  (unit (pair ship pier))
-      ?~  per=(~(get by piers) her)  ~
-      `[her u.per]
+      [now.bowl current-runtime selected]
     ~&  theseus+snapshot+path.act
     `state
   ::
       %restore-snap
-    =/  to-kill  :: only kill ships in the snapshot
-      %-  ~(int in ~(key by piers))
-      ~(key by (~(got by fleet-snaps) path.act))
-    =.  this
-      %+  turn-ships  ~(tap in to-kill)
-      |=  [who=ship thus=_this]
-      =.  this  thus
-      (publish-effect:(pe who) [/ %kill ~])
-    =.  piers  (~(uni by piers) (~(got by fleet-snaps) path.act))
+    =/  shot  (~(got by fleet-snaps) path.act)
+    ?.  =(runtime.shot current-runtime)
+      ~|([%theseus-snapshot-runtime-mismatch path.act runtime.shot current-runtime] !!)
+    =/  hers=(list ship)  (turn ~(tap by ships.shot) head)
+    =/  bad=(list ship)
+      %+  skim  hers
+      |=  her=ship
+      !(snapshot-ready her (~(got by ships.shot) her))
+    ?^  bad
+      ~|([%theseus-snapshot-invalid path.act bad] !!)
+    ::  Snapshots are sealed while paused.  Restore their internal state as
+    ::  running, then ask pyre to atomically reset its per-moon shims and send
+    ::  the restored vanes their normal runtime %born/%live sequence.
+    =/  restored=fleet
+      %-  malt
+      %+  turn  ~(tap by ships.shot)
+      |=  [who=ship saved=saved-pier]
+      [who saved(paused |)]
+    =.  piers  (~(uni by piers) restored)
+    =/  restart-cards=(list card)
+      %+  turn  hers
+      |=  who=ship
+      :^  %pass  /theseus-pyre  %agent
+      :+  [our.bowl %theseus-pyre]  %poke
+      theseus-effect+!>(`theseus-effect`[who [/ %restart ~]])
     ~&  theseus+restore-snap+path.act
-    abet-theseus
+    [restart-cards state]
   ::
       %delete-snap
     ~&  deleted+path.act
@@ -759,8 +1103,8 @@
       (~(got by caches) name.act)
     =/  all=(list ship)
       %+  murn  ~(tap in piers)
-      |=  [=ship =pier]
-      ?:  paused.pier  ~
+      |=  [=ship saved=saved-pier]
+      ?:  paused.saved  ~
       ::  can't inject desks if they haven't been installed 
       ?.  =(desks (~(int in (raft-desks raft:(pe ship))) desks))
         ~
@@ -778,32 +1122,35 @@
       %-  ~(gas by piers)
       %+  turn  t.all
       |=  who=ship
-      ^-  [ship pier]
-      =+  pier=(~(got by piers) who)
+      ^-  [ship saved-pier]
+      =/  old  (~(got by piers) who)
+      =/  pier=pier  (unpack-pier old)
       :-  who
+      ^-  saved-pier
+      %-  pack-pier
       %=    pier
-          van.mod.sol.snap
-        =+  !<  cay=(tail clay-types)
-            vase:(~(got by van.mod.sol.snap.pier) %clay)
-        ::  408 Clay no longer exposes .fad/flow in raft; keep default empty fad.
-        =.  ran.ruf.cay  ran.raf
+        van.mod.sol.snap
+      =+  !<  cay=(tail clay-types)
+          vase:(~(got by van.mod.sol.snap.pier) %clay)
+      ::  408 Clay no longer exposes .fad/flow in raft; keep default empty fad.
+      =.  ran.ruf.cay  ran.raf
+      =.  dos.rom.ruf.cay
+        =/  desks  ~(tap in desks)
+        |-
+        ?~  desks  dos.rom.ruf.cay
         =.  dos.rom.ruf.cay
-          =/  desks  ~(tap in desks)
-          |-
-          ?~  desks  dos.rom.ruf.cay
-          =.  dos.rom.ruf.cay
-            %+  ~(put by dos.rom.ruf.cay)  i.desks
-            =|  doj=dojo:clay-types
-            ~|  "{<i.desks>} doesn't exist on {<who>}"
-            =/  dom  dom:(~(got by dos.rom.raf) i.desks)
-            =.  let.dom  0
-            =.  hit.dom  *(map aeon:clay tako:clay)
-            :: TODO might have to bunt some other stuff
-            =.  dom.doj  dom
-            doj
-          $(desks t.desks)
-        (~(put by van.mod.sol.snap.pier) %clay [!>(cay) *worm])
-      == 
+          %+  ~(put by dos.rom.ruf.cay)  i.desks
+          =|  doj=dojo:clay-types
+          ~|  "{<i.desks>} doesn't exist on {<who>}"
+          =/  dom  dom:(~(got by dos.rom.raf) i.desks)
+          =.  let.dom  0
+          =.  hit.dom  *(map aeon:clay tako:clay)
+          :: TODO might have to bunt some other stuff
+          =.  dom.doj  dom
+          doj
+        $(desks t.desks)
+      (~(put by van.mod.sol.snap.pier) %clay [!>(cay) *worm])
+      ==
     =^  car  state
       %-  poke-theseus-events
       %+  turn  t.all

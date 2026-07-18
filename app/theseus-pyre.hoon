@@ -61,6 +61,12 @@
           ::  the eyre fact.  noun = [who lane blob].
           [%pass /ames %arvo %l %spit /ames %ames-out [who.ef p.q.uf.ef q.q.uf.ef]]
       ==
+        %push
+      ::  408 Mesa gives Vere a packet plus every currently usable pact lane.
+      ::  Preserve that list across Lick so the sidecar can perform Vere's
+      ::  normal multi-lane send instead of collapsing it into legacy Ames.
+      :_  this
+      [%pass /ames %arvo %l %spit /ames %mesa-out [who.ef p.q.uf.ef q.q.uf.ef]]~
     ::  behn
         %doze
       =^  cards  behn-piers
@@ -90,7 +96,27 @@
         %kill
       =.  iris-piers  (~(del by iris-piers) who.ef)
       =.  behn-piers  (~(del by behn-piers) who.ef)
+      =.  eyre-piers  (~(del by eyre-piers) who.ef)
       `this
+        %restart
+      ::  A restored Arvo noun still contains vane state, but all of its Vere
+      ::  ducts died with the snapshot.  Clear every outer runtime shim first,
+      ::  then let the restored vanes rebuild their runtime-facing ducts.
+      =.  iris-piers  (~(del by iris-piers) who.ef)
+      =.  behn-piers  (~(del by behn-piers) who.ef)
+      =.  eyre-piers  (~(del by eyre-piers) who.ef)
+      =/  restart=(list theseus-event)
+        :~  [who.ef /b/behn/0v1n.2m9vh %born ~]
+            [who.ef /i/http-client/0v1n.2m9vh %born ~]
+            [who.ef /e/http-server/0v1n.2m9vh %born ~]
+            [who.ef /e/http-server/0v1n.2m9vh %live 8.080 `8.445]
+            [who.ef /a/newt/0v1n.2m9vh %born ~]
+        ==
+      :_  this
+      :~  :*  %pass  /theseus-events  %agent  [our.bowl %theseus]  %poke
+              %theseus-events  !>(restart)
+          ==
+      ==
     ==
   ==
 ::

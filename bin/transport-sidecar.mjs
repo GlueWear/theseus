@@ -96,9 +96,6 @@ const bindPort = Number(bindPortStr);
 // P2 lick transport: when set to theseus-pyre's /ames socket path, carry packets
 // over lick instead of the Eyre channel. Unset -> Eyre (the fallback).
 const lickSocket = args['lick-socket'] || '';
-// host planet @p number = low 32 bits of any served moon's number. Used as the
-// `from` on inbound lick frames (matches the eyre path's sponsor-routed lane).
-const hostNum = moonByNum.size ? ([...moonByNum.keys()][0] & 0xffffffffn) : 0n;
 // connected lick socket -- declared here (before setupLickTransport runs) to
 // avoid a temporal-dead-zone ReferenceError.
 let lickConn = null;
@@ -325,32 +322,61 @@ function onUdp(rec, buf, rinfo) {
 // cross-check against stale/cross-socket traffic. Mesa pacts are routed by the
 // receiving UDP socket because %page responses do not encode their recipient.
 function legacyTargets(rec, buf) {
-  if (rec.num == null) return udpRecords.length === 1;
+  return legacyMatch(rec, buf) != null;
+}
+
+// Pick the same plain/relayed body layout for both receiver validation and
+// sender attribution. The old Lick path stamped every legacy packet as coming
+// from the host planet, so a real ~ten packet was applied to ~mignes' bone and
+// crashed the moon with %dangling-bone.
+function legacyMatch(rec, buf) {
+  if (rec.num == null) return udpRecords.length === 1 ? { sndr: 0n } : null;
   const s = parseShot(buf);
-  if (s && (s.rcvr === rec.num || s.rcvrRelayed === rec.num)) return true;
-  console.log(`[transport] inbound ames cross-socket for ~${rec.name} rcvr=${s?.rcvr ?? '?'}/${s?.rcvrRelayed ?? '?'}; drop`);
-  return false;
+  if (s && s.rcvr === rec.num) return s;
+  return null;
 }
 
 function isMesaPact(buf) { return buf.length >= 8 && buf.readUInt32LE(4) === 0x67e00200; }
 
 // --- Ames packet parse (for multi-moon inbound routing) ------------------
-// Pull the receiver @p out of the packet header (little-endian), per lull
-// +sift-shot: sndr/rcvr sit right after the 4-byte header + 1 tick byte.
+// Pull the sender/receiver and header metadata out of a legacy shot, exactly as
+// 408 +sift-shot does.  In the serialized little-endian byte stream, a relayed
+// shot's six-byte origin precedes the tick/sender/receiver fields.
 function leToBig(b) { let n = 0n; for (let i = b.length - 1; i >= 0; i -= 1) n = (n << 8n) | BigInt(b[i]); return n; }
 function parseShot(buf) {
   if (!buf || buf.length < 6) return null;
+  const header = buf.readUInt32LE(0);
   const sndrSize = RANK_BYTES[((buf[0] >> 7) & 1) | ((buf[1] & 1) << 1)];
   const rcvrSize = RANK_BYTES[(buf[1] >> 1) & 3];
-  // body = [origin(6, relayed only)] + tick(1) + sndr + rcvr + content. Packets
-  // arrive in two layouts (with/without the 6-byte relayed origin), and the
-  // header's relayed bit is unreliable to decode here, so we compute the
-  // receiver @p at BOTH offsets and let the caller route to whichever matches a
-  // known moon. Verified against live traffic: doznec's @p lands at the plain
-  // offset for most packets and at +6 for the relayed ones.
-  const rcvrAt = (b) => leToBig(b.subarray(1 + sndrSize, 1 + sndrSize + rcvrSize));
-  const body = buf.subarray(4);
-  return { rcvr: rcvrAt(body), rcvrRelayed: rcvrAt(body.subarray(6)) };
+  const relayed = ((header >>> 31) & 1) === 0;
+  const rawBody = buf.subarray(4);
+  if (relayed && rawBody.length < 7) return null;
+  const body = relayed ? rawBody.subarray(6) : rawBody;
+  const req = ((header >>> 2) & 1) === 0;
+  const sam = ((header >>> 3) & 1) === 0;
+  const content = body.subarray(1 + sndrSize + rcvrSize);
+  let fineNum = null;
+  let finePath = null;
+  if (req && !sam && content.length >= 7 && content[0] === 0) {
+    const len = content.readUInt16LE(5);
+    if (content.length >= 7 + len) {
+      fineNum = content.readUInt32LE(1);
+      finePath = content.subarray(7, 7 + len).toString('utf8');
+    }
+  }
+  return {
+    sndr: leToBig(body.subarray(1, 1 + sndrSize)),
+    rcvr: leToBig(body.subarray(1 + sndrSize, 1 + sndrSize + rcvrSize)),
+    req,
+    sam,
+    version: (header >>> 4) & 7,
+    relayed,
+    sndrTick: body[0] & 0x0f,
+    rcvrTick: (body[0] >>> 4) & 0x0f,
+    headerHex: buf.subarray(0, 5).toString('hex'),
+    fineNum,
+    finePath,
+  };
 }
 function loadMoonsMap(a) {
   const out = {};
@@ -447,13 +473,17 @@ async function setupLickTransport(sockPath) {
   await new Promise(() => {});   // keep the process alive on the socket
 }
 
-// outbound: a %spit'd [%ames-out [who lane blob]] -> UDP send (reuses the
-// galaxy-DNS / direct / gateway logic, but keyed by number instead of name).
+// outbound: a %spit'd [%ames-out [who lane blob]] (legacy Ames) or
+// [%mesa-out [who lanes blob]] (408 Mesa) -> UDP send. Mesa supplies a list
+// because Vere is expected to try every currently usable pact lane.
 function onLickOut(payload) {
   let noun;
   try { noun = cue_bytes(new DataView(payload.buffer, payload.byteOffset, payload.byteLength)); }
   catch (e) { console.error('[transport] lick cue failed:', e.message); return; }
-  if (!isCell(noun) || cordOf(atomBig(noun.head)) !== 'ames-out') return;
+  if (!isCell(noun)) return;
+  const mark = cordOf(atomBig(noun.head));
+  if (mark === 'mesa-out') { onLickMesaOut(noun.tail); return; }
+  if (mark !== 'ames-out') return;
   const who = atomBig(noun.tail.head);
   const lane = noun.tail.tail.head;
   const bytes = atomToLeBuf(atomBig(noun.tail.tail.tail));
@@ -486,13 +516,91 @@ function onLickOut(payload) {
   console.log(`[transport] OUT ~${from} -> ~${stripSig(gatewayShip)} gateway ${bytes.length}B`);
 }
 
+function onLickMesaOut(noun) {
+  if (!isCell(noun) || !isCell(noun.tail)) {
+    console.log('[transport] malformed mesa-out noun; drop');
+    return;
+  }
+  const who = atomBig(noun.head);
+  const lanes = hoonList(noun.tail.head);
+  const bytes = atomToLeBuf(atomBig(noun.tail.tail));
+  const from = moonByNum.get(who) || String(who);
+  const rec = udpByNum.get(who) || (udpRecords.length === 1 ? udpRecords[0] : null);
+  if (!rec) { console.log(`[transport] no UDP endpoint for ~${from}, mesa drop`); return; }
+  if (!lanes) { console.log(`[transport] malformed mesa lane list from ~${from}; drop`); return; }
+  if (lanes.length === 0) { console.log(`[transport] OUT mesa ~${from} has no lanes; drop`); return; }
+  for (const lane of lanes) sendMesaLane(rec, from, lane, bytes);
+}
+
+function sendMesaLane(rec, from, lane, bytes) {
+  // An atom pact lane is a ship route (normally a sponsor or galaxy).
+  if (!isCell(lane)) {
+    const val = atomBig(lane);
+    if (moonByNum.has(val)) {
+      const dest = udpByNum.get(val);
+      if (!dest) { console.log(`[transport] no local endpoint for mesa lane ${val}; drop`); return; }
+      rec.udp.send(bytes, dest.port, '127.0.0.1', (e) => {
+        if (e) console.error('[transport] local mesa send err:', e);
+      });
+      console.log(`[transport] OUT mesa ~${from} -> local ~${dest.name} ${bytes.length}B`);
+      return;
+    }
+    const n = Number(val);
+    if (n >= 0 && n < 256) {
+      sendToGalaxy(rec.udp, GALAXIES[n], n, bytes, from);
+      return;
+    }
+    const peer = gatewayShip && peers.get(gatewayShip);
+    if (!peer) { console.log(`[transport] OUT mesa ~${from} no route for ship ${val}; drop`); return; }
+    rec.udp.send(bytes, peer.port, peer.addr, (e) => {
+      if (e) console.error('[transport] mesa gateway send err:', e);
+    });
+    console.log(`[transport] OUT mesa ~${from} -> ~${stripSig(gatewayShip)} gateway ${bytes.length}B`);
+    return;
+  }
+
+  const tag = cordOf(atomBig(lane.head));
+  if (!isCell(lane.tail)) { console.log(`[transport] malformed mesa %${tag} lane; drop`); return; }
+  const address = atomBig(lane.tail.head);
+  const port = Number(atomBig(lane.tail.tail));
+  if (!port) { console.log(`[transport] mesa %${tag} lane has no port; drop`); return; }
+  if (tag === 'if') {
+    const addr = ipv4Text(address);
+    rec.udp.send(bytes, port, addr, (e) => {
+      if (e) console.error('[transport] mesa IPv4 send err:', e);
+    });
+    console.log(`[transport] OUT mesa ~${from} -> ${addr}:${port} ${bytes.length}B`);
+    return;
+  }
+  // Existing Theseus UDP endpoints are IPv4. Preserve and identify an IPv6
+  // lane rather than misrouting it; IPv6 sockets can be added independently.
+  if (tag === 'is') {
+    console.log(`[transport] OUT mesa ~${from} IPv6 lane unsupported; drop lane`);
+    return;
+  }
+  console.log(`[transport] OUT mesa ~${from} unknown lane %${tag}; drop lane`);
+}
+
+function hoonList(noun) {
+  const out = [];
+  let cur = noun;
+  while (isCell(cur)) { out.push(cur.head); cur = cur.tail; }
+  return atomBig(cur) === 0n ? out : null;
+}
+
+function ipv4Text(ip) {
+  const n = Number(ip & 0xffffffffn);
+  return `${(n >>> 24) & 0xff}.${(n >>> 16) & 0xff}.${(n >>> 8) & 0xff}.${n & 0xff}`;
+}
+
 // inbound: classify the wire protocol, then inject through the matching 408
 // Ames unix task.  Legacy shots use %hear with an opaque direct-address lane;
 // Mesa pacts use %heer with a structured pact lane.  The pact serializer has a
 // stable 32-bit magic at bytes 4..7 (see +head:de:pact in 408 %lull).
 function onUdpLick(rec, buf, rinfo) {
   const isMesa = isMesaPact(buf);
-  if (!isMesa && !legacyTargets(rec, buf)) return;
+  const legacy = isMesa ? null : legacyMatch(rec, buf);
+  if (!isMesa && !legacy) return;
   if (rec.num == null) {
     console.log(`[transport] no numeric @p for ~${rec.name}; inbound drop`);
     return;
@@ -510,14 +618,19 @@ function onUdpLick(rec, buf, rinfo) {
     // Legacy Ames address = IPv4 in low 32 bits, UDP port in bits 32..47.
     const addr = ip | (BigInt(rinfo.port) << 32n);
     noun = new Cell(Atom.fromCord('ames-in'),
-             new Cell(A(who), new Cell(A(hostNum), new Cell(A(addr), A(leToBig(buf))))));
+             new Cell(A(who), new Cell(A(legacy.sndr), new Cell(A(addr), A(leToBig(buf))))));
   }
   const jb = Buffer.from(jam(noun).bytes());
   const frame = Buffer.alloc(5 + jb.length);   // [0x00][u32 LE len][jam]
   frame.writeUInt32LE(jb.length, 1);
   jb.copy(frame, 5);
   lickConn.write(frame);
-  console.log(`[transport] IN ${isMesa ? 'mesa' : 'ames'} -> ~${rec.name} ${buf.length}B udp=:${rec.port} lane=${rinfo.address}:${rinfo.port}`);
+  if (isMesa) {
+    console.log(`[transport] IN mesa -> ~${rec.name} ${buf.length}B udp=:${rec.port} lane=${rinfo.address}:${rinfo.port}`);
+  } else {
+    const fine = legacy.finePath == null ? '' : ` fine=${legacy.fineNum}:${legacy.finePath}`;
+    console.log(`[transport] IN ames ${legacy.sndr}->${legacy.rcvr} req=${Number(legacy.req)} sam=${Number(legacy.sam)} relayed=${Number(legacy.relayed)} ticks=${legacy.sndrTick}/${legacy.rcvrTick} hdr=${legacy.headerHex}${fine} ${buf.length}B udp=:${rec.port} lane=${rinfo.address}:${rinfo.port}`);
+  }
 }
 
 function atomBig(x) { for (const k of ['number', 'big', 'n', 'value']) if (typeof x[k] === 'bigint') return x[k]; const v = x.valueOf && x.valueOf(); return typeof v === 'bigint' ? v : 0n; }
