@@ -917,6 +917,7 @@
     [kill-cards state]
   ::
       %snap-ships
+    =.  this  apex-theseus  =<  abet-theseus
     ?:  =(~ hers.act)
       ~|([%theseus-snapshot-empty path.act] !!)
     ?:  (~(has by fleet-snaps) path.act)
@@ -924,22 +925,43 @@
     =/  requested=(set ship)  (~(gas in *(set ship)) hers.act)
     ?.  =((lent hers.act) ~(wyt in requested))
       ~|([%theseus-snapshot-duplicate-ship path.act] !!)
+    ::  Quiesce and seal atomically.  Runtime events may arrive after a caller
+    ::  pauses a moon (especially across a Gall reload), leaving a non-empty
+    ::  queue that a paused moon cannot drain.  Within this single Gall event,
+    ::  run each selected moon to an empty queue and pause it again before
+    ::  copying the fleet state.  No external event can interleave here.
+    =.  this
+      =/  pending  hers.act
+      |-  ^+  this
+      ?~  pending  this
+      =/  her  i.pending
+      =.  this  abet-pe:unpause:(pe her)
+      =.  this  abet-pe:plow:(pe her)
+      =.  this  abet-pe:pause:(pe her)
+      $(pending t.pending, this this)
     =/  selected=fleet
       %-  malt
       %+  turn  hers.act
       |=  her=ship
       [her (~(got by piers) her)]
+    ::  Do not carry saved-pier vases through a polymorphic +skim callback.
+    ::  As with pause/unpause on state %4, explicitly walk the list so every
+    ::  readiness check runs against this exact parent core and fleet map.
     =/  bad=(list ship)
-      %+  skim  hers.act
-      |=  her=ship
-      !(snapshot-ready her (~(got by selected) her))
+      =/  pending  hers.act
+      =/  failed  *(list ship)
+      |-
+      ?~  pending  (flop failed)
+      =/  her  i.pending
+      =/  ready  (snapshot-ready her (~(got by selected) her))
+      $(pending t.pending, failed ?:(ready failed [her failed]))
     ?^  bad
       ~|([%theseus-snapshot-not-ready path.act bad] !!)
     =.  fleet-snaps
       %+  ~(put by fleet-snaps)  path.act
       [now.bowl current-runtime selected]
     ~&  theseus+snapshot+path.act
-    `state
+    this
   ::
       %restore-snap
     =/  shot  (~(got by fleet-snaps) path.act)
@@ -947,9 +969,13 @@
       ~|([%theseus-snapshot-runtime-mismatch path.act runtime.shot current-runtime] !!)
     =/  hers=(list ship)  (turn ~(tap by ships.shot) head)
     =/  bad=(list ship)
-      %+  skim  hers
-      |=  her=ship
-      !(snapshot-ready her (~(got by ships.shot) her))
+      =/  pending  hers
+      =/  failed  *(list ship)
+      |-
+      ?~  pending  (flop failed)
+      =/  her  i.pending
+      =/  ready  (snapshot-ready her (~(got by ships.shot) her))
+      $(pending t.pending, failed ?:(ready failed [her failed]))
     ?^  bad
       ~|([%theseus-snapshot-invalid path.act bad] !!)
     ::  Snapshots are sealed while paused.  Restore their internal state as
@@ -976,21 +1002,42 @@
   ::
       %unpause-ships
     =.  this  apex-theseus  =<  abet-theseus
-    ^+  this
-    %+  turn-ships  hers.act
-    |=  [who=ship thus=_this]
-    =.  this  thus
-    ~&  theseus+unpaused+who
-    unpause:(pe who)
+    ::  Thread the parent Theseus core explicitly.  +turn-ships returns a
+    ::  nested +pe core through a polymorphic callback; with saved-pier vases
+    ::  that can lose the updated parent fleet subject.
+    =.  this
+      =/  pending  hers.act
+      |-  ^+  this
+      ?~  pending  this
+      =/  who  i.pending
+      ~&  theseus+unpaused+who
+      =.  this  abet-pe:unpause:(pe who)
+      $(pending t.pending, this this)
+    ::  Preserve the old +turn-ships behavior: once every target is unpaused,
+    ::  drain all runnable queues across the fleet.
+    |-
+    =/  active=(unit ship)
+      =/  pers  ~(tap by piers)
+      |-
+      ?~  pers  ~
+      ?:  &(?=(^ next-events.q.i.pers) !paused.q.i.pers)
+        `p.i.pers
+      $(pers t.pers)
+    ?~  active  this
+    =.  this  abet-pe:plow:(pe u.active)
+    $
   ::
       %pause-ships
     =.  this  apex-theseus  =<  abet-theseus
-    ^+  this
-    %+  turn-ships  hers.act
-    |=  [who=ship thus=_this]
-    =.  this  thus
+    ::  Pausing is only a fleet-state update.  Do not invoke +plow and do not
+    ::  pass nested +pe cores through the generic +turn-ships callback.
+    =/  pending  hers.act
+    |-  ^+  this
+    ?~  pending  this
+    =/  who  i.pending
     ~&  theseus+paused+who
-    pause:(pe who)
+    =.  this  abet-pe:pause:(pe who)
+    $(pending t.pending, this this)
   ::
       %wish
     ~&  her.act^%wished^(wish:snap:pier-data:(pe her.act) p.act)
