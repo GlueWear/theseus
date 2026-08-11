@@ -16,7 +16,7 @@
 /+  theseus=theseus,
     default-agent,
     pill=pill,
-    dbug, verb, theseus-kernel
+    dbug, verb, dingy, theseus-kernel
 ::
 /=  arvo-core  /sys/arvo :: TODO this compiles it against zuse, WRONG
 /=  clay-core  /sys/vane/clay
@@ -916,6 +916,147 @@
       ==
       (pe who.act)
     [(weld reg-cards cards) state]
+  ::
+      %init-planet
+    ?:  (~(has by piers) who.act)
+      ~|([%theseus-init-existing who.act] !!)
+    ?.  ?=(%duke (clan:title who.act))
+      ~|([%theseus-init-planet-not-duke who.act] !!)
+    =/  planet-life=(unit @ud)
+      .^  (unit @ud)  %j
+        /(scot %p our.bowl)/lyfe/(scot %da now.bowl)/(scot %p who.act)
+      ==
+    ?~  planet-life
+      ~|([%theseus-init-planet-missing-life who.act] !!)
+    =/  planet-rift=(unit @ud)
+      .^  (unit @ud)  %j
+        /(scot %p our.bowl)/ryft/(scot %da now.bowl)/(scot %p who.act)
+      ==
+    ?~  planet-rift
+      ~|([%theseus-init-planet-missing-rift who.act] !!)
+    =/  planet-pub=(unit [suite=@ud =pass])
+      .^  (unit [@ud pass])  %j
+        /(scot %p our.bowl)/puby/(scot %da now.bowl)/(scot %p who.act)/(scot %ud u.planet-life)
+      ==
+    ?~  planet-pub
+      ~|([%theseus-init-planet-missing-public-key who.act u.planet-life] !!)
+    =/  fed=feed:jael  feed.act
+    =/  feed-who=ship
+      ?@  -.fed
+        `ship`-.fed
+      `ship`-.+.fed
+    ?.  =(who.act feed-who)
+      ~|([%theseus-init-planet-wrong-keyfile who.act feed-who] !!)
+    =/  kyz=(list [lyf=life key=ring])
+      ?@  -.fed
+        :_  ~
+        :-  `life`-.+.fed
+        `ring`-.+.+.fed
+      ?-  -.fed
+        [%1 ~]  `(list [lyf=life key=ring])`+.+.fed
+        [%2 ~]  `(list [lyf=life key=ring])`+.+.+.fed
+      ==
+    =/  feed-rift=(unit @ud)
+      ?@  -.fed
+        ~
+      ?-  -.fed
+        [%1 ~]  ~
+        [%2 ~]
+          =/  tail=[who=ship ryf=rift kyz=(list [lyf=life key=ring])]  +.fed
+          `ryf.tail
+      ==
+    =/  key-row=(unit [lyf=life key=ring])
+      =/  rows  kyz
+      |-
+      ?~  rows  ~
+      ?:  ?&  =(u.planet-life lyf.i.rows)
+              =(pass.u.planet-pub (pub-from-ring:dingy key.i.rows))
+          ==
+        `i.rows
+      $(rows t.rows)
+    ?~  key-row
+      ~|([%theseus-init-planet-key-mismatch who.act u.planet-life] !!)
+    =/  rift-ok=?
+      ?~  feed-rift  %.y
+      =(u.planet-rift u.feed-rift)
+    ?.  rift-ok
+      ~|([%theseus-init-planet-rift-mismatch who.act u.planet-rift] !!)
+    =/  priv=ring  key.u.key-row
+    =/  chain=(list ship)
+      .^((list ship) %j /(scot %p our.bowl)/saxo/(scot %da now.bowl)/(scot %p who.act))
+    =/  sponsors=(list ship)
+      ?~(chain ~ t.chain)
+    =/  czar=(map ship [rift=@ud life=@ud =pass])
+      %+  roll  sponsors
+      |=  [s=ship acc=(map ship [rift=@ud life=@ud =pass])]
+      =/  ul=(unit @ud)
+        .^((unit @ud) %j /(scot %p our.bowl)/lyfe/(scot %da now.bowl)/(scot %p s))
+      ?~  ul  acc
+      =/  ur=(unit @ud)
+        .^((unit @ud) %j /(scot %p our.bowl)/ryft/(scot %da now.bowl)/(scot %p s))
+      ?~  ur  acc
+      =/  uk=(unit [suite=@ud =pass])
+        .^  (unit [@ud pass])  %j
+          /(scot %p our.bowl)/puby/(scot %da now.bowl)/(scot %p s)/(scot %ud u.ul)
+        ==
+      ?~  uk  acc
+      (~(put by acc) s [u.ur u.ul pass.u.uk])
+    =/  turves=(list turf)
+      .^((list turf) %j /(scot %p our.bowl)/turf/(scot %da now.bowl))
+    =^  cards  state
+      =.  this  apex-theseus  =<  abet-theseus
+    =/  ker=kernel:theseus-kernel
+      (build:theseus-kernel our.bowl now.bowl)
+    =/  clay
+      (clay-core who.act)
+    =.  ruf.clay
+      ~|  "{<cache.act>} cache doesn't exist, try %default cache"
+      (unpack-raft (~(got by caches) cache.act))
+    :: have to get rid of the kids desk otherwise boot fails
+    =.  dos.rom.ruf.clay  (~(del by dos.rom.ruf.clay) %kids)
+    =/  planet-soul=soul
+      ^-  soul
+      :*  [who.act *@da *@uvJ]                         ::  mien
+          &                                            ::  fad
+          :_  |                                        ::  zen
+          :-  [~.nonce /theseus]
+          (runtime-wynn:theseus-kernel ker)
+          :^  files  lull.ker  zuse.ker            ::  mod
+          %-  ~(gas by *(map term vane))               ::  van.mod
+          :~  [%ames [(slam ames.ker !>(who.act)) *worm]]
+              [%behn [(slam behn.ker !>(who.act)) *worm]]
+              [%clay [!>(clay) *worm]]
+              [%dill [(slam dill.ker !>(who.act)) *worm]]
+              [%eyre [(slam eyre.ker !>(who.act)) *worm]]
+              [%gall [(slam gall.ker !>(who.act)) *worm]]
+              [%iris [(slam iris.ker !>(who.act)) *worm]]
+              [%jael [(slam jael.ker !>(who.act)) *worm]]
+              [%khan [(slam khan.ker !>(who.act)) *worm]]
+      ==  ==
+    =/  new-snap=_arvo-adult  *_arvo-adult
+    =.  sol.new-snap  planet-soul
+    =/  new=pier  *pier
+    =.  new  new(snap !>(new-snap), paused |)
+    =/  built-vanes=(set term)  ~(key by van.mod.sol.new-snap)
+    =/  wanted-vanes=(set term)
+      (sy ~[%ames %behn %clay %dill %eyre %gall %iris %jael %khan])
+    ?.  =(wanted-vanes built-vanes)
+      ~|([%theseus-init-vane-build-failed who.act built-vanes] !!)
+    =.  piers  (~(put by piers) who.act (pack-pier new))
+    =.  this
+      =<  abet-pe:plow
+      %-  push-events:(pe who.act)
+      ^-  (list unix-event)
+      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act u.planet-rift [u.planet-life priv]~] ~ czar turves 0 ~]
+          [/b/behn/0v1n.2m9vh %born ~]
+          [/i/http-client/0v1n.2m9vh %born ~]
+          [/e/http-server/0v1n.2m9vh %born ~]
+          [/e/http-server/0v1n.2m9vh %live 8.080 `8.445]
+          [/a/newt/0v1n.2m9vh %born ~]
+          [/c/commit/(scot %p who.act) (prune-boot-park (unpack-park park))]
+      ==
+      (pe who.act)
+    [cards state]
   ::
       %kill-ships
     ::  Killing is an administrative operation, not a moon event.  Never cast

@@ -77,6 +77,30 @@ routes galaxy-bound packets to the host Ames port. It produced local sidecar ↔
 host Ames traffic, but it did not prove live-net delivery. Keep it as an
 experiment, not the default production path.
 
+## Verified Virtual Planet Live-Net Run
+
+On `~dolten-dilpun`, `%theseus` booted a real virtual planet from a normal
+`.key` file atom:
+
+```hoon
+:theseus|init-planet ~tadtus-tinluc 0w...
+:theseus|dojo ~tadtus-tinluc "(add 2 2)"
+:theseus|dojo ~tadtus-tinluc "+vats"
+```
+
+Observed:
+
+```text
+"~tadtus-tinluc: 4"
+"~tadtus-tinluc: %base"
+"~tadtus-tinluc: hi ~zod successful"
+; ~tadtus-tinluc is your neighbor
+```
+
+Transport used direct live-net mode through the sidecar runner. Any ordinary
+Vere pier for `~tadtus-tinluc` must remain stopped while the virtual planet is
+running.
+
 ## Stale `/sys` Issue
 
 The initial install failure on `~dolten-dilpun` came from stale vendored `/sys`
@@ -104,7 +128,9 @@ sync with the target kelvin when testing.
 
 2. Sidecar operation
 
-   Add clearer docs or commands for finding:
+   Use `bin/transport-sidecar-runner.mjs` so npm dependencies install under
+   `/tmp/theseus-sidecar-runner` instead of inside the mounted desk. Add clearer
+   docs or commands for finding:
 
    - host HTTP port
    - host Ames/Mesa UDP port
@@ -128,3 +154,19 @@ sync with the target kelvin when testing.
    The sidecar proves the transport shape. The future production design should
    move this transport seam into Vere so virtual moons can use live Ames without
    a Node sidecar.
+
+## Virtual Planet Path
+
+`%theseus` now has an experimental real-planet boot path:
+
+```hoon
+:theseus|init-planet ~sampel-palnet 0w...
+```
+
+The atom argument is the planet's normal `.key` file atom. The app does not
+register keys in host Jael for planets. It reads `rift`, `life`, and public key
+from host Jael/Azimuth, verifies the supplied keyfile feed derives that public
+key, then boots `%dawn` with those continuity values.
+
+Operational rule: never run a normal Vere pier and a Theseus virtual pier for the
+same real planet at the same time.

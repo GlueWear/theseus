@@ -72,6 +72,9 @@
       ::  public key with our (the host's) Jael as this moon's key -- the
       ::  self-sufficient resident-moon path.  key = sec:ex ring, pub = pub:ex.
       [%init-moon who=ship cache=@tas pub=pass key=@]
+      ::  boot a real Azimuth planet with a supplied keyfile feed.
+      ::  continuity and public-key data come from host Jael; no Jael mutation.
+      [%init-planet who=ship cache=@tas =feed:jael]
       [%kill-ships hers=(list ship)]
       ::  snapshot manipulation
       ::

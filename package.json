@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "description": "node-side helpers for the theseus transport (sidecar, broker, lick)",
+  "scripts": {
+    "transport": "node bin/transport-sidecar-runner.mjs"
+  },
   "dependencies": {
     "@urbit/nockjs": "^1.4.0"
   }

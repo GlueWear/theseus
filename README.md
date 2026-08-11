@@ -13,11 +13,14 @@ Verified on `[%zuse 408]`:
 
 - `%theseus` and `%theseus-pyre` install and run from a `%theseus` desk.
 - `:theseus|init-moon` boots a resident virtual moon with real generated keys.
-- `:theseus|dojo` can run commands inside the virtual moon.
+- `:theseus|init-planet` is an experimental path for booting a real Azimuth
+  planet from its supplied normal `.key` file atom.
+- `:theseus|dojo` can run commands inside the virtual ship.
 - The Node sidecar can subscribe to `%theseus-pyre /ames/outbound`.
-- Direct sidecar UDP mode can send virtual moon Ames packets to live net and
-  receive replies.
-- A virtual moon successfully completed `|hi ~zod` over live net.
+- Direct sidecar UDP mode can send virtual moon and virtual planet Ames packets
+  to live net and receive replies.
+- A virtual moon and a virtual real planet both completed `|hi ~zod` over live
+  net.
 
 Known current limitations:
 
@@ -41,6 +44,8 @@ Known current limitations:
 - `sur/theseus.hoon`: shared types for events, effects, actions, and updates.
 - `lib/theseus-kernel.hoon`: current runtime kernel-building helpers.
 - `bin/transport-sidecar.mjs`: live Ames UDP sidecar.
+- `bin/transport-sidecar-runner.mjs`: copies the sidecar into `/tmp`, installs
+  Node dependencies there, and runs transport without polluting a mounted desk.
 - `bin/echo-sidecar.mjs`: synthetic transport/fact-loop helper.
 - `sys/`: vendored 408 kernel files required by the current baseline.
 
@@ -74,13 +79,30 @@ Replace `~dostex-dolten-dilpun` with a moon of your host. The generator creates
 and registers resident moon keys through the host's Jael, then boots the virtual
 moon with `%dawn`.
 
+## Boot A Virtual Planet
+
+This path is experimental and intended for real live-net testing with a fresh
+planet identity, i.e. a `%duke` ship. Do not run a normal Vere pier for the same
+planet at the same time.
+
+The host must already know the planet's Azimuth state, and you must supply the
+planet's normal `.key` file atom. Theseus reads `rift`, `life`, and the public
+key from host Jael, checks that the keyfile feed matches the public key, and then
+boots the virtual planet with `%dawn`.
+
+```hoon
+:theseus|init-planet ~sampel-palnet 0w...
+:theseus|dojo ~sampel-palnet "+vats"
+```
+
+For now, the transport sidecar still uses the `--moon` option name for any
+virtual ship. Pass the virtual planet there when testing live Ames.
+
 ## Sidecar Setup
 
-Install Node dependencies once:
-
-```bash
-npm ci
-```
+Do not run `npm ci` inside a mounted desk: Clay will try to commit
+`node_modules/`. Use the runner, which installs dependencies under
+`/tmp/theseus-sidecar-runner` and launches a copied sidecar from there.
 
 Find the host HTTP port, Ames/Mesa UDP port, and host `+code`. In the proven run:
 
@@ -90,10 +112,10 @@ Find the host HTTP port, Ames/Mesa UDP port, and host `+code`. In the proven run
 - virtual moon: `~dostex-dolten-dilpun`
 - sidecar UDP bind: `0.0.0.0:41237`
 
-Start the known-good direct live-net sidecar:
+Start the known-good direct live-net sidecar from the mounted desk or repo:
 
 ```bash
-node bin/transport-sidecar.mjs \
+node bin/transport-sidecar-runner.mjs \
   --url http://localhost:8081 \
   --ship dolten-dilpun \
   --code <host-code> \
@@ -121,8 +143,15 @@ OUT ... sndr=@p:<moon-number> rcvr=~zod ...
 IN  ... sndr=~zod rcvr=@p:<moon-number> ...
 ```
 
-That is the live-net proof: the packet leaves as the virtual moon and returns
-from `~zod` to that virtual moon.
+That is the live-net proof: the packet leaves as the virtual ship and returns
+from `~zod` to that virtual ship.
+
+The same path was verified for a real virtual planet:
+
+```text
+"~tadtus-tinluc: hi ~zod successful"
+; ~tadtus-tinluc is your neighbor
+```
 
 ## Gateway Mode
 
