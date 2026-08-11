@@ -22,11 +22,11 @@ Install and boot:
 :theseus|dojo ~dostex-dolten-dilpun "+vats"
 ```
 
-Start sidecar:
+Start sidecar through the runner, so dependencies install in the system temp directory instead of
+inside the mounted desk:
 
 ```bash
-npm ci
-node bin/transport-sidecar.mjs \
+node bin/transport-sidecar-runner.mjs \
   --url http://localhost:8081 \
   --ship dolten-dilpun \
   --code <host-code> \
@@ -56,6 +56,13 @@ IN  ... sndr=~zod rcvr=@p:<moon-number> ...
 
 This proves direct live-net transport through the sidecar, not just local host
 traffic.
+
+Operational checks before starting sidecar:
+
+- use the actual host Ames/Mesa UDP port, not `REAL_AMES_PORT` or another placeholder
+- for direct live-net, bind `0.0.0.0:<free-port>`
+- if a port is busy, check it with `lsof -nP -iUDP:<port>`
+- avoid `npm ci` in a mounted desk; use `bin/transport-sidecar-runner.mjs`
 
 ## Direct Mode vs Gateway Mode
 
@@ -128,8 +135,7 @@ sync with the target kelvin when testing.
 
 2. Sidecar operation
 
-   Use `bin/transport-sidecar-runner.mjs` so npm dependencies install under
-   `/tmp/theseus-sidecar-runner` instead of inside the mounted desk. Add clearer
+   Use `bin/transport-sidecar-runner.mjs` so npm dependencies install under the system temp directory instead of inside the mounted desk. Add clearer
    docs or commands for finding:
 
    - host HTTP port

@@ -49,6 +49,7 @@ const pier = args.pier || process.env.URBIT_PIER || '/Users/chris/Enviorment/urb
 const code = args.code || process.env.URBIT_CODE || readCode(pier);
 const uid = `theseus-transport-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 const galaxyViaGateway = args['galaxy-via-gateway'] === 'true';
+const bindSpec = args.bind || '0.0.0.0:39999';
 
 // ship -> {addr, port} routing table for non-galaxy peers (gateway, moons).
 // Galaxies are NOT listed here -- they're resolved live via DNS (sendToGalaxy),
@@ -57,8 +58,8 @@ const peers = new Map();
 // fakenet loopback default only under --fake; live routes galaxies via DNS.
 if (args.fake) addPeer('~zod', '127.0.0.1:31337');
 for (const p of asList(args.peer)) {
-  const [who, hostport] = p.split('=');
-  addPeer(who, hostport);
+  const [who, hostport] = parsePeerSpec(p, '--peer');
+  addPeer(who, hostport, '--peer');
 }
 // gateway: catch-all uplink for any non-moon destination. On a real host this
 // is the host planet's own Ames port; its real Ames forwards the moon's
@@ -66,8 +67,8 @@ for (const p of asList(args.peer)) {
 //   --gateway ~marmun-marmex=127.0.0.1:57173
 let gatewayShip = null;
 if (args.gateway) {
-  const [who, hostport] = String(args.gateway).split('=');
-  addPeer(who, hostport);
+  const [who, hostport] = parsePeerSpec(args.gateway, '--gateway');
+  addPeer(who, hostport, '--gateway');
   gatewayShip = who.startsWith('~') ? who : `~${who}`;
 }
 // reverse map "addr:port" -> ~ship, for inbound sender identification
@@ -87,13 +88,15 @@ const RANK_BYTES = [2, 4, 8, 16];                       // @p byte-rank sizes
 // protocol constant (fake 31337, live 13337); turf is network config (default
 // urbit.org).  Both overridable; confirm czarBase against disden's live traffic.
 const turf = args.turf || process.env.URBIT_TURF || 'urbit.org';
-const czarBase = Number(args['czar-base'] || (args.fake ? 31337 : 13337));
+const czarBase = parsePort(args['czar-base'] || (args.fake ? 31337 : 13337), '--czar-base');
 
 // Bind 0.0.0.0 (all interfaces) not loopback: galaxy replies arrive from the
 // real internet, so the socket must be reachable there. NAT/firewall must allow
 // the port for the direct-return path; otherwise replies come sponsor-routed.
-const [bindAddr, bindPortStr] = (args.bind || '0.0.0.0:39999').split(':');
-const bindPort = Number(bindPortStr);
+const [bindAddr, bindPort] = parseHostPort(bindSpec, '--bind');
+if (!galaxyViaGateway && !args.fake && isLoopbackBind(bindAddr)) {
+  console.warn(`[transport] warning: ${bindSpec} is loopback-only; direct live-net replies usually need --bind 0.0.0.0:<port>`);
+}
 
 // P2 lick transport: when set to theseus-pyre's /ames socket path, carry packets
 // over lick instead of the Eyre channel. Unset -> Eyre (the fallback).
@@ -186,8 +189,12 @@ for (let i = 0; i < moonNames.length; i += 1) {
   const udp = dgram.createSocket('udp4');
   const rec = { name, num, port, udp };
   udp.on('message', (buf, rinfo) => onUdpForMoon(rec, buf, rinfo));
+  try {
+    await bindUdp(udp, port, bindAddr);
+  } catch (e) {
+    fail(`Cannot bind UDP for ~${name} at ${bindAddr}:${port}: ${e.code || e.message}`);
+  }
   udp.on('error', (e) => console.error(`[transport] udp ~${name} error:`, e));
-  await new Promise((res) => udp.bind(port, bindAddr, res));
   udpRecords.push(rec);
   udpByName.set(name, rec);
   if (num != null) udpByNum.set(num, rec);
@@ -463,10 +470,10 @@ function bufferLEToAtomHex(buf) {
 }
 
 // ---- routing helpers ----------------------------------------------------
-function addPeer(who, hostport) {
+function addPeer(who, hostport, label = 'peer') {
   if (!who || !hostport) return;
-  const [addr, port] = hostport.split(':');
-  peers.set(who.startsWith('~') ? who : `~${who}`, { addr, port: Number(port) });
+  const [addr, port] = parseHostPort(hostport, label);
+  peers.set(who.startsWith('~') ? who : `~${who}`, { addr, port });
 }
 function firstPeerShip() { const k = peers.keys().next().value; return k || '~zod'; }
 function gatewayPeer() { return gatewayShip ? peers.get(gatewayShip) : null; }
@@ -700,6 +707,37 @@ function parseArgs(argv) {
 function asList(v) { return v == null ? [] : [].concat(v); }
 function trimSlash(s) { return String(s).replace(/\/+$/, ''); }
 function stripSig(s) { return String(s).replace(/^~/, ''); }
+function parsePeerSpec(spec, flag) {
+  const text = String(spec || '');
+  const eq = text.indexOf('=');
+  if (eq <= 0 || eq === text.length - 1) fail(`${flag} must be ~ship=host:port`);
+  return [text.slice(0, eq), text.slice(eq + 1)];
+}
+function parseHostPort(spec, flag) {
+  const text = String(spec || '');
+  const idx = text.lastIndexOf(':');
+  if (idx <= 0 || idx === text.length - 1) fail(`${flag} must be host:port`);
+  const addr = text.slice(0, idx);
+  const port = parsePort(text.slice(idx + 1), flag);
+  return [addr, port];
+}
+function parsePort(value, label) {
+  const text = String(value ?? '');
+  if (!/^\d+$/.test(text)) fail(`${label} has invalid port: ${text || '(empty)'}`);
+  const port = Number(text);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) fail(`${label} port out of range: ${text}`);
+  return port;
+}
+function isLoopbackBind(addr) { return addr === '127.0.0.1' || addr === 'localhost'; }
+function bindUdp(udp, port, addr) {
+  return new Promise((resolve, reject) => {
+    const onError = (e) => { udp.off('listening', onListening); reject(e); };
+    const onListening = () => { udp.off('error', onError); resolve(); };
+    udp.once('error', onError);
+    udp.once('listening', onListening);
+    udp.bind(port, addr);
+  });
+}
 function readCode(p) {
   try { return fs.readFileSync(path.join(p, '.urb', 'code'), 'utf8').trim(); } catch { return ''; }
 }

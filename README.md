@@ -44,7 +44,7 @@ Known current limitations:
 - `sur/theseus.hoon`: shared types for events, effects, actions, and updates.
 - `lib/theseus-kernel.hoon`: current runtime kernel-building helpers.
 - `bin/transport-sidecar.mjs`: live Ames UDP sidecar.
-- `bin/transport-sidecar-runner.mjs`: copies the sidecar into `/tmp`, installs
+- `bin/transport-sidecar-runner.mjs`: copies the sidecar into the system temp directory, installs
   Node dependencies there, and runs transport without polluting a mounted desk.
 - `bin/echo-sidecar.mjs`: synthetic transport/fact-loop helper.
 - `sys/`: vendored 408 kernel files required by the current baseline.
@@ -101,8 +101,7 @@ virtual ship. Pass the virtual planet there when testing live Ames.
 ## Sidecar Setup
 
 Do not run `npm ci` inside a mounted desk: Clay will try to commit
-`node_modules/`. Use the runner, which installs dependencies under
-`/tmp/theseus-sidecar-runner` and launches a copied sidecar from there.
+`node_modules/`. Use the runner, which installs dependencies under the system temp directory and launches a copied sidecar from there.
 
 Find the host HTTP port, Ames/Mesa UDP port, and host `+code`. In the proven run:
 
@@ -112,7 +111,7 @@ Find the host HTTP port, Ames/Mesa UDP port, and host `+code`. In the proven run
 - virtual moon: `~dostex-dolten-dilpun`
 - sidecar UDP bind: `0.0.0.0:41237`
 
-Start the known-good direct live-net sidecar from the mounted desk or repo:
+Start the known-good direct live-net sidecar from the mounted desk or repo. Use a real numeric Ames port, never a placeholder such as `REAL_AMES_PORT`:
 
 ```bash
 node bin/transport-sidecar-runner.mjs \
@@ -145,6 +144,12 @@ IN  ... sndr=~zod rcvr=@p:<moon-number> ...
 
 That is the live-net proof: the packet leaves as the virtual ship and returns
 from `~zod` to that virtual ship.
+
+Sidecar startup now fails early for malformed route ports, for example
+`--gateway dolten-dilpun=127.0.0.1:REAL_AMES_PORT`. If a bind port is busy, use
+`lsof -nP -iUDP:<port>` to find the existing process or choose another port.
+Direct live-net mode should bind `0.0.0.0:<port>`; loopback binds are only for
+local experiments.
 
 The same path was verified for a real virtual planet:
 
