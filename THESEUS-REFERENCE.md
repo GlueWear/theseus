@@ -1,4 +1,12 @@
-# `%theseus` Documentation
+# Theseus Reference Notes
+
+This file preserves older/upstream `%theseus` API notes. For the current 408
+live-moon transport baseline, setup commands, and known-good sidecar invocation,
+start with `README.md` and `408-OPERATIONS-NOTES.md`. Some generator notes below
+may describe behavior that still needs revalidation on the current product line.
+
+---
+
 
 ## [`%theseus` Contents](#theseus-documentation)
 * [`%theseus` Quick Start](#theseus-quick-start)

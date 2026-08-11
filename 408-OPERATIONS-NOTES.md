@@ -1,68 +1,130 @@
-# Theseus on `%zuse 408`: current operations and open validation
+# Theseus 408 Operations Notes
 
-This note records the current, proven bring-up procedure and the remaining
-validation work. It is intentionally conservative: the current demo fleet is
-working, but snapshot restore has not yet been established as safe for normal
-networked application use.
+This file records the current known-good live-moon baseline and the remaining
+hardening work.
 
-## Host Azimuth seeding
+## Known-Good Live-Net Baseline
 
-Fresh virtual moons initially load the public Azimuth snapshot bundled with
-`%base`. On the current 408 stack that snapshot is substantially behind the
-host. The moon's `%eth-watcher` then asks the configured Ethereum RPC service
-for a 100,000-block log range, while that service accepts at most 10,000
-blocks. The result is a repeating `range 100000 exceeds limit of 10000` error.
+Host under test:
 
-`gen/theseus/seed-azimuth.hoon` copies the host's current materialized Azimuth
-state into an already-booted moon through the standard typed `%azimuth-poke`
-`%load` path. This avoids changing the host's `%base` desk or patching the 408
-kernel.
+- host ship: `~dolten-dilpun`
+- virtual moon: `~dostex-dolten-dilpun`
+- HTTP: `http://localhost:8081`
+- Ames/Mesa UDP: `55430`
+- sidecar bind: `0.0.0.0:41237`
 
-Current provisioning order:
+Install and boot:
 
-1. Run `:theseus|init-moon ~<moon>`.
-2. Wait until the initial `%base`/`%kids` merge and bootstrap activity settle.
-3. Run `:theseus|seed-azimuth ~<moon>`.
-4. Verify `+azimuth/block` and `|hi ~zod` from the moon.
-5. Install and configure applications.
+```hoon
+|commit %theseus
+|install our %theseus
+:theseus|init-moon ~dostex-dolten-dilpun
+:theseus|dojo ~dostex-dolten-dilpun "+vats"
+```
 
-Seeding during `init-moon` was tested and rejected: the asynchronous public
-snapshot load can finish later and overwrite the newer host state. Production
-automation must trigger seeding from a real post-bootstrap readiness condition,
-not from a fixed delay.
+Start sidecar:
 
-## Snapshot restore remains under test
+```bash
+npm ci
+node bin/transport-sidecar.mjs \
+  --url http://localhost:8081 \
+  --ship dolten-dilpun \
+  --code <host-code> \
+  --moon dostex-dolten-dilpun \
+  --gateway dolten-dilpun=127.0.0.1:55430 \
+  --bind 0.0.0.0:41237
+```
 
-The snapshot implementation now drains pending work, pauses the moon, captures
-the full virtual Arvo state, and reinitializes runtime shims on restore. A
-controlled snapshot/kill/restore test preserved desks and `|hi ~zod` worked.
+Live-net verification:
 
-However, an earlier restored fleet could reach Ames peers while Noltbook
-Cover/Gossip messages between the host and moons did not arrive. Freshly booted
-moons later passed the same bidirectional application test. Host Azimuth seeding
-addresses stale chain state, but it does not by itself prove that rolled-back
-Ames flows, Gall subscriptions, or application protocol state recover when
-remote peers have continued forward.
+```hoon
+:theseus|dojo ~dostex-dolten-dilpun "|hi ~zod"
+```
 
-Before snapshot recycling is used for production or relied upon for demos, run
-this controlled test with a sacrificial moon:
+Observed success:
 
-1. Establish baseline bidirectional Noltbook/Cover traffic and plugin state.
-2. Pause and snapshot the moon.
-3. Resume it and create identifiable post-snapshot traffic.
-4. Kill and restore the snapshot.
-5. Seed Azimuth from the host again.
-6. Confirm the expected local rollback, app/pal/code state, `|hi`, bidirectional
-   Cover traffic, and plugin artifacts.
-7. Repeat the restore to test idempotence.
+```text
+"~dostex-dolten-dilpun: hi ~zod successful"
+```
 
-Until that passes, prefer freshly initialized moons for the demo fleet and
-treat snapshots as experimental recovery points rather than production-safe
-backups.
+Sidecar proof lines included:
 
-## Current demo routing
+```text
+OUT ... sndr=@p:<moon-number> rcvr=~zod ...
+IN  ... sndr=~zod rcvr=@p:<moon-number> ...
+```
 
-The tracked mignes deployment maps the new pool candidates `~dozful`,
-`~dozpen`, `~dozsyt`, `~dozdur`, and `~dozwep`. Broker login codes and assignment
-state remain server-side, gitignored deployment secrets and must not be added to
-Git.
+This proves direct live-net transport through the sidecar, not just local host
+traffic.
+
+## Direct Mode vs Gateway Mode
+
+Direct mode is the known-good live-net path:
+
+```bash
+--bind 0.0.0.0:41237
+```
+
+No `--galaxy-via-gateway`.
+
+Gateway mode:
+
+```bash
+--galaxy-via-gateway
+```
+
+routes galaxy-bound packets to the host Ames port. It produced local sidecar ↔
+host Ames traffic, but it did not prove live-net delivery. Keep it as an
+experiment, not the default production path.
+
+## Stale `/sys` Issue
+
+The initial install failure on `~dolten-dilpun` came from stale vendored `/sys`
+files inside the desk. `%base` and `%theseus` had the same kelvin 408, but
+important files such as `gall`, `clay`, and `lull` had different mugs. Copying
+the host's current 408 `/sys` into the desk recovered install and boot.
+
+Current baseline still vendors `/sys`. This is intentional until the kernel
+boundary is refactored. Do not replace the vendored files casually; keep them in
+sync with the target kelvin when testing.
+
+## Current Hardening Backlog
+
+1. Eyre channel pressure
+
+   Live transport works, but packet bursts can still produce:
+
+   ```text
+   eyre: clogged on theseus-transport-... for 1
+   ```
+
+   The sidecar now ACKs string and numeric event IDs and coalesces immediate
+   ACKs, but this path still needs load testing and better startup/channel ID
+   logging.
+
+2. Sidecar operation
+
+   Add clearer docs or commands for finding:
+
+   - host HTTP port
+   - host Ames/Mesa UDP port
+   - host `+code`
+   - free sidecar UDP bind port
+
+3. Kernel boundary
+
+   Move Arvo/Clay private type usage behind `lib/theseus-kernel.hoon`. Avoid
+   partial hand-written Clay or Arvo molds. The failed `%sueseht` shim experiment
+   showed this is brittle.
+
+4. Network install
+
+   Long-term product goal: `%theseus` should install over the network without
+   users manually copying host `/sys` into the desk. This likely requires
+   runtime kernel scries/building behind a stable internal API.
+
+5. Vere integration
+
+   The sidecar proves the transport shape. The future production design should
+   move this transport seam into Vere so virtual moons can use live Ames without
+   a Node sidecar.
