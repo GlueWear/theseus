@@ -197,8 +197,8 @@
 ++  wish-arvo
   |=  [snap=vase txt=@]
   ^-  *
-  =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
-  (wish:arvo-snap txt)
+  ::  call the snapshot's own +wish arm via slap -- no compile-time _arvo-adult.
+  q:(slam (slap snap !,(*hoon wish)) !>(txt))
 ::  +peek-path-arvo: local scry -- turn a (timestamp-adjusted) scry path into an
 ::  omen via de-omen, then peek it.  Same result shape as the old inline path.
 ::
