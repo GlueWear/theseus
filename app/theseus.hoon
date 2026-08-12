@@ -18,14 +18,11 @@
     pill=pill,
     dbug, verb, dingy, theseus-kernel
 ::
-/=  arvo-core  /sys/arvo :: TODO this compiles it against zuse, WRONG
-::  Clay's vane core + private state molds (+raft/+dojo) now come through
-::  lib/theseus-kernel, so this agent no longer imports /sys/vane/clay directly.
-::  The import still lives in theseus-kernel (compile-time) until Stage 3 moves
-::  it to the runtime host-%base build; /sys/arvo remains the last direct import.
+::  All Arvo/Clay kernel internals now come through lib/theseus-kernel, so this
+::  agent imports no /sys files directly.  (theseus-kernel still holds the
+::  compile-time /sys/arvo + /sys/vane/clay imports for now.)
 ::
 =>  |%
-    ++  arvo-adult  ..^load:+>.arvo-core
     ++  clay-types  clay-types:theseus-kernel
     ::  +fine-req-path: parse an inbound Ames blob; if it is a %fine REQUEST
     ::  packet, produce [requester sndr-tick rcvr-tick origin requested-path],
@@ -162,7 +159,7 @@
     ::  ever-growing event log.  These molds exist only for the one-way %2
     ::  migration.
     +$  legacy-pier
-      $:  snap=_arvo-adult
+      $:  snap=_arvo-adult:theseus-kernel
           event-log=(list unix-timed-event)
           next-events=(qeu unix-event)
           paused=?
@@ -280,7 +277,7 @@
     ++  wrap-opaque-snap
       |=  raw=*
       ^-  vase
-      [-:!>(*_arvo-adult) raw]
+      [-:!>(*_arvo-adult:theseus-kernel) raw]
     ++  convert-opaque-pier
       |=  old=opaque-saved-pier
       ^-  saved-pier
