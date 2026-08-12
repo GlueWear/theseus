@@ -113,4 +113,19 @@
     (mule |.(!<(_arvo-adult [-:!>(*_arvo-adult) +.q.p.poke-result])))
   ?:  ?=(%| -.snap-result)  [%| %snap p.snap-result]
   [%& !>(p.snap-result) ;;((list ovum) -.q.p.poke-result)]
+::  +peek-arvo: read a virtual ship's Arvo namespace.  Takes the snapshot vase
+::  plus a fully-built peek argument [lyc=gang pov=path omen] (the exact sample
+::  of ~(peek le:part ...) in arvo.hoon) and returns the read cage, recovering
+::  and re-vasing the data exactly as the old inline +scry/+remote-scry did.
+::  The caller still builds the omen (via de-omen for local paths, or an %ax
+::  beam for remote scries); only the le:part peek itself moves here, so the
+::  agent stops naming le:part / pit / vil / sol / _arvo-adult on this path.
+::
+++  peek-arvo
+  |=  [snap=vase arg=[lyc=gang pov=path =omen]]
+  ^-  (unit (unit cage))
+  =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
+  ?~  res=(~(peek le:part:arvo-snap [[pit vil] sol]:arvo-snap) arg)  ~
+  ?~  u.res  res
+  ``[p.u.u.res !<(vase [-:!>(*vase) q.u.u.res])]
 --

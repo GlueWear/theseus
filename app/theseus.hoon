@@ -647,23 +647,16 @@
     ?.  ?=([@ @ @ @ *] path)  ~
     ::  alter timestamp to match %theseus fake-time
     =.  i.t.t.t.path  (scot %da scry-time)
-    ::  execute scry
-    =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
+    ::  execute scry -- the le:part peek lives in theseus-kernel now; we still
+    ::  turn the path into an omen here, then hand it to +peek-arvo.
     ?~  mon=(de-omen path)  ~
-    ?~  res=(~(peek le:part:arvo-snap [[pit vil] sol]:arvo-snap) [~ / u.mon])  ~
-    ?~  u.res  res
-    ``[p.u.u.res !<(vase [-:!>(*vase) q.u.u.res])]
+    (peek-arvo:theseus-kernel snap [~ / u.mon])
   ::
   ++  remote-scry
     |=  =spur
     ^-  (unit (unit cage))
-    =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
-    =/  res
-      %-  ~(peek le:part:arvo-snap [[pit vil] sol]:arvo-snap)
-      [~ / [%ax [who %$ da+scry-time:pier-data] spur]]
-    ?~    res  res
-    ?~  u.res  res
-    ``[p.u.u.res !<(vase [-:!>(*vase) q.u.u.res])]
+    ::  the le:part peek lives in theseus-kernel now
+    (peek-arvo:theseus-kernel snap [~ / [%ax [who %$ da+scry-time:pier-data] spur]])
   ::
   ::  When paused, events are added to the queue but not processed.
   ::
