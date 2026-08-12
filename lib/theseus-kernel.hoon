@@ -109,10 +109,15 @@
   =/  poke-result=(each vase tang)
     (mule |.((slym [-:!>(poke:arvo-adult) poke:arvo-snap] [now ue])))
   ?:  ?=(%| -.poke-result)  [%| %poke p.poke-result]
-  =/  snap-result=(each _arvo-adult tang)
-    (mule |.(!<(_arvo-adult [-:!>(*_arvo-adult) +.q.p.poke-result])))
-  ?:  ?=(%| -.snap-result)  [%| %snap p.snap-result]
-  [%& !>(p.snap-result) ;;((list ovum) -.q.p.poke-result)]
+  ::  poke:arvo is typed `^-  ^`, so the new Arvo (+.q) is statically *.  Re-vase
+  ::  it by reusing the INCOMING snap's type part -- NOT (slot 3 ...), which would
+  ::  persist an opaque [* noun] snap and poison the pier.  p.snap is the arvo type
+  ::  proven good by the !< above, so [p.snap noun] stays exactly _arvo-adult-typed.
+  ::  Guard: never store an opaque snap (the %snap stage), belt-and-suspenders for
+  ::  when the typed !< poke gate is later dropped.
+  ?:  ?=(%noun p.snap)  [%| %snap ~[leaf+"theseus-poke-opaque-snap"]]
+  =/  new-snap=vase  [p.snap +.q.p.poke-result]
+  [%& new-snap ;;((list ovum) -.q.p.poke-result)]
 ::  +peek-arvo: read a virtual ship's Arvo namespace.  Takes the snapshot vase
 ::  plus a fully-built peek argument [lyc=gang pov=path omen] (the exact sample
 ::  of ~(peek le:part ...) in arvo.hoon) and returns the read cage, recovering
