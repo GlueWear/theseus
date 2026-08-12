@@ -129,10 +129,14 @@
 ++  peek-arvo
   |=  [snap=vase arg=[lyc=gang pov=path =omen]]
   ^-  (unit (unit cage))
-  =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
-  ?~  res=(~(peek le:part:arvo-snap [[pit vil] sol]:arvo-snap) arg)  ~
+  ::  run the le:part peek against the self-typed snap -- no compile-time _arvo-adult.
+  =/  res=(unit (unit [mark *]))
+    !<  (unit (unit [mark *]))
+    (slam (slap snap !,(*hoon ~(peek le:part [[pit vil] sol]))) !>(arg))
+  ?~  res  ~
   ?~  u.res  res
-  ``[p.u.u.res !<(vase [-:!>(*vase) q.u.u.res])]
+  ::  positional access (-.=mark, +.=data): the recovered [mark *] has no p/q faces.
+  ``[-.u.u.res !<(vase [-:!>(*vase) +.u.u.res])]
 ::  +make-arvo: construct a fresh virtual ship's Arvo snapshot -- an adult Arvo
 ::  core with its soul set: identity, runtime version stamp, the host lull/zuse,
 ::  and a nine-vane map built from the runtime kernel.  Clay is passed in already
