@@ -20,7 +20,7 @@
 ::
 ::  All Arvo/Clay kernel internals now come through lib/theseus-kernel, so this
 ::  agent imports no /sys files directly.  (theseus-kernel still holds the
-::  compile-time /sys/arvo + /sys/vane/clay imports for now.)
+::  compile-time /sys/vane/clay import for now.)
 ::
 =>  |%
     ++  clay-types  clay-types:theseus-kernel
@@ -155,17 +155,12 @@
           paused=?
           identity-ok=?
       ==
-    ::  Legacy %0/%1 state deeply typed the Arvo core and retained an
-    ::  ever-growing event log.  These molds exist only for the one-way %2
-    ::  migration.
-    +$  legacy-pier
-      $:  snap=_arvo-adult:theseus-kernel
-          event-log=(list unix-timed-event)
-          next-events=(qeu unix-event)
-          paused=?
-          scry-time=@da
-      ==
-    +$  legacy-fleet  (map ship legacy-pier)
+    ::  Legacy %0/%1 state retained an ever-growing event log.  Since Theseus
+    ::  has not shipped with those old state versions, keep only the structural
+    ::  shape needed for one-way migration and treat embedded snapshots as
+    ::  opaque nouns.  This avoids a compile-time Arvo type dependency.
+    +$  legacy-pier  opaque-saved-pier
+    +$  legacy-fleet  opaque-fleet
     +$  state-0
       $:  %0
           piers=legacy-fleet
@@ -277,7 +272,7 @@
     ++  wrap-opaque-snap
       |=  raw=*
       ^-  vase
-      [-:!>(*_arvo-adult:theseus-kernel) raw]
+      !>(raw)
     ++  convert-opaque-pier
       |=  old=opaque-saved-pier
       ^-  saved-pier
@@ -308,18 +303,7 @@
       |=  [pax=path old-shot=opaque-fleet-snapshot]
       :_  [created-at.old-shot runtime.old-shot (convert-opaque-fleet ships.old-shot)]
       pax
-    ++  slim-fleet
-      |=  old=legacy-fleet
-      ^-  fleet
-      %-  malt
-      %+  turn  ~(tap by old)
-      |=  [who=ship old-pier=legacy-pier]
-      :-  who
-      :*  !>(snap.old-pier)
-          next-events.old-pier
-          paused.old-pier
-          scry-time.old-pier
-      ==
+    ++  slim-fleet  convert-opaque-fleet
     ++  slim-snaps
       |=  old=(map path legacy-fleet)
       ^-  (map path fleet)
@@ -588,7 +572,7 @@
     ?:  paused  ..abet-pe
     =^  ue  next-events  ~(get to next-events)
     ::  Poke execution now lives in lib/theseus-kernel (Phase 3a slice 1); this
-    ::  loop no longer names poke:arvo-adult / _arvo-adult.  Both crash casts are
+    ::  loop no longer names poke:arvo-adult / Arvo-private types.  Both crash casts are
     ::  still contained (inside +mule there) so a bad %hear result drops instead
     ::  of crashing lick %soak.
     =/  res  (poke-arvo:theseus-kernel snap now.bowl ue)

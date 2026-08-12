@@ -1,16 +1,9 @@
 ::  Clay's vane core is imported here (compile-time) so the main agent no longer
 ::  has to.  This centralizes the last private-Clay dependency in one lib.  A
 ::  later stage replaces it with a runtime host-%base build (see +build), after
-::  which this /= import and the desk-local /sys can both go away.  /sys/arvo is
-::  still imported by app/theseus.hoon, so the desk keeps vendoring /sys for now.
+::  which this /= import and the desk-local /sys can both go away.
 ::
 /=  clay-core  /sys/vane/clay
-::  Arvo core imported here too, for the +poke-arvo execution path lifted out of
-::  app/theseus.hoon (Phase 3a slice 1).  A later slice swaps this for the
-::  runtime host-%base build (+build), after which /sys can go entirely.
-::
-/=  arvo-core  /sys/arvo
-::
 |%
 +$  weft  [lal=@tas num=@ud]
 +$  wynn  (list weft)
@@ -90,23 +83,19 @@
 ::  exported here so app/theseus.hoon can drop its direct /sys/vane/clay import.
 ::
 ++  clay-types  (clay-core *ship)
-::  +arvo-adult: the host's adult Arvo core (type + value), recovered from the
-::  imported arvo core.  Type source for a virtual ship's saved snapshot.
-::
-++  arvo-adult  ..^load:+>.arvo-core
 ::  +poke-arvo: run one unix-event against a virtual ship's saved Arvo snapshot
 ::  (carried as a self-typed vase).  On success returns the new snapshot vase and
 ::  the effect list; on failure returns which stage broke -- %poke (the event
 ::  crashed Arvo) or %snap (the result could not be re-cast) -- with its stack.
 ::  Lifted verbatim from the +plow inner loop in app/theseus.hoon so the agent
-::  stops naming poke:arvo-adult / _arvo-adult directly.  Both crash casts stay
+::  stops naming poke:arvo-adult / Arvo-private types directly.  Both crash casts stay
 ::  inside +mule so a bad packet drops instead of taking down the caller.
 ::
 ++  poke-arvo
   |=  [snap=vase now=@da ue=*]
   ^-  (each [snap=vase effects=(list ovum)] [stage=?(%poke %snap) =tang])
   ::  resolve the snapshot's own +poke gate via self-typed slap -- no compile-time
-  ::  _arvo-adult (proven resolvable on a healthy snap).
+  ::  Arvo-private types (proven resolvable on a healthy snap).
   =/  poke-result=(each vase tang)
     (mule |.((slym (slap snap !,(*hoon poke)) [now ue])))
   ?:  ?=(%| -.poke-result)  [%| %poke p.poke-result]
@@ -124,12 +113,12 @@
 ::  and re-vasing the data exactly as the old inline +scry/+remote-scry did.
 ::  The caller still builds the omen (via de-omen for local paths, or an %ax
 ::  beam for remote scries); only the le:part peek itself moves here, so the
-::  agent stops naming le:part / pit / vil / sol / _arvo-adult on this path.
+::  agent stops naming le:part / pit / vil / sol / Arvo-private types on this path.
 ::
 ++  peek-arvo
   |=  [snap=vase arg=[lyc=gang pov=path =omen]]
   ^-  (unit (unit cage))
-  ::  run the le:part peek against the self-typed snap -- no compile-time _arvo-adult.
+  ::  run the le:part peek against the self-typed snap -- no compile-time Arvo type.
   =/  res=(unit (unit [mark *]))
     !<  (unit (unit [mark *]))
     (slam (slap snap !,(*hoon ~(peek le:part [[pit vil] sol]))) !>(arg))
@@ -190,7 +179,7 @@
 ++  arvo-vitals
   |=  snap=vase
   ^-  (unit [our=ship vanes=(set term)])
-  ::  operate against the self-typed snap via slap -- no compile-time _arvo-adult.
+  ::  operate against the self-typed snap via slap -- no compile-time Arvo type.
   =/  got  (mole |.((slap snap !,(*hoon [our.sol ~(key by van.mod.sol)]))))
   ?~  got  ~
   `;;([ship (set term)] q.u.got)
@@ -199,7 +188,7 @@
 ++  clay-vane-of
   |=  snap=vase
   ^-  vase
-  ::  read the %clay vane vase from the self-typed snap -- no compile-time _arvo-adult.
+  ::  read the %clay vane vase from the self-typed snap -- no compile-time Arvo type.
   !<(vase (slap snap !,(*hoon vase:(~(got by van.mod.sol) %clay))))
 ::  +put-clay-vane: replace the %clay vane's vase inside a snapshot, returning
 ::  the modified snapshot as a vase.  For the cache/rebuild inject path.
@@ -218,7 +207,7 @@
 ++  wish-arvo
   |=  [snap=vase txt=@]
   ^-  *
-  ::  call the snapshot's own +wish arm via slap -- no compile-time _arvo-adult.
+  ::  call the snapshot's own +wish arm via slap -- no compile-time Arvo type.
   q:(slam (slap snap !,(*hoon wish)) !>(txt))
 ::  +peek-path-arvo: local scry -- turn a (timestamp-adjusted) scry path into an
 ::  omen via de-omen, then peek it.  Same result shape as the old inline path.
