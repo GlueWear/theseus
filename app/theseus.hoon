@@ -122,19 +122,7 @@
           paused=?
           scry-time=@da
       ==
-    +$  opaque-saved-pier
-      $:  snap=*
-          next-events=(qeu unix-event)
-          paused=?
-          scry-time=@da
-      ==
-    +$  opaque-fleet  (map ship opaque-saved-pier)
     +$  runtime-id  wynn
-    +$  opaque-fleet-snapshot
-      $:  created-at=@da
-          runtime=runtime-id
-          ships=opaque-fleet
-      ==
     +$  saved-pier
       $:  snap=vase
           next-events=(qeu unix-event)
@@ -155,62 +143,6 @@
           paused=?
           identity-ok=?
       ==
-    ::  Legacy %0/%1 state retained an ever-growing event log.  Since Theseus
-    ::  has not shipped with those old state versions, keep only the structural
-    ::  shape needed for one-way migration and treat embedded snapshots as
-    ::  opaque nouns.  This avoids a compile-time Arvo type dependency.
-    +$  legacy-pier  opaque-saved-pier
-    +$  legacy-fleet  opaque-fleet
-    +$  state-0
-      $:  %0
-          piers=legacy-fleet
-          fleet-snaps=(map path legacy-fleet)
-          :: quickboot caching
-          ::
-          files=(axal (cask))
-          park=task:clay :: TODO should be $>(%park task:clay)
-          caches=(map @tas =raft:clay-types)
-      ==
-    +$  state-1
-      $:  %1
-          piers=legacy-fleet
-          fleet-snaps=(map path legacy-fleet)
-          :: quickboot caching
-          ::
-          files=(axal (cask))
-          park=task:clay :: TODO should be $>(%park task:clay)
-          caches=(map @tas =raft:clay-types)
-      ==
-    +$  state-2
-      $:  %2
-          piers=opaque-fleet
-          fleet-snaps=(map path opaque-fleet)
-          :: quickboot caching
-          ::
-          files=(axal (cask))
-          park=task:clay :: TODO should be $>(%park task:clay)
-          caches=(map @tas =raft:clay-types)
-      ==
-    +$  state-3
-      $:  %3
-          piers=opaque-fleet
-          fleet-snaps=(map path opaque-fleet-snapshot)
-          :: quickboot caching
-          ::
-          files=(axal (cask))
-          park=task:clay :: TODO should be $>(%park task:clay)
-          caches=(map @tas =raft:clay-types)
-      ==
-    +$  state-4
-      $:  %4
-          piers=fleet
-          fleet-snaps=(map path fleet-snapshot)
-          :: quickboot caching
-          ::
-          files=(axal (cask))
-          park=task:clay :: TODO should be $>(%park task:clay)
-          caches=(map @tas =raft:clay-types)
-      ==
     +$  state-5
       $:  %5
           piers=fleet
@@ -221,7 +153,7 @@
           park=vase
           caches=(map @tas vase)
       ==
-    +$  versioned-state  $%(state-0 state-1 state-2 state-3 state-4 state-5)
+    +$  versioned-state  $%(state-5)
     ++  pack-park
       |=  pak=task:clay
       ^-  vase
@@ -238,13 +170,6 @@
       |=  raf=vase
       ^-  raft:clay-types
       !<(raft:clay-types raf)
-    ++  pack-caches
-      |=  old=(map @tas =raft:clay-types)
-      ^-  (map @tas vase)
-      %-  malt
-      %+  turn  ~(tap by old)
-      |=  [name=@tas raf=raft:clay-types]
-      [name (pack-raft raf)]
     ++  current-runtime
       ^-  runtime-id
       :~  zuse+zuse
@@ -269,55 +194,6 @@
           paused.saved
           scry-time.saved
       ==
-    ++  wrap-opaque-snap
-      |=  raw=*
-      ^-  vase
-      !>(raw)
-    ++  convert-opaque-pier
-      |=  old=opaque-saved-pier
-      ^-  saved-pier
-      :*  (wrap-opaque-snap snap.old)
-          next-events.old
-          paused.old
-          scry-time.old
-      ==
-    ++  convert-opaque-fleet
-      |=  old=opaque-fleet
-      ^-  fleet
-      %-  malt
-      %+  turn  ~(tap by old)
-      |=  [who=ship old-pier=opaque-saved-pier]
-      [who (convert-opaque-pier old-pier)]
-    ++  convert-opaque-snaps
-      |=  old=(map path opaque-fleet)
-      ^-  (map path fleet)
-      %-  malt
-      %+  turn  ~(tap by old)
-      |=  [pax=path old-fleet=opaque-fleet]
-      [pax (convert-opaque-fleet old-fleet)]
-    ++  convert-opaque-sealed-snaps
-      |=  old=(map path opaque-fleet-snapshot)
-      ^-  (map path fleet-snapshot)
-      %-  malt
-      %+  turn  ~(tap by old)
-      |=  [pax=path old-shot=opaque-fleet-snapshot]
-      :_  [created-at.old-shot runtime.old-shot (convert-opaque-fleet ships.old-shot)]
-      pax
-    ++  slim-fleet  convert-opaque-fleet
-    ++  slim-snaps
-      |=  old=(map path legacy-fleet)
-      ^-  (map path fleet)
-      %-  malt
-      %+  turn  ~(tap by old)
-      |=  [pax=path old-fleet=legacy-fleet]
-      [pax (slim-fleet old-fleet)]
-    ++  seal-old-snaps
-      |=  [created=@da old=(map path fleet)]
-      ^-  (map path fleet-snapshot)
-      %-  malt
-      %+  turn  ~(tap by old)
-      |=  [pax=path old-fleet=fleet]
-      [pax [created current-runtime old-fleet]]
     ++  health-of
       |=  [who=ship saved=saved-pier]
       ^-  moon-health
@@ -379,29 +255,6 @@
     ::  Never turn a failed state load into a successful empty on-init.  Gall
     ::  already preserves the previous agent when on-load bails; swallowing a
     ::  cast failure here used to erase every pier and every snapshot.
-    ?:  ?=([%0 *] q.old-vase)
-      =/  old  !<(state-0 old-vase)
-      =/  old-snaps  (slim-snaps fleet-snaps.old)
-      ~&  [%theseus-state-migrate %0 %5]
-      `this(state [%5 (slim-fleet piers.old) (seal-old-snaps now.bowl old-snaps) files.old (pack-park park.old) (pack-caches caches.old)])
-    ?:  ?=([%1 *] q.old-vase)
-      =/  old  !<(state-1 old-vase)
-      =/  old-snaps  (slim-snaps fleet-snaps.old)
-      ~&  [%theseus-state-migrate %1 %5]
-      `this(state [%5 (slim-fleet piers.old) (seal-old-snaps now.bowl old-snaps) files.old (pack-park park.old) (pack-caches caches.old)])
-    ?:  ?=([%2 *] q.old-vase)
-      =/  old  !<(state-2 old-vase)
-      =/  old-snaps  (convert-opaque-snaps fleet-snaps.old)
-      ~&  [%theseus-state-migrate %2 %5]
-      `this(state [%5 (convert-opaque-fleet piers.old) (seal-old-snaps now.bowl old-snaps) files.old (pack-park park.old) (pack-caches caches.old)])
-    ?:  ?=([%3 *] q.old-vase)
-      =/  old  !<(state-3 old-vase)
-      ~&  [%theseus-state-migrate %3 %5]
-      `this(state [%5 (convert-opaque-fleet piers.old) (convert-opaque-sealed-snaps fleet-snaps.old) files.old (pack-park park.old) (pack-caches caches.old)])
-    ?:  ?=([%4 *] q.old-vase)
-      =/  old  !<(state-4 old-vase)
-      ~&  [%theseus-state-migrate %4 %5]
-      `this(state [%5 piers.old fleet-snaps.old files.old (pack-park park.old) (pack-caches caches.old)])
     ?:  ?=([%5 *] q.old-vase)
       =/  old  !<(state-5 old-vase)
       ~&  [%theseus-state-load %5]
