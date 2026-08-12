@@ -105,16 +105,16 @@
 ++  poke-arvo
   |=  [snap=vase now=@da ue=*]
   ^-  (each [snap=vase effects=(list ovum)] [stage=?(%poke %snap) =tang])
-  =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
+  ::  resolve the snapshot's own +poke gate via self-typed slap -- no compile-time
+  ::  _arvo-adult (proven resolvable on a healthy snap).
   =/  poke-result=(each vase tang)
-    (mule |.((slym [-:!>(poke:arvo-adult) poke:arvo-snap] [now ue])))
+    (mule |.((slym (slap snap !,(*hoon poke)) [now ue])))
   ?:  ?=(%| -.poke-result)  [%| %poke p.poke-result]
   ::  poke:arvo is typed `^-  ^`, so the new Arvo (+.q) is statically *.  Re-vase
   ::  it by reusing the INCOMING snap's type part -- NOT (slot 3 ...), which would
-  ::  persist an opaque [* noun] snap and poison the pier.  p.snap is the arvo type
-  ::  proven good by the !< above, so [p.snap noun] stays exactly _arvo-adult-typed.
-  ::  Guard: never store an opaque snap (the %snap stage), belt-and-suspenders for
-  ::  when the typed !< poke gate is later dropped.
+  ::  persist an opaque [* noun] snap and poison the pier.  Guard: never store an
+  ::  opaque snap; an opaque snap also fails the slap above (%poke), so this is the
+  ::  defensive backstop for the %snap stage.
   ?:  ?=(%noun p.snap)  [%| %snap ~[leaf+"theseus-poke-opaque-snap"]]
   =/  new-snap=vase  [p.snap +.q.p.poke-result]
   [%& new-snap ;;((list ovum) -.q.p.poke-result)]
@@ -212,13 +212,4 @@
   ^-  (unit (unit cage))
   ?~  mon=(de-omen path)  ~
   (peek-arvo snap [~ / u.mon])
-::  +poke-probe: TEMPORARY diagnostic for the runtime-/sys refactor (remove once
-::  poke-arvo is converted).  Read-only: resolves the Arvo +poke arm against the
-::  self-typed snap inside a mole and reports whether it was found.  It never runs
-::  a poke, so it cannot mutate or corrupt any pier.
-::
-++  poke-probe
-  |=  snap=vase
-  ^-  ?
-  ?=(^ (mole |.((slap snap !,(*hoon poke)))))
 --
