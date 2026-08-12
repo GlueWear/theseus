@@ -137,43 +137,53 @@
   ?~  u.res  res
   ::  positional access (-.=mark, +.=data): the recovered [mark *] has no p/q faces.
   ``[-.u.u.res !<(vase [-:!>(*vase) +.u.u.res])]
-::  +make-arvo: construct a fresh virtual ship's Arvo snapshot -- an adult Arvo
-::  core with its soul set: identity, runtime version stamp, the host lull/zuse,
-::  and a nine-vane map built from the runtime kernel.  Clay is passed in already
-::  seeded and vased by the caller.  Lifted verbatim from the three init sites in
-::  app/theseus.hoon so the agent stops naming soul / vane / worm / van.mod /
-::  _arvo-adult / sol.  Asserts all nine vanes are present (never expose a
-::  partial pier), then returns the snapshot as a vase.
+::  +make-arvo: construct a fresh virtual ship's Arvo snapshot from the
+::  runtime host-%base kernel.  It starts from arvo.ker's adult Arvo core, sets
+::  the same soul as the old compile-time constructor, asserts all nine vanes,
+::  and returns a self-typed vase sourced from the runtime Arvo -- never [* noun].
 ::
 ++  make-arvo
   |=  [who=ship ker=kernel files=(axal (cask)) clay=vase]
   ^-  vase
-  =/  new-snap=_arvo-adult  *_arvo-adult
-  =.  sol.new-snap
-    ^-  soul
-    :*  [who *@da *@uvJ]                              ::  mien
-        &                                            ::  fad
-        :_  |                                        ::  zen
-        :-  [~.nonce /theseus]
-        (runtime-wynn ker)
-        :^  files  lull.ker  zuse.ker                ::  mod
-        %-  ~(gas by *(map term vane))               ::  van.mod
-        :~  [%ames [(slam ames.ker !>(who)) *worm]]
-            [%behn [(slam behn.ker !>(who)) *worm]]
-            [%clay [clay *worm]]
-            [%dill [(slam dill.ker !>(who)) *worm]]
-            [%eyre [(slam eyre.ker !>(who)) *worm]]
-            [%gall [(slam gall.ker !>(who)) *worm]]
-            [%iris [(slam iris.ker !>(who)) *worm]]
-            [%jael [(slam jael.ker !>(who)) *worm]]
-            [%khan [(slam khan.ker !>(who)) *worm]]
-    ==  ==
-  =/  built=(set term)  ~(key by van.mod.sol.new-snap)
+  =/  vanes=(list (pair term vase))
+    :~  [%ames (slam ames.ker !>(who))]
+        [%behn (slam behn.ker !>(who))]
+        [%clay clay]
+        [%dill (slam dill.ker !>(who))]
+        [%eyre (slam eyre.ker !>(who))]
+        [%gall (slam gall.ker !>(who))]
+        [%iris (slam iris.ker !>(who))]
+        [%jael (slam jael.ker !>(who))]
+        [%khan (slam khan.ker !>(who))]
+    ==
+  =/  builder=vase
+    %+  slap  arvo.ker
+    !,  *hoon
+    |=  [who=@p fat=* lul=vase zus=vase wyn=* vns=*]
+    =/  new  ..^load:+>
+    =.  sol.new
+      ^-  soul
+      :*  [who *@da *@uvJ]
+          &
+          :_  |
+          :-  [~.nonce /theseus]
+          ;;(wynn wyn)
+          :^  ;;((axal (cask)) fat)  lul  zus
+          %-  ~(gas by *(map term vane))
+          %+  turn  ;;((list (pair term vase)) vns)
+          |=([t=term v=vase] [t v *worm])
+      ==
+    new
+  =/  snap=vase
+    (slam builder !>([who files lull.ker zuse.ker (runtime-wynn ker) vanes]))
+  =/  vit  (arvo-vitals snap)
+  ?~  vit
+    ~|([%theseus-init-vane-build-failed who %empty] !!)
   =/  wanted=(set term)
     (sy ~[%ames %behn %clay %dill %eyre %gall %iris %jael %khan])
-  ?.  =(wanted built)
-    ~|([%theseus-init-vane-build-failed who built] !!)
-  !>(new-snap)
+  ?.  =(wanted vanes.u.vit)
+    ~|([%theseus-init-vane-build-failed who vanes.u.vit] !!)
+  snap
 ::  +arvo-vitals: a snapshot's identity + vane-name set, for +health-of.  Wrapped
 ::  in a mole so a corrupt/empty snap yields ~ instead of crashing.
 ::
