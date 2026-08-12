@@ -212,4 +212,13 @@
   ^-  (unit (unit cage))
   ?~  mon=(de-omen path)  ~
   (peek-arvo snap [~ / u.mon])
+::  +poke-probe: TEMPORARY diagnostic for the runtime-/sys refactor (remove once
+::  poke-arvo is converted).  Read-only: resolves the Arvo +poke arm against the
+::  self-typed snap inside a mole and reports whether it was found.  It never runs
+::  a poke, so it cannot mutate or corrupt any pier.
+::
+++  poke-probe
+  |=  snap=vase
+  ^-  ?
+  ?=(^ (mole |.((slap snap !,(*hoon poke)))))
 --

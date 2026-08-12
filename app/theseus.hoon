@@ -483,6 +483,14 @@
       =/  saved  (~(get by piers) who)
       ?~  saved  ``noun+!>(~)
       ``noun+!>(`moon-health`(health-of who u.saved))
+    ::  TEMP diagnostic (runtime-/sys refactor): can this ship's snap resolve the
+    ::  Arvo +poke arm via self-typed slap?  Read-only; remove when poke-arvo lands.
+    ::
+        [%x %poke-probe @ ~]
+      =/  who  (slav %p i.t.t.path)
+      =/  saved  (~(get by piers) who)
+      ?~  saved  ``noun+!>(~)
+      ``noun+!>((poke-probe:theseus-kernel snap.u.saved))
     ::  cache scries
     ::
         [%x %caches ~]   ``noun+!>((turn ~(tap by caches) head))
