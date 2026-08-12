@@ -198,4 +198,12 @@
   ^-  *
   =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
   (wish:arvo-snap txt)
+::  +peek-path-arvo: local scry -- turn a (timestamp-adjusted) scry path into an
+::  omen via de-omen, then peek it.  Same result shape as the old inline path.
+::
+++  peek-path-arvo
+  |=  [snap=vase =path]
+  ^-  (unit (unit cage))
+  ?~  mon=(de-omen path)  ~
+  (peek-arvo snap [~ / u.mon])
 --

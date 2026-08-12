@@ -645,10 +645,8 @@
     ?.  ?=([@ @ @ @ *] path)  ~
     ::  alter timestamp to match %theseus fake-time
     =.  i.t.t.t.path  (scot %da scry-time)
-    ::  execute scry -- the le:part peek lives in theseus-kernel now; we still
-    ::  turn the path into an omen here, then hand it to +peek-arvo.
-    ?~  mon=(de-omen path)  ~
-    (peek-arvo:theseus-kernel snap [~ / u.mon])
+    ::  execute scry -- de-omen + le:part peek both live in theseus-kernel now.
+    (peek-path-arvo:theseus-kernel snap path)
   ::
   ++  remote-scry
     |=  =spur
