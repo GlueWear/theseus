@@ -171,9 +171,10 @@
 ++  arvo-vitals
   |=  snap=vase
   ^-  (unit [our=ship vanes=(set term)])
-  =/  got  (mole |.(!<(_arvo-adult snap)))
+  ::  operate against the self-typed snap via slap -- no compile-time _arvo-adult.
+  =/  got  (mole |.((slap snap !,(*hoon [our.sol ~(key by van.mod.sol)]))))
   ?~  got  ~
-  `[our.sol.u.got ~(key by van.mod.sol.u.got)]
+  `;;([ship (set term)] q.u.got)
 ::  +clay-vane-of: the %clay vane's vase inside a snapshot, for the raft reader.
 ::
 ++  clay-vane-of
