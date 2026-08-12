@@ -180,8 +180,8 @@
 ++  clay-vane-of
   |=  snap=vase
   ^-  vase
-  =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
-  vase:(~(got by van.mod.sol.arvo-snap) %clay)
+  ::  read the %clay vane vase from the self-typed snap -- no compile-time _arvo-adult.
+  !<(vase (slap snap !,(*hoon vase:(~(got by van.mod.sol) %clay))))
 ::  +put-clay-vane: replace the %clay vane's vase inside a snapshot, returning
 ::  the modified snapshot as a vase.  For the cache/rebuild inject path.
 ::
