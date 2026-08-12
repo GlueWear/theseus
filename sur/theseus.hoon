@@ -12,6 +12,19 @@
                    [%is p=@isH q=@udE]
                ==
 ::
+::  Structural copies of arvo-private runtime molds, kept local so this sur --
+::  and every agent built from it -- compiles against the host's AMBIENT kernel
+::  with no vendored /sys.  +vere/+wynn/+weft live in /sys/arvo, which is NOT
+::  part of the ambient zuse/lull subject; naming them directly forces the desk
+::  to vendor /sys, the install-portability defect across patched-408 hosts.
+::  Shapes mirror /sys/arvo exactly (runtime kelvin-stack payload of the %wyrd
+::  boot event); structural identity keeps them nesting with the real arvo
+::  types wherever the two meet.
+::
++$  weft  [lal=@tas num=@ud]
++$  wynn  (list weft)
++$  vere  [[non=@ta rev=path] kel=wynn]
+::
 ::  like unix-event:pill-lib but for all tasks
 ::
 +$  unix-event

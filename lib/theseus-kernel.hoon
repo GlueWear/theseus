@@ -1,3 +1,11 @@
+::  Clay's vane core is imported here (compile-time) so the main agent no longer
+::  has to.  This centralizes the last private-Clay dependency in one lib.  A
+::  later stage replaces it with a runtime host-%base build (see +build), after
+::  which this /= import and the desk-local /sys can both go away.  /sys/arvo is
+::  still imported by app/theseus.hoon, so the desk keeps vendoring /sys for now.
+::
+/=  clay-core  /sys/vane/clay
+::
 |%
 +$  weft  [lal=@tas num=@ud]
 +$  wynn  (list weft)
@@ -67,4 +75,14 @@
       [%jael (mug q.jael.ker)]
       [%khan (mug q.khan.ker)]
   ==
+::  +clay-vane: the host's Clay vane core, specialized to a ship.  Used to seed a
+::  fresh virtual ship's Clay state at init: (clay-vane who) == the old inline
+::  (clay-core who) the agent used to build.
+::
+++  clay-vane  clay-core
+::  +clay-types: type source for Clay's private state molds (+raft/+dojo/+room),
+::  which the agent still names to build and seed the virtual Clay cache.  Re-
+::  exported here so app/theseus.hoon can drop its direct /sys/vane/clay import.
+::
+++  clay-types  (clay-core *ship)
 --

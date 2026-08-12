@@ -19,11 +19,14 @@
     dbug, verb, dingy, theseus-kernel
 ::
 /=  arvo-core  /sys/arvo :: TODO this compiles it against zuse, WRONG
-/=  clay-core  /sys/vane/clay
+::  Clay's vane core + private state molds (+raft/+dojo) now come through
+::  lib/theseus-kernel, so this agent no longer imports /sys/vane/clay directly.
+::  The import still lives in theseus-kernel (compile-time) until Stage 3 moves
+::  it to the runtime host-%base build; /sys/arvo remains the last direct import.
 ::
 =>  |%
     ++  arvo-adult  ..^load:+>.arvo-core
-    ++  clay-types  (clay-core *ship)
+    ++  clay-types  clay-types:theseus-kernel
     ::  +fine-req-path: parse an inbound Ames blob; if it is a %fine REQUEST
     ::  packet, produce [requester sndr-tick rcvr-tick origin requested-path],
     ::  else ~.  Inlined from lull +sift-shot / +sift-wail because gall agents don't
@@ -751,7 +754,7 @@
     =/  ker=kernel:theseus-kernel
       (build:theseus-kernel our.bowl now.bowl)
     =/  clay
-      (clay-core who.act)
+      (clay-vane:theseus-kernel who.act)
     =.  ruf.clay
       ~|  "{<cache.act>} cache doesn't exist, try %default cache"
       (unpack-raft (~(got by caches) cache.act))
@@ -860,7 +863,7 @@
     =/  ker=kernel:theseus-kernel
       (build:theseus-kernel our.bowl now.bowl)
     =/  clay
-      (clay-core who.act)
+      (clay-vane:theseus-kernel who.act)
     =.  ruf.clay
       ~|  "{<cache.act>} cache doesn't exist, try %default cache"
       (unpack-raft (~(got by caches) cache.act))
@@ -1008,7 +1011,7 @@
     =/  ker=kernel:theseus-kernel
       (build:theseus-kernel our.bowl now.bowl)
     =/  clay
-      (clay-core who.act)
+      (clay-vane:theseus-kernel who.act)
     =.  ruf.clay
       ~|  "{<cache.act>} cache doesn't exist, try %default cache"
       (unpack-raft (~(got by caches) cache.act))
