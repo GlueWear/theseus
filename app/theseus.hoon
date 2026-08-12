@@ -1125,8 +1125,7 @@
   ::
       %wish
     =/  ps=pier  pier-data:(pe her.act)
-    =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap.ps)
-    ~&  her.act^%wished^(wish:arvo-snap p.act)
+    ~&  her.act^%wished^(wish-arvo:theseus-kernel snap.ps p.act)
     `state
   ::
       %slap-gall
@@ -1259,9 +1258,7 @@
       ^-  [ship saved-pier]
       =/  old  (~(got by piers) who)
       =/  pier=pier  (unpack-pier old)
-      =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap.pier)
-      =+  !<  cay=(tail clay-types)
-          vase:(~(got by van.mod.sol.arvo-snap) %clay)
+      =/  cay  !<((tail clay-types) (clay-vane-of:theseus-kernel snap.pier))
       ::  408 Clay no longer exposes .fad/flow in raft; keep default empty fad.
       =.  ran.ruf.cay  ran.raf
       =.  dos.rom.ruf.cay
@@ -1281,9 +1278,7 @@
         $(desks t.desks)
       :-  who
       ^-  saved-pier
-      =.  van.mod.sol.arvo-snap
-        (~(put by van.mod.sol.arvo-snap) %clay [!>(cay) *worm])
-      (pack-pier pier(snap !>(arvo-snap)))
+      (pack-pier pier(snap (put-clay-vane:theseus-kernel snap.pier !>(cay))))
     =^  car  state
       %-  poke-theseus-events
       %+  turn  t.all

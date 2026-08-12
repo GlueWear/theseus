@@ -181,4 +181,21 @@
   ^-  vase
   =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
   vase:(~(got by van.mod.sol.arvo-snap) %clay)
+::  +put-clay-vane: replace the %clay vane's vase inside a snapshot, returning
+::  the modified snapshot as a vase.  For the cache/rebuild inject path.
+::
+++  put-clay-vane
+  |=  [snap=vase clay=vase]
+  ^-  vase
+  =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
+  =.  van.mod.sol.arvo-snap
+    (~(put by van.mod.sol.arvo-snap) %clay [clay *worm])
+  !>(arvo-snap)
+::  +wish-arvo: evaluate hoon text against a snapshot's Arvo (the %wish hook).
+::
+++  wish-arvo
+  |=  [snap=vase txt=@]
+  ^-  *
+  =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
+  (wish:arvo-snap txt)
 --
