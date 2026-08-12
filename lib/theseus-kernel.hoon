@@ -197,10 +197,12 @@
 ++  put-clay-vane
   |=  [snap=vase clay=vase]
   ^-  vase
-  =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
-  =.  van.mod.sol.arvo-snap
-    (~(put by van.mod.sol.arvo-snap) %clay [clay *worm])
-  !>(arvo-snap)
+  ::  replace the %clay vane in the self-typed snap via a slap'd mutator gate, then
+  ::  re-pair the modified Arvo noun with the incoming snap's type (p.snap) so the
+  ::  result stays Arvo-typed, never opaque -- same guarantee as poke-arvo's store.
+  =/  mut=vase
+    (slap snap !,(*hoon |=(cv=vase +>(van.mod.sol (~(put by van.mod.sol) %clay [cv *worm])))))
+  [p.snap q:(slam mut clay)]
 ::  +wish-arvo: evaluate hoon text against a snapshot's Arvo (the %wish hook).
 ::
 ++  wish-arvo
