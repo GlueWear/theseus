@@ -592,22 +592,19 @@
     ::  ship -- the sidecar does the real delivery -- so drop it quietly.
     ?:  paused  ..abet-pe
     =^  ue  next-events  ~(get to next-events)
-    =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
-    =/  poke-result=(each vase tang)
-      (mule |.((slym [-:!>(poke:arvo-adult) poke:arvo-snap] [now.bowl ue])))
-    ?:  ?=(%| -.poke-result)  ((slog >%theseus-crash< >who< p.poke-result) $)
-    ::  NOTE: this is extremely dangerous.  408 smoke: keep the cast inside
-    ::  mule too, so a bad %hear result drops instead of crashing lick %soak.
-    =/  snap-result=(each _arvo-adult tang)
-      (mule |.(!<(_arvo-adult [-:!>(*_arvo-adult) +.q.p.poke-result])))
-    ?:  ?=(%| -.snap-result)  ((slog >%theseus-snap-cast-crash< >who< p.snap-result) $)
-    =.  arvo-snap  p.snap-result
-    =.  snap  !>(arvo-snap)
+    ::  Poke execution now lives in lib/theseus-kernel (Phase 3a slice 1); this
+    ::  loop no longer names poke:arvo-adult / _arvo-adult.  Both crash casts are
+    ::  still contained (inside +mule there) so a bad %hear result drops instead
+    ::  of crashing lick %soak.
+    =/  res  (poke-arvo:theseus-kernel snap now.bowl ue)
+    ?:  ?=(%| -.res)
+      ?:  ?=(%poke stage.p.res)
+        ((slog >%theseus-crash< >who< tang.p.res) $)
+      ((slog >%theseus-snap-cast-crash< >who< tang.p.res) $)
+    =.  snap  snap.p.res
     =.  scry-time  now.bowl
     =.  ..abet-pe  (publish-event now.bowl ue)
-    =.  ..abet-pe
-      ~|  ova=-.p.poke-result
-      (handle-effects ;;((list ovum) -.q.p.poke-result))
+    =.  ..abet-pe  (handle-effects effects.p.res)
     $
   ::
   ::  Handle all the effects produced by a single event.

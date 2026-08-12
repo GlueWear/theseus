@@ -5,6 +5,11 @@
 ::  still imported by app/theseus.hoon, so the desk keeps vendoring /sys for now.
 ::
 /=  clay-core  /sys/vane/clay
+::  Arvo core imported here too, for the +poke-arvo execution path lifted out of
+::  app/theseus.hoon (Phase 3a slice 1).  A later slice swaps this for the
+::  runtime host-%base build (+build), after which /sys can go entirely.
+::
+/=  arvo-core  /sys/arvo
 ::
 |%
 +$  weft  [lal=@tas num=@ud]
@@ -85,4 +90,27 @@
 ::  exported here so app/theseus.hoon can drop its direct /sys/vane/clay import.
 ::
 ++  clay-types  (clay-core *ship)
+::  +arvo-adult: the host's adult Arvo core (type + value), recovered from the
+::  imported arvo core.  Type source for a virtual ship's saved snapshot.
+::
+++  arvo-adult  ..^load:+>.arvo-core
+::  +poke-arvo: run one unix-event against a virtual ship's saved Arvo snapshot
+::  (carried as a self-typed vase).  On success returns the new snapshot vase and
+::  the effect list; on failure returns which stage broke -- %poke (the event
+::  crashed Arvo) or %snap (the result could not be re-cast) -- with its stack.
+::  Lifted verbatim from the +plow inner loop in app/theseus.hoon so the agent
+::  stops naming poke:arvo-adult / _arvo-adult directly.  Both crash casts stay
+::  inside +mule so a bad packet drops instead of taking down the caller.
+::
+++  poke-arvo
+  |=  [snap=vase now=@da ue=*]
+  ^-  (each [snap=vase effects=(list ovum)] [stage=?(%poke %snap) =tang])
+  =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
+  =/  poke-result=(each vase tang)
+    (mule |.((slym [-:!>(poke:arvo-adult) poke:arvo-snap] [now ue])))
+  ?:  ?=(%| -.poke-result)  [%| %poke p.poke-result]
+  =/  snap-result=(each _arvo-adult tang)
+    (mule |.(!<(_arvo-adult [-:!>(*_arvo-adult) +.q.p.poke-result])))
+  ?:  ?=(%| -.snap-result)  [%| %snap p.snap-result]
+  [%& !>(p.snap-result) ;;((list ovum) -.q.p.poke-result)]
 --
