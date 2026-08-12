@@ -340,15 +340,14 @@
     ++  health-of
       |=  [who=ship saved=saved-pier]
       ^-  moon-health
-      =/  got=(unit _arvo-adult)  (mole |.(!<(_arvo-adult snap.saved)))
-      ?~  got
+      =/  vit  (arvo-vitals:theseus-kernel snap.saved)
+      ?~  vit
         [who %empty *(set term) 0 paused.saved |]
-      =/  arvo-snap=_arvo-adult  u.got
-      =/  vanes=(set term)  ~(key by van.mod.sol.arvo-snap)
+      =/  vanes=(set term)  vanes.u.vit
       =/  wanted=(set term)
         (sy ~[%ames %behn %clay %dill %eyre %gall %iris %jael %khan])
       =/  queued=@ud  (lent ~(tap to next-events.saved))
-      =/  identity-ok=?  =(who our.sol.arvo-snap)
+      =/  identity-ok=?  =(who our.u.vit)
       =/  okay=?
         ?&  identity-ok
             =(wanted vanes)
@@ -570,9 +569,8 @@
   ::
   ++  raft  :: TODO get rid of this, not needed +ugly
     ^-  raft:clay-types
-    =-  ruf.cay
-    =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
-    !<(cay=(tail clay-types) vase:(~(got by van.mod.sol.arvo-snap) %clay))
+    =/  cay  !<((tail clay-types) (clay-vane-of:theseus-kernel snap))
+    ruf.cay
   ::
   ::  Enqueue events to child arvo
   ::

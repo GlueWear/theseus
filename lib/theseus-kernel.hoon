@@ -165,4 +165,20 @@
   ?.  =(wanted built)
     ~|([%theseus-init-vane-build-failed who built] !!)
   !>(new-snap)
+::  +arvo-vitals: a snapshot's identity + vane-name set, for +health-of.  Wrapped
+::  in a mole so a corrupt/empty snap yields ~ instead of crashing.
+::
+++  arvo-vitals
+  |=  snap=vase
+  ^-  (unit [our=ship vanes=(set term)])
+  =/  got  (mole |.(!<(_arvo-adult snap)))
+  ?~  got  ~
+  `[our.sol.u.got ~(key by van.mod.sol.u.got)]
+::  +clay-vane-of: the %clay vane's vase inside a snapshot, for the raft reader.
+::
+++  clay-vane-of
+  |=  snap=vase
+  ^-  vase
+  =/  arvo-snap=_arvo-adult  !<(_arvo-adult snap)
+  vase:(~(got by van.mod.sol.arvo-snap) %clay)
 --
