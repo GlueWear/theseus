@@ -750,28 +750,8 @@
       (unpack-raft (~(got by caches) cache.act))
     :: have to get rid of the kids desk otherwise boot fails
     =.  dos.rom.ruf.clay  (~(del by dos.rom.ruf.clay) %kids)
-    =/  new-snap=_arvo-adult  *_arvo-adult
-    =.  sol.new-snap
-      ^-  soul
-      :*  [who.act *@da *@uvJ]                         ::  mien
-          &                                            ::  fad
-          :_  |                                        ::  zen
-          :-  [~.nonce /theseus]
-          (runtime-wynn:theseus-kernel ker)
-          :^  files  lull.ker  zuse.ker            ::  mod
-          %-  ~(gas by *(map term vane))               ::  van.mod
-          :~  [%ames [(slam ames.ker !>(who.act)) *worm]]
-              [%behn [(slam behn.ker !>(who.act)) *worm]]
-              [%clay [!>(clay) *worm]]
-              [%dill [(slam dill.ker !>(who.act)) *worm]]
-              [%eyre [(slam eyre.ker !>(who.act)) *worm]]
-              [%gall [(slam gall.ker !>(who.act)) *worm]]
-              [%iris [(slam iris.ker !>(who.act)) *worm]]
-              [%jael [(slam jael.ker !>(who.act)) *worm]]
-              [%khan [(slam khan.ker !>(who.act)) *worm]]
-      ==  ==
     =/  new=pier  *pier
-    =.  snap.new  !>(new-snap)
+    =.  snap.new  (make-arvo:theseus-kernel who.act ker files !>(clay))
     =.  piers  (~(put by piers) who.act (pack-pier new))
     =.  this
       =<  abet-pe:plow
@@ -862,34 +842,8 @@
     ::  Build the complete typed pier off-map.  Never expose an empty placeholder:
     ::  if construction fails, no fleet record exists; if it succeeds, the first
     ::  visible record already contains all nine vanes.
-    =/  moon-soul=soul
-      ^-  soul
-      :*  [who.act *@da *@uvJ]                         ::  mien
-          &                                            ::  fad
-          :_  |                                        ::  zen
-          :-  [~.nonce /theseus]
-          (runtime-wynn:theseus-kernel ker)
-          :^  files  lull.ker  zuse.ker            ::  mod
-          %-  ~(gas by *(map term vane))               ::  van.mod
-          :~  [%ames [(slam ames.ker !>(who.act)) *worm]]
-              [%behn [(slam behn.ker !>(who.act)) *worm]]
-              [%clay [!>(clay) *worm]]
-              [%dill [(slam dill.ker !>(who.act)) *worm]]
-              [%eyre [(slam eyre.ker !>(who.act)) *worm]]
-              [%gall [(slam gall.ker !>(who.act)) *worm]]
-              [%iris [(slam iris.ker !>(who.act)) *worm]]
-              [%jael [(slam jael.ker !>(who.act)) *worm]]
-              [%khan [(slam khan.ker !>(who.act)) *worm]]
-      ==  ==
-    =/  new-snap=_arvo-adult  *_arvo-adult
-    =.  sol.new-snap  moon-soul
     =/  new=pier  *pier
-    =.  new  new(snap !>(new-snap), paused |)
-    =/  built-vanes=(set term)  ~(key by van.mod.sol.new-snap)
-    =/  wanted-vanes=(set term)
-      (sy ~[%ames %behn %clay %dill %eyre %gall %iris %jael %khan])
-    ?.  =(wanted-vanes built-vanes)
-      ~|([%theseus-init-vane-build-failed who.act built-vanes] !!)
+    =.  new  new(snap (make-arvo:theseus-kernel who.act ker files !>(clay)), paused |)
     =.  piers  (~(put by piers) who.act (pack-pier new))
     =.  this
       =<  abet-pe:plow
@@ -1007,34 +961,8 @@
       (unpack-raft (~(got by caches) cache.act))
     :: have to get rid of the kids desk otherwise boot fails
     =.  dos.rom.ruf.clay  (~(del by dos.rom.ruf.clay) %kids)
-    =/  planet-soul=soul
-      ^-  soul
-      :*  [who.act *@da *@uvJ]                         ::  mien
-          &                                            ::  fad
-          :_  |                                        ::  zen
-          :-  [~.nonce /theseus]
-          (runtime-wynn:theseus-kernel ker)
-          :^  files  lull.ker  zuse.ker            ::  mod
-          %-  ~(gas by *(map term vane))               ::  van.mod
-          :~  [%ames [(slam ames.ker !>(who.act)) *worm]]
-              [%behn [(slam behn.ker !>(who.act)) *worm]]
-              [%clay [!>(clay) *worm]]
-              [%dill [(slam dill.ker !>(who.act)) *worm]]
-              [%eyre [(slam eyre.ker !>(who.act)) *worm]]
-              [%gall [(slam gall.ker !>(who.act)) *worm]]
-              [%iris [(slam iris.ker !>(who.act)) *worm]]
-              [%jael [(slam jael.ker !>(who.act)) *worm]]
-              [%khan [(slam khan.ker !>(who.act)) *worm]]
-      ==  ==
-    =/  new-snap=_arvo-adult  *_arvo-adult
-    =.  sol.new-snap  planet-soul
     =/  new=pier  *pier
-    =.  new  new(snap !>(new-snap), paused |)
-    =/  built-vanes=(set term)  ~(key by van.mod.sol.new-snap)
-    =/  wanted-vanes=(set term)
-      (sy ~[%ames %behn %clay %dill %eyre %gall %iris %jael %khan])
-    ?.  =(wanted-vanes built-vanes)
-      ~|([%theseus-init-vane-build-failed who.act built-vanes] !!)
+    =.  new  new(snap (make-arvo:theseus-kernel who.act ker files !>(clay)), paused |)
     =.  piers  (~(put by piers) who.act (pack-pier new))
     =.  this
       =<  abet-pe:plow

@@ -128,4 +128,41 @@
   ?~  res=(~(peek le:part:arvo-snap [[pit vil] sol]:arvo-snap) arg)  ~
   ?~  u.res  res
   ``[p.u.u.res !<(vase [-:!>(*vase) q.u.u.res])]
+::  +make-arvo: construct a fresh virtual ship's Arvo snapshot -- an adult Arvo
+::  core with its soul set: identity, runtime version stamp, the host lull/zuse,
+::  and a nine-vane map built from the runtime kernel.  Clay is passed in already
+::  seeded and vased by the caller.  Lifted verbatim from the three init sites in
+::  app/theseus.hoon so the agent stops naming soul / vane / worm / van.mod /
+::  _arvo-adult / sol.  Asserts all nine vanes are present (never expose a
+::  partial pier), then returns the snapshot as a vase.
+::
+++  make-arvo
+  |=  [who=ship ker=kernel files=(axal (cask)) clay=vase]
+  ^-  vase
+  =/  new-snap=_arvo-adult  *_arvo-adult
+  =.  sol.new-snap
+    ^-  soul
+    :*  [who *@da *@uvJ]                              ::  mien
+        &                                            ::  fad
+        :_  |                                        ::  zen
+        :-  [~.nonce /theseus]
+        (runtime-wynn ker)
+        :^  files  lull.ker  zuse.ker                ::  mod
+        %-  ~(gas by *(map term vane))               ::  van.mod
+        :~  [%ames [(slam ames.ker !>(who)) *worm]]
+            [%behn [(slam behn.ker !>(who)) *worm]]
+            [%clay [clay *worm]]
+            [%dill [(slam dill.ker !>(who)) *worm]]
+            [%eyre [(slam eyre.ker !>(who)) *worm]]
+            [%gall [(slam gall.ker !>(who)) *worm]]
+            [%iris [(slam iris.ker !>(who)) *worm]]
+            [%jael [(slam jael.ker !>(who)) *worm]]
+            [%khan [(slam khan.ker !>(who)) *worm]]
+    ==  ==
+  =/  built=(set term)  ~(key by van.mod.sol.new-snap)
+  =/  wanted=(set term)
+    (sy ~[%ames %behn %clay %dill %eyre %gall %iris %jael %khan])
+  ?.  =(wanted built)
+    ~|([%theseus-init-vane-build-failed who built] !!)
+  !>(new-snap)
 --
