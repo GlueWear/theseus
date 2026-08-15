@@ -1013,42 +1013,11 @@
     =.  desks.act  [%base desks.act]
     =.  caches
       %+  ~(put by caches)  name.act
-      %-  pack-raft
       ?^  who.act
-        =|  =raft:clay-types
-        =+  ruf=raft:(pe u.who.act)
-        %=    raft
-            ::  408 Clay no longer exposes .fad/flow in raft; keep default empty fad.
-            ran  ran.ruf
-            dos.rom
-          |-
-          ?~  desks.act  dos.rom.raft
-          =.  dos.rom.raft
-            %+  ~(put by dos.rom.raft)  i.desks.act
-            =|  doj=dojo:clay-types
-            ~|  "{<i.desks.act>} doesn't exist on {<u.who.act>}"
-            =.  dom.doj  dom:(~(got by dos.rom.ruf) i.desks.act)
-            doj
-          $(desks.act t.desks.act)
-        ==      
+        ::  source the cache from a running virtual ship's raft
+        (cache-from-moon:theseus-kernel u.who.act snap:(pe u.who.act) desks.act)
       ::  take cache from host ship
-      ::
-      =|  =raft:clay-types
-      ::  408 Clay no longer exposes /flow as a public scry; keep default empty fad.
-      =.  ran.raft
-        .^(rang:clay %cx /(scot %p our.bowl)//(scot %da now.bowl)/rang)
-      =.  dos.rom.raft
-        |-
-        ?~  desks.act  dos.rom.raft
-        =+  .^(=cone:clay %cx /(scot %p our.bowl)//(scot %da now.bowl)/domes)
-        ~|  "{<i.desks.act>} doesn't exist on {<our.bowl>}"
-        =/  =dome:clay  (~(got by cone) our.bowl i.desks.act)
-        =.  dos.rom.raft
-          %+  ~(put by dos.rom.raft)  i.desks.act
-          =|  doj=dojo:clay-types
-          =.  dom.doj  dome  doj
-        $(desks.act t.desks.act)
-      raft
+      (cache-from-host:theseus-kernel our.bowl now.bowl desks.act)
     ~&  theseus+cache+name.act
     `state
   ::

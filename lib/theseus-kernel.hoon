@@ -93,18 +93,21 @@
   |=  cache=vase
   ^-  (set desk)
   ~(key by dos.rom:!<(raft:clay-types cache))
-::  +snap-raft-desks: the desks in a running virtual ship's Clay raft, read
-::  straight from its Arvo snapshot.  Read-only: pulls the %clay vane vase via
-::  +clay-vane-of, decodes it with compile-time (tail clay-types), and returns
-::  just the desk set (dos.rom.ruf) -- so the agent can compare/list a moon's
-::  desks without naming +raft:clay-types or (tail clay-types) on the read path.
-::  Mirrors the old inline (raft-desks raft:(pe ...)) composition exactly.
+::  +snap-raft: a running virtual ship's Clay raft, recovered from its Arvo
+::  snapshot -- pulls the %clay vane vase via +clay-vane-of and decodes it with
+::  compile-time (tail clay-types).  The one place the agent's read/build paths
+::  get a moon's raft, so app/theseus.hoon stops naming (tail clay-types)/ruf.
+::
+++  snap-raft
+  |=  snap=vase
+  ^-  raft:clay-types
+  ruf:!<((tail clay-types) (clay-vane-of snap))
+::  +snap-raft-desks: just the desk set of a moon's raft, for compare/list.
 ::
 ++  snap-raft-desks
   |=  snap=vase
   ^-  (set desk)
-  =/  cay  !<((tail clay-types) (clay-vane-of snap))
-  ~(key by dos.rom.ruf.cay)
+  ~(key by dos.rom:(snap-raft snap))
 ::  +seed-clay: build a fresh virtual ship's %clay vane, seeded from a cached
 ::  raft, as a vase ready to hand to +make-arvo.  Specializes the host Clay vane
 ::  to the ship, installs the cached raft (recovered from the packed cache vase),
@@ -119,6 +122,55 @@
   =.  ruf.clay  !<(raft:clay-types cache)
   =.  dos.rom.ruf.clay  (~(del by dos.rom.ruf.clay) %kids)
   !>(clay)
+::  +cache-from-moon: build a build-cache (packed raft vase) from a running
+::  virtual ship's raft, copying its .ran and the requested desks' domes.  Src
+::  is only for the "desk doesn't exist" trace.  Byte-for-byte the old inline
+::  %cache who=[~ ship] branch, lifted out of app so it stops naming
+::  raft:clay-types / dojo:clay-types / dos/rom/ran/dom.
+::
+++  cache-from-moon
+  |=  [src=ship snap=vase desks=(list desk)]
+  ^-  vase
+  =/  ruf  (snap-raft snap)
+  =|  =raft:clay-types
+  !>
+  %=    raft
+      ::  408 Clay no longer exposes .fad/flow in raft; keep default empty fad.
+      ran  ran.ruf
+      dos.rom
+    |-
+    ?~  desks  dos.rom.raft
+    =.  dos.rom.raft
+      %+  ~(put by dos.rom.raft)  i.desks
+      =|  doj=dojo:clay-types
+      ~|  "{<i.desks>} doesn't exist on {<src>}"
+      =.  dom.doj  dom:(~(got by dos.rom.ruf) i.desks)
+      doj
+    $(desks t.desks)
+  ==
+::  +cache-from-host: build a build-cache (packed raft vase) from the HOST ship's
+::  Clay, scrying its rang and per-desk domes.  Byte-for-byte the old inline
+::  %cache who=~ branch, lifted out of app.  Needs our/now for the %cx scries.
+::
+++  cache-from-host
+  |=  [our=ship now=@da desks=(list desk)]
+  ^-  vase
+  =|  =raft:clay-types
+  ::  408 Clay no longer exposes /flow as a public scry; keep default empty fad.
+  =.  ran.raft
+    .^(rang:clay %cx /(scot %p our)//(scot %da now)/rang)
+  =.  dos.rom.raft
+    |-
+    ?~  desks  dos.rom.raft
+    =+  .^(=cone:clay %cx /(scot %p our)//(scot %da now)/domes)
+    ~|  "{<i.desks>} doesn't exist on {<our>}"
+    =/  =dome:clay  (~(got by cone) our i.desks)
+    =.  dos.rom.raft
+      %+  ~(put by dos.rom.raft)  i.desks
+      =|  doj=dojo:clay-types
+      =.  dom.doj  dome  doj
+    $(desks t.desks)
+  !>(raft)
 ::  +poke-arvo: run one unix-event against a virtual ship's saved Arvo snapshot
 ::  (carried as a self-typed vase).  On success returns the new snapshot vase and
 ::  the effect list; on failure returns which stage broke -- %poke (the event
