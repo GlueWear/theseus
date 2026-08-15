@@ -325,7 +325,7 @@
         [%x %caches ~]   ``noun+!>((turn ~(tap by caches) head))
         [%x %cache @ ~]
       =-  ``noun+!>(-)
-      ~(tap in (raft-desks (unpack-raft (~(got by caches) i.t.t.path))))
+      ~(tap in (cache-desks:theseus-kernel (~(got by caches) i.t.t.path)))
     ::  scry into running virtual ships
     ::  ship, care, ship, desk, time, path
     ::  NOTE: requires a double mark at the end

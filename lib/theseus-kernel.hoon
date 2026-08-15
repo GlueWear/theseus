@@ -83,6 +83,16 @@
 ::  exported here so app/theseus.hoon can drop its direct /sys/vane/clay import.
 ::
 ++  clay-types  (clay-core *ship)
+::  +cache-desks: the desks present in a cache -- a packed +raft vase, as built
+::  by the agent's +pack-raft (!>(raft)).  Read-only: recovers the raft with
+::  compile-time +clay-types and returns just its desk set, so the agent can
+::  answer "what desks are in this cache?" without naming +raft:clay-types or
+::  +dos/+rom on the read path.  Mirrors the old inline +raft-desks . +unpack-raft.
+::
+++  cache-desks
+  |=  cache=vase
+  ^-  (set desk)
+  ~(key by dos.rom:!<(raft:clay-types cache))
 ::  +poke-arvo: run one unix-event against a virtual ship's saved Arvo snapshot
 ::  (carried as a self-typed vase).  On success returns the new snapshot vase and
 ::  the effect list; on failure returns which stage broke -- %poke (the event
