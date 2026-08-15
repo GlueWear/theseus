@@ -23,7 +23,6 @@
 ::  compile-time /sys/vane/clay import for now.)
 ::
 =>  |%
-    ++  clay-types  clay-types:theseus-kernel
     ::  +fine-req-path: parse an inbound Ames blob; if it is a %fine REQUEST
     ::  packet, produce [requester sndr-tick rcvr-tick origin requested-path],
     ::  else ~.  Inlined from lull +sift-shot / +sift-wail because gall agents don't
@@ -162,14 +161,6 @@
       |=  pak=vase
       ^-  task:clay
       !<(task:clay pak)
-    ++  pack-raft
-      |=  raf=raft:clay-types
-      ^-  vase
-      !>(raf)
-    ++  unpack-raft
-      |=  raf=vase
-      ^-  raft:clay-types
-      !<(raft:clay-types raf)
     ++  current-runtime
       ^-  runtime-id
       :~  zuse+zuse
@@ -398,13 +389,6 @@
     ^+  ..abet-pe
     ~&  [%theseus-slap-gall-disabled who dap]
     ..abet-pe
-  ::
-  ::  return raft (containing the build cache of desks) from a theseus ship
-  ::
-  ++  raft  :: TODO get rid of this, not needed +ugly
-    ^-  raft:clay-types
-    =/  cay  !<((tail clay-types) (clay-vane-of:theseus-kernel snap))
-    ruf.cay
   ::
   ::  Enqueue events to child arvo
   ::
@@ -1087,8 +1071,6 @@
       %&  yok(q.p (drop-paths drop q.p.yok))
     ==
   pak(yok yok)
-::
-++  raft-desks  |=(=raft:clay-types ~(key by dos.rom.raft))
 ::
 ::  Run a callback function against a list of ships, aggregating state
 ::  and plowing all ships at the end.
