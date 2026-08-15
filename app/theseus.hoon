@@ -573,15 +573,12 @@
       ~|([%theseus-init-existing who.act] !!)
     =/  ker=kernel:theseus-kernel
       (build:theseus-kernel our.bowl now.bowl)
-    =/  clay
-      (clay-vane:theseus-kernel who.act)
-    =.  ruf.clay
+    =/  clay-vase
+      %+  seed-clay:theseus-kernel  who.act
       ~|  "{<cache.act>} cache doesn't exist, try %default cache"
-      (unpack-raft (~(got by caches) cache.act))
-    :: have to get rid of the kids desk otherwise boot fails
-    =.  dos.rom.ruf.clay  (~(del by dos.rom.ruf.clay) %kids)
+      (~(got by caches) cache.act)
     =/  new=pier  *pier
-    =.  snap.new  (make-arvo:theseus-kernel who.act ker files !>(clay))
+    =.  snap.new  (make-arvo:theseus-kernel who.act ker files clay-vase)
     =.  piers  (~(put by piers) who.act (pack-pier new))
     =.  this
       =<  abet-pe:plow
@@ -662,18 +659,15 @@
       =.  this  apex-theseus  =<  abet-theseus
     =/  ker=kernel:theseus-kernel
       (build:theseus-kernel our.bowl now.bowl)
-    =/  clay
-      (clay-vane:theseus-kernel who.act)
-    =.  ruf.clay
+    =/  clay-vase
+      %+  seed-clay:theseus-kernel  who.act
       ~|  "{<cache.act>} cache doesn't exist, try %default cache"
-      (unpack-raft (~(got by caches) cache.act))
-    :: have to get rid of the kids desk otherwise boot fails
-    =.  dos.rom.ruf.clay  (~(del by dos.rom.ruf.clay) %kids)
+      (~(got by caches) cache.act)
     ::  Build the complete typed pier off-map.  Never expose an empty placeholder:
     ::  if construction fails, no fleet record exists; if it succeeds, the first
     ::  visible record already contains all nine vanes.
     =/  new=pier  *pier
-    =.  new  new(snap (make-arvo:theseus-kernel who.act ker files !>(clay)), paused |)
+    =.  new  new(snap (make-arvo:theseus-kernel who.act ker files clay-vase), paused |)
     =.  piers  (~(put by piers) who.act (pack-pier new))
     =.  this
       =<  abet-pe:plow
@@ -784,15 +778,12 @@
       =.  this  apex-theseus  =<  abet-theseus
     =/  ker=kernel:theseus-kernel
       (build:theseus-kernel our.bowl now.bowl)
-    =/  clay
-      (clay-vane:theseus-kernel who.act)
-    =.  ruf.clay
+    =/  clay-vase
+      %+  seed-clay:theseus-kernel  who.act
       ~|  "{<cache.act>} cache doesn't exist, try %default cache"
-      (unpack-raft (~(got by caches) cache.act))
-    :: have to get rid of the kids desk otherwise boot fails
-    =.  dos.rom.ruf.clay  (~(del by dos.rom.ruf.clay) %kids)
+      (~(got by caches) cache.act)
     =/  new=pier  *pier
-    =.  new  new(snap (make-arvo:theseus-kernel who.act ker files !>(clay)), paused |)
+    =.  new  new(snap (make-arvo:theseus-kernel who.act ker files clay-vase), paused |)
     =.  piers  (~(put by piers) who.act (pack-pier new))
     =.  this
       =<  abet-pe:plow

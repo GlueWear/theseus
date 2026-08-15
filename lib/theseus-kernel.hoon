@@ -105,6 +105,20 @@
   ^-  (set desk)
   =/  cay  !<((tail clay-types) (clay-vane-of snap))
   ~(key by dos.rom.ruf.cay)
+::  +seed-clay: build a fresh virtual ship's %clay vane, seeded from a cached
+::  raft, as a vase ready to hand to +make-arvo.  Specializes the host Clay vane
+::  to the ship, installs the cached raft (recovered from the packed cache vase),
+::  and drops the %kids desk (a %kids raft breaks first boot).  Byte-for-byte the
+::  old inline init seeding -- (clay-vane who) / =. ruf.clay / del %kids -- lifted
+::  out of app so the three init paths stop naming raft:clay-types / ruf / dos/rom.
+::
+++  seed-clay
+  |=  [who=ship cache=vase]
+  ^-  vase
+  =/  clay  (clay-vane who)
+  =.  ruf.clay  !<(raft:clay-types cache)
+  =.  dos.rom.ruf.clay  (~(del by dos.rom.ruf.clay) %kids)
+  !>(clay)
 ::  +poke-arvo: run one unix-event against a virtual ship's saved Arvo snapshot
 ::  (carried as a self-typed vase).  On success returns the new snapshot vase and
 ::  the effect list; on failure returns which stage broke -- %poke (the event
