@@ -18,9 +18,9 @@
     pill=pill,
     dbug, verb, dingy, theseus-kernel
 ::
-::  All Arvo/Clay kernel internals now come through lib/theseus-kernel, so this
-::  agent imports no /sys files directly.  (theseus-kernel still holds the
-::  compile-time /sys/vane/clay import for now.)
+::  All Arvo/Clay kernel internals now come through lib/theseus-kernel, which
+::  itself has no compile-time /sys import -- kernel material is scried from the
+::  host %base at runtime.  So nothing in this desk vendors /sys.
 ::
 =>  |%
     ::  +fine-req-path: parse an inbound Ames blob; if it is a %fine REQUEST
@@ -316,7 +316,7 @@
         [%x %caches ~]   ``noun+!>((turn ~(tap by caches) head))
         [%x %cache @ ~]
       =-  ``noun+!>(-)
-      ~(tap in (cache-desks:theseus-kernel (~(got by caches) i.t.t.path)))
+      ~(tap in (cache-desks:theseus-kernel our.bowl now.bowl (~(got by caches) i.t.t.path)))
     ::  scry into running virtual ships
     ::  ship, care, ship, desk, time, path
     ::  NOTE: requires a double mark at the end
@@ -558,7 +558,7 @@
     =/  ker=kernel:theseus-kernel
       (build:theseus-kernel our.bowl now.bowl)
     =/  clay-vase
-      %+  seed-clay:theseus-kernel  who.act
+      %^  seed-clay:theseus-kernel  clay.ker  who.act
       ~|  "{<cache.act>} cache doesn't exist, try %default cache"
       (~(got by caches) cache.act)
     =/  new=pier  *pier
@@ -644,7 +644,7 @@
     =/  ker=kernel:theseus-kernel
       (build:theseus-kernel our.bowl now.bowl)
     =/  clay-vase
-      %+  seed-clay:theseus-kernel  who.act
+      %^  seed-clay:theseus-kernel  clay.ker  who.act
       ~|  "{<cache.act>} cache doesn't exist, try %default cache"
       (~(got by caches) cache.act)
     ::  Build the complete typed pier off-map.  Never expose an empty placeholder:
@@ -763,7 +763,7 @@
     =/  ker=kernel:theseus-kernel
       (build:theseus-kernel our.bowl now.bowl)
     =/  clay-vase
-      %+  seed-clay:theseus-kernel  who.act
+      %^  seed-clay:theseus-kernel  clay.ker  who.act
       ~|  "{<cache.act>} cache doesn't exist, try %default cache"
       (~(got by caches) cache.act)
     =/  new=pier  *pier
@@ -999,7 +999,7 @@
       %+  ~(put by caches)  name.act
       ?^  who.act
         ::  source the cache from a running virtual ship's raft
-        (cache-from-moon:theseus-kernel u.who.act snap:(pe u.who.act) desks.act)
+        (cache-from-moon:theseus-kernel snap:(pe u.who.act) desks.act)
       ::  take cache from host ship
       (cache-from-host:theseus-kernel our.bowl now.bowl desks.act)
     ~&  theseus+cache+name.act
@@ -1008,7 +1008,7 @@
       %rebuild
     =/  desks
       ~|  "{<name.act>} cache doesn't exist"
-      (cache-desks:theseus-kernel (~(got by caches) name.act))
+      (cache-desks:theseus-kernel our.bowl now.bowl (~(got by caches) name.act))
     =/  all=(list ship)
       %+  murn  ~(tap in piers)
       |=  [=ship saved=saved-pier]
