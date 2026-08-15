@@ -1071,7 +1071,7 @@
       |=  [=ship saved=saved-pier]
       ?:  paused.saved  ~
       ::  can't inject desks if they haven't been installed 
-      ?.  =(desks (~(int in (raft-desks raft:(pe ship))) desks))
+      ?.  =(desks (~(int in (snap-raft-desks:theseus-kernel snap:(pe ship))) desks))
         ~
       ~&  theseus+rebuilding+ship
       `ship

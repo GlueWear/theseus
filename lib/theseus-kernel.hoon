@@ -93,6 +93,18 @@
   |=  cache=vase
   ^-  (set desk)
   ~(key by dos.rom:!<(raft:clay-types cache))
+::  +snap-raft-desks: the desks in a running virtual ship's Clay raft, read
+::  straight from its Arvo snapshot.  Read-only: pulls the %clay vane vase via
+::  +clay-vane-of, decodes it with compile-time (tail clay-types), and returns
+::  just the desk set (dos.rom.ruf) -- so the agent can compare/list a moon's
+::  desks without naming +raft:clay-types or (tail clay-types) on the read path.
+::  Mirrors the old inline (raft-desks raft:(pe ...)) composition exactly.
+::
+++  snap-raft-desks
+  |=  snap=vase
+  ^-  (set desk)
+  =/  cay  !<((tail clay-types) (clay-vane-of snap))
+  ~(key by dos.rom.ruf.cay)
 ::  +poke-arvo: run one unix-event against a virtual ship's saved Arvo snapshot
 ::  (carried as a self-typed vase).  On success returns the new snapshot vase and
 ::  the effect list; on failure returns which stage broke -- %poke (the event
