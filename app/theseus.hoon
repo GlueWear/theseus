@@ -1023,14 +1023,13 @@
   ::
       %rebuild
     =/  desks
-      %-  raft-desks
       ~|  "{<name.act>} cache doesn't exist"
-      (unpack-raft (~(got by caches) name.act))
+      (cache-desks:theseus-kernel (~(got by caches) name.act))
     =/  all=(list ship)
       %+  murn  ~(tap in piers)
       |=  [=ship saved=saved-pier]
       ?:  paused.saved  ~
-      ::  can't inject desks if they haven't been installed 
+      ::  can't inject desks if they haven't been installed
       ?.  =(desks (~(int in (snap-raft-desks:theseus-kernel snap:(pe ship))) desks))
         ~
       ~&  theseus+rebuilding+ship
@@ -1038,11 +1037,12 @@
     ?~  all  ~&  theseus+rebuild+%no-running-ships  `state
     ::  build it on one ship
     =^  cad  state  (poke-theseus-events [i.all /c/rebuild park.act]~)
-    ::  re-make the %cache
+    ::  re-make the %cache from the ship we rebuilt on, and reuse that packed raft
+    ::  as the injection source for the other ships.
     ?>  ?=(%park -.park.act)
-    =+  raf=raft:(pe i.all) :: TODO error prone, might need to fetch particular desks
-    =.  caches  (~(put by caches) name.act (pack-raft raf))
-    ::  inject it into all ships
+    =/  src-cache  (pack-snap-raft:theseus-kernel snap:(pe i.all))
+    =.  caches  (~(put by caches) name.act src-cache)
+    ::  inject it into all other ships
     =.  piers
       %-  ~(gas by piers)
       %+  turn  t.all
@@ -1050,27 +1050,9 @@
       ^-  [ship saved-pier]
       =/  old  (~(got by piers) who)
       =/  pier=pier  (unpack-pier old)
-      =/  cay  !<((tail clay-types) (clay-vane-of:theseus-kernel snap.pier))
-      ::  408 Clay no longer exposes .fad/flow in raft; keep default empty fad.
-      =.  ran.ruf.cay  ran.raf
-      =.  dos.rom.ruf.cay
-        =/  desks  ~(tap in desks)
-        |-
-        ?~  desks  dos.rom.ruf.cay
-        =.  dos.rom.ruf.cay
-          %+  ~(put by dos.rom.ruf.cay)  i.desks
-          =|  doj=dojo:clay-types
-          ~|  "{<i.desks>} doesn't exist on {<who>}"
-          =/  dom  dom:(~(got by dos.rom.raf) i.desks)
-          =.  let.dom  0
-          =.  hit.dom  *(map aeon:clay tako:clay)
-          :: TODO might have to bunt some other stuff
-          =.  dom.doj  dom
-          doj
-        $(desks t.desks)
       :-  who
       ^-  saved-pier
-      (pack-pier pier(snap (put-clay-vane:theseus-kernel snap.pier !>(cay))))
+      (pack-pier pier(snap (inject-raft:theseus-kernel who snap.pier src-cache desks)))
     =^  car  state
       %-  poke-theseus-events
       %+  turn  t.all

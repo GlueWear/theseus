@@ -103,11 +103,17 @@
   ^-  raft:clay-types
   ruf:!<((tail clay-types) (clay-vane-of snap))
 ::  +snap-raft-desks: just the desk set of a moon's raft, for compare/list.
+::  Mole-wrapped so a vaneless / empty snap (a paused or half-built pier, whose
+::  van map has no %clay vane) yields the empty set instead of crashing: on an
+::  empty map ~(got by ...) has a void value type and faults, while ~(key by ...)
+::  does not -- the same asymmetry +arvo-vitals guards against.  An empty result
+::  correctly excludes such a pier from any "does it have these desks?" check.
 ::
 ++  snap-raft-desks
   |=  snap=vase
   ^-  (set desk)
-  ~(key by dos.rom:(snap-raft snap))
+  =/  got  (mole |.(~(key by dos.rom:(snap-raft snap))))
+  ?~(got ~ u.got)
 ::  +seed-clay: build a fresh virtual ship's %clay vane, seeded from a cached
 ::  raft, as a vase ready to hand to +make-arvo.  Specializes the host Clay vane
 ::  to the ship, installs the cached raft (recovered from the packed cache vase),
@@ -171,6 +177,44 @@
       =.  dom.doj  dome  doj
     $(desks t.desks)
   !>(raft)
+::  +pack-snap-raft: a running virtual ship's whole raft, packed as a cache vase.
+::  Used by %rebuild to re-make the cache from the ship it rebuilt on.  Replaces
+::  the old inline (pack-raft raft:(pe i.all)).
+::
+++  pack-snap-raft
+  |=  snap=vase
+  ^-  vase
+  !>((snap-raft snap))
+::  +inject-raft: splice a source raft (carried as a packed cache vase) into a
+::  running virtual ship's %clay vane -- copy its .ran and rebuild the named
+::  desks' domes (let/hit reset), then re-vase the vane via +put-clay-vane.  Who
+::  is only for the "desk doesn't exist" trace.  Byte-for-byte the old inline
+::  %rebuild injection, lifted out of app so it stops naming (tail clay-types) /
+::  dojo:clay-types / ran / dos/rom / put-clay-vane.
+::
+++  inject-raft
+  |=  [who=ship snap=vase cache=vase desks=(set desk)]
+  ^-  vase
+  =/  raf  !<(raft:clay-types cache)
+  =/  cay  !<((tail clay-types) (clay-vane-of snap))
+  ::  408 Clay no longer exposes .fad/flow in raft; keep default empty fad.
+  =.  ran.ruf.cay  ran.raf
+  =.  dos.rom.ruf.cay
+    =/  dl  ~(tap in desks)
+    |-
+    ?~  dl  dos.rom.ruf.cay
+    =.  dos.rom.ruf.cay
+      %+  ~(put by dos.rom.ruf.cay)  i.dl
+      =|  doj=dojo:clay-types
+      ~|  "{<i.dl>} doesn't exist on {<who>}"
+      =/  dom  dom:(~(got by dos.rom.raf) i.dl)
+      =.  let.dom  0
+      =.  hit.dom  *(map aeon:clay tako:clay)
+      ::  TODO might have to bunt some other stuff
+      =.  dom.doj  dom
+      doj
+    $(dl t.dl)
+  (put-clay-vane snap !>(cay))
 ::  +poke-arvo: run one unix-event against a virtual ship's saved Arvo snapshot
 ::  (carried as a self-typed vase).  On success returns the new snapshot vase and
 ::  the effect list; on failure returns which stage broke -- %poke (the event
@@ -289,7 +333,10 @@
   ::  result stays Arvo-typed, never opaque -- same guarantee as poke-arvo's store.
   =/  mut=vase
     (slap snap !,(*hoon |=(cv=vase +>(van.mod.sol (~(put by van.mod.sol) %clay [cv *worm])))))
-  [p.snap q:(slam mut clay)]
+  ::  slam unwraps one vase level, so pass !>(clay) -- the whole clay vane vase
+  ::  reaches the gate as cv (a vase), matching the make-arvo/peek-arvo slam
+  ::  convention (slam always takes !>(argument)).
+  [p.snap q:(slam mut !>(clay))]
 ::  +wish-arvo: evaluate hoon text against a snapshot's Arvo (the %wish hook).
 ::
 ++  wish-arvo
