@@ -15,23 +15,20 @@
     card  $+(card card:agent:gall)
 ++  on-init
   ^-  (quip card _this)
+  ::  Per-guest UDP transport ports (/utp/<ship>) are spun lazily on that
+  ::  guest's first outbound packet (idempotent), so nothing to open here.
   :_  this
   :~  [%pass /bind %arvo %e %connect `/theseus %theseus-pyre]
-      ::  lick migration: open the /ames IPC port. vere materializes the socket
-      ::  at <pier>/.urb/dev/theseus-pyre/ames (Gall prefixes the agent name).
-      [%pass /ames %arvo %l %spin /ames]
   ==
 ::
 ++  on-save  on-save:def
 ++  on-load
   |=  =vase
   ^-  (quip card _this)
-  ::  on-init does NOT run on a code upgrade, so (re)do its setup here too --
-  ::  otherwise these are lost across upgrades: %spit fails ("gen not found"),
-  ::  and the /theseus eyre bridge 404s (browser access to moons breaks).
+  ::  Per-guest ports re-spin lazily on the next packet; on-init does NOT run on
+  ::  a code upgrade, so just re-bind the /theseus eyre route here.
   :_  this
-  :~  [%pass /ames %arvo %l %spin /ames]
-      [%pass /bind %arvo %e %connect `/theseus %theseus-pyre]
+  :~  [%pass /bind %arvo %e %connect `/theseus %theseus-pyre]
   ==
 ++  on-poke
   |=  [=mark =vase]
@@ -49,24 +46,23 @@
     ?-    -.q.uf.ef
     ::  ames
         %send
-      =/  out=update  [%ames-outbound who.ef p.q.uf.ef q.q.uf.ef]
-      ::  Every virtual ship we boot is a keyed moon meant for the REAL
-      ::  network, so never route internally: no virtual-to-virtual %hear
-      ::  inject, and no answering remote scries from the local namespace.
-      ::  Just emit the fact; the sidecar carries the packet out and the
-      ::  real response returns via a %ames-inbound poke.
+      ::  A2 UDP transport: this guest's own lick port carries the packet.  Spin
+      ::  (idempotent) then spit [%send lane blob] -- the port name is the guest
+      ::  identity, so no `who` tag.  Vere resolves the lane and sends on the
+      ::  guest's own socket.
+      =/  wir=wire  /utp/(scot %p who.ef)
       :_  this
-      :~  [%give %fact ~[/ames/outbound] %theseus-update !>(out)]
-          ::  P1 dual-emit: also spit the raw packet over lick, for parity with
-          ::  the eyre fact.  noun = [who lane blob].
-          [%pass /ames %arvo %l %spit /ames %ames-out [who.ef p.q.uf.ef q.q.uf.ef]]
+      :~  [%pass wir %arvo %l %spin wir]
+          [%pass wir %arvo %l %spit wir [%send p.q.uf.ef q.q.uf.ef]]
       ==
         %push
-      ::  408 Mesa gives Vere a packet plus every currently usable pact lane.
-      ::  Preserve that list across Lick so the sidecar can perform Vere's
-      ::  normal multi-lane send instead of collapsing it into legacy Ames.
+      ::  Mesa gives a packet plus a LIST of usable lanes; spit [%push lanes blob]
+      ::  and Vere sends to each usable lane on the guest's socket.
+      =/  wir=wire  /utp/(scot %p who.ef)
       :_  this
-      [%pass /ames %arvo %l %spit /ames %mesa-out [who.ef p.q.uf.ef q.q.uf.ef]]~
+      :~  [%pass wir %arvo %l %spin wir]
+          [%pass wir %arvo %l %spit wir [%push p.q.uf.ef q.q.uf.ef]]
+      ==
     ::  behn
         %doze
       =^  cards  behn-piers
@@ -155,27 +151,26 @@
       ::  %.n when /theseus is already bound to us -- that's fine, don't crash.
       [%bind ~]  ?>(?=([%eyre %bound *] sign-arvo) `this)
   ::
-      ::  lick /ames port. %spin ack + %connect/%disconnect soaks are ignored;
-      ::  an %ames-in %soak is an inbound packet from the sidecar -> inject it
-      ::  into the moon (poke %theseus with the same %ames-inbound action the
-      ::  eyre path used, but as a real noun -- no JSON, no dejs).
-      [%ames ~]
+      ::  Inbound datagram on a guest's UDP transport port (/utp/<ship>).  Vere
+      ::  soaks mark %heer (mesa) or %hear (legacy ames) with noun [lane blob];
+      ::  the guest ship is the port label in the wire.  Inject it into that moon.
+      ::  (%spin ack + %connect/%disconnect soaks are ignored.)
+      [%utp @ ~]
     ?.  ?=([%lick %soak *] sign-arvo)  `this
-    ?:  =(%mesa-in mark.sign-arvo)
-      =/  inb  ;;([who=@p lane=mesa-lane blob=@] noun.sign-arvo)
+    =/  who=@p  (slav %p i.t.wire)
+    ?:  =(%heer mark.sign-arvo)
+      =/  inb  ;;([lane=mesa-lane blob=@] noun.sign-arvo)
       :_  this
       :~  :*  %pass  /ames/in  %agent  [our.bowl %theseus]  %poke
-              %theseus-action  !>(`action`[%mesa-inbound who.inb lane.inb blob.inb])
+              %theseus-action  !>(`action`[%mesa-inbound who lane.inb blob.inb])
       ==  ==
-    ?.  =(%ames-in mark.sign-arvo)     `this
-    =/  inb  ;;([who=@p from=@p addr=@ux blob=@] noun.sign-arvo)
-    ::  build the lane inline ([%& ship] / [%| addr]); the `action` cast below
-    ::  types it as lane:ames.  (Can't write lane:ames here -- theseus-pyre has
-    ::  its own dead ++ames core that shadows lull's, so lane:ames doesn't find.)
-    =/  lan  ?:(=(0 addr.inb) [%& from.inb] [%| addr.inb])
+    ?.  =(%hear mark.sign-arvo)  `this
+    ::  lick gives a bare address atom; wrap it [%| addr], typed lane:ames by the
+    ::  `action` cast (can't name lane:ames here -- shadowed by the dead ++ames).
+    =/  inb  ;;([addr=@ux blob=@] noun.sign-arvo)
     :_  this
     :~  :*  %pass  /ames/in  %agent  [our.bowl %theseus]  %poke
-            %theseus-action  !>(`action`[%ames-inbound who.inb lan blob.inb])
+            %theseus-action  !>(`action`[%ames-inbound who [%| addr.inb] blob.inb])
     ==  ==
   ==
 ::
