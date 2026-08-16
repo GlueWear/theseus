@@ -15,7 +15,7 @@
     card  $+(card card:agent:gall)
 ++  on-init
   ^-  (quip card _this)
-  ::  Per-guest UDP transport ports (/ames/<ship>) are spun lazily on that
+  ::  Per-guest UDP transport ports (/utp/<ship>) are spun lazily on that
   ::  guest's first outbound packet (idempotent), so nothing to open here.
   :_  this
   :~  [%pass /bind %arvo %e %connect `/theseus %theseus-pyre]
@@ -50,7 +50,7 @@
       ::  (idempotent) then spit [%send lane blob] -- the port name is the guest
       ::  identity, so no `who` tag.  Vere resolves the lane and sends on the
       ::  guest's own socket.
-      =/  wir=wire  /ames/(scot %p who.ef)
+      =/  wir=wire  /utp/(scot %p who.ef)
       :_  this
       :~  [%pass wir %arvo %l %spin wir]
           [%pass wir %arvo %l %spit wir [%send p.q.uf.ef q.q.uf.ef]]
@@ -58,7 +58,7 @@
         %push
       ::  Mesa gives a packet plus a LIST of usable lanes; spit [%push lanes blob]
       ::  and Vere sends to each usable lane on the guest's socket.
-      =/  wir=wire  /ames/(scot %p who.ef)
+      =/  wir=wire  /utp/(scot %p who.ef)
       :_  this
       :~  [%pass wir %arvo %l %spin wir]
           [%pass wir %arvo %l %spit wir [%push p.q.uf.ef q.q.uf.ef]]
@@ -151,11 +151,11 @@
       ::  %.n when /theseus is already bound to us -- that's fine, don't crash.
       [%bind ~]  ?>(?=([%eyre %bound *] sign-arvo) `this)
   ::
-      ::  Inbound datagram on a guest's UDP transport port (/ames/<ship>).  Vere
+      ::  Inbound datagram on a guest's UDP transport port (/utp/<ship>).  Vere
       ::  soaks mark %heer (mesa) or %hear (legacy ames) with noun [lane blob];
       ::  the guest ship is the port label in the wire.  Inject it into that moon.
       ::  (%spin ack + %connect/%disconnect soaks are ignored.)
-      [%ames @ ~]
+      [%utp @ ~]
     ?.  ?=([%lick %soak *] sign-arvo)  `this
     =/  who=@p  (slav %p i.t.wire)
     ?:  =(%heer mark.sign-arvo)
