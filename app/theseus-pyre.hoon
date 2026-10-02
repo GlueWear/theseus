@@ -93,7 +93,11 @@
       =.  iris-piers  (~(del by iris-piers) who.ef)
       =.  behn-piers  (~(del by behn-piers) who.ef)
       =.  eyre-piers  (~(del by eyre-piers) who.ef)
-      `this
+      ::  Use the same name as %spin; Gall adds the %theseus-pyre prefix.
+      =/  wir=wire  /utp/(scot %p who.ef)
+      :_  this
+      :~  [%pass wir %arvo %l %shut wir]
+      ==
         %restart
       ::  A restored Arvo noun still contains vane state, but all of its Vere
       ::  ducts died with the snapshot.  Clear every outer runtime shim first,

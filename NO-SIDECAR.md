@@ -2,6 +2,9 @@
 
 **Status: experimental, for review.**
 
+See [the hardening checkpoint](HARDENING.md) for the Siglup live-network baseline,
+runtime fingerprint, memory observations, and remaining validation gates.
+
 ## What this branch does
 Makes Theseus carry its guest ships' network traffic through **UDP-backed Lick
 ports in the runtime**, replacing the external Node transport sidecar
@@ -14,6 +17,8 @@ ports in the runtime**, replacing the external Node transport sidecar
   `%push` (Mesa, lane list);
 - routes the inbound soak (`%heer` mesa / `%hear` ames) on wire `/utp/<ship>` back
   into `%theseus` as `%mesa-inbound` / `%ames-inbound [who lane blob]`.
+- closes that guest's Lick port with `%shut` when Theseus kills the guest;
+  pausing or snapshotting a guest does not close its port.
 
 ## ⚠️ Requires a patched runtime
 This does **nothing** on stock Vere. It requires the UDP-Lick runtime:
