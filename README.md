@@ -1,53 +1,66 @@
 # Theseus
 
 `%theseus` runs virtual Urbit ships inside a host ship. The current product target
-is virtual moons that can boot, run Dojo, and talk on live Ames through a small
-Node transport sidecar. Longer term, the sidecar transport should move into Vere.
+is virtual moons that boot, run Dojo, talk on live Ames through their own UDP
+transport in a patched Vere runtime, and are managed from a web console.
 
 This repository is the canonical Theseus product repo. The older exploratory
 history lives in `GlueWear/theseus-prototype`.
 
+## Documentation
+
+| Document | What it covers |
+| --- | --- |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | How the pieces fit: agents, runtime transport, web gateway, console; operations and troubleshooting. Start here. |
+| [MANAGEMENT-UI.md](MANAGEMENT-UI.md) | The console and web gateway in detail: API, security, build, deploy, verification. |
+| [NO-SIDECAR.md](NO-SIDECAR.md) | The UDP-Lick transport and the runtime it needs. |
+| [HARDENING.md](HARDENING.md) | Runtime builds and fingerprints, memory notes, remaining gates. |
+| [THESEUS-REFERENCE.md](THESEUS-REFERENCE.md) | `%theseus` generators, scries and threads. |
+| [408-OPERATIONS-NOTES.md](408-OPERATIONS-NOTES.md) | Earlier sidecar-era operations notes (historical). |
+
 ## Current Status
 
-Verified on `[%zuse 408]`:
+Verified on `[%zuse 408]` (October 2026, host `~siglup-narwet`):
 
-- `%theseus` and `%theseus-pyre` install and run from a `%theseus` desk.
-- `:theseus|init-moon` boots a resident virtual moon with real generated keys.
-- `:theseus|init-planet` is an experimental path for booting a real Azimuth
-  planet from its supplied normal `.key` file atom.
-- `:theseus|dojo` can run commands inside the virtual ship.
-- The Node sidecar can subscribe to `%theseus-pyre /ames/outbound`.
-- Direct sidecar UDP mode can send virtual moon and virtual planet Ames packets
-  to live net and receive replies.
-- A virtual moon and a virtual real planet both completed `|hi ~zod` over live
-  net.
+- `%theseus`, `%theseus-pyre` and `%theseus-ui` install and run from a
+  `%theseus` desk; the desk uses the host kernel (no vendored `/sys`).
+- Virtual moons boot with real generated keys (`:theseus|init-moon` or the
+  console) and run Dojo.
+- Each moon talks on live Ames from its own UDP socket, run by the patched Vere
+  (`GlueWear/vere`, branch `main`): automatic ports, per-moon STUN keepalive. No
+  Node sidecar. Moons have completed `|hi ~zod`, reached the host and its
+  sponsor star, and installed `%landscape`.
+- The web console at `/apps/theseus` (also a Landscape tile): fleet health,
+  boot/pause/resume/remove, a Dojo per moon, snapshots and restore, each moon's
+  `+code`, and one-click Landscape per moon.
+- Moon web apps open on their own origin, `http://<moon>.localhost:<port>`,
+  through a local Caddy gateway that `ops/theseus-gateway` runs under launchd.
 
-Known current limitations:
+Known limits (details in ARCHITECTURE.md):
 
-- The desk still vendors `/sys` files. This is intentional for the current
-  baseline; stale vendored `/sys` was the original install failure, and removing
-  this dependency needs a careful kernel-boundary refactor.
-- The sidecar is still required for live Ames transport.
-- Eyre channel pressure can still produce `eyre: clogged ...` messages during
-  packet bursts. Live transport worked despite this, but it needs hardening.
-- Direct live-net mode needs a reachable UDP bind port. In the proven local run,
-  `0.0.0.0:41237` received replies from `~zod`.
-- `--galaxy-via-gateway` exists as an experiment, but it has not proven live-net
-  delivery. Direct mode is the known-good path.
+- Requires the patched runtime; stock Vere has no UDP-Lick.
+- The web gateway is loopback-only; public hosting needs an operator-managed
+  proxy (the console's Hosting mode).
+- Landscape speed and long-running channel health inside a moon are not yet
+  measured.
+- `:theseus|init-planet` (virtual real planets) is experimental.
 
 ## Repository Layout
 
 - `app/theseus.hoon`: virtual ship state manager and control API.
-- `app/theseus-pyre.hoon`: runtime bridge for virtual IO effects.
+- `app/theseus-pyre.hoon`: runtime bridge for virtual IO effects: UDP-Lick
+  transport, STUN plumbing, timers, Dill, guest HTTP.
+- `app/theseus-ui.hoon`, `ui/`, `web/`: the management console at
+  `/apps/theseus`, its built page and icon, and the web gateway settings.
+- `ted/theseus-gateway.hoon`: local control thread for the gateway launcher.
+- `ops/theseus-gateway`, `ops/Caddyfile.local`, `ops/gateway-helper.c`: the
+  local web gateway (launcher, proxy config, launchd helper).
 - `gen/theseus/`: Dojo generators for init, moon init, kill, cache, snapshot,
   restore, and commands.
-- `sur/theseus.hoon`: shared types for events, effects, actions, and updates.
-- `lib/theseus-kernel.hoon`: current runtime kernel-building helpers.
-- `bin/transport-sidecar.mjs`: live Ames UDP sidecar.
-- `bin/transport-sidecar-runner.mjs`: copies the sidecar into the system temp directory, installs
-  Node dependencies there, and runs transport without polluting a mounted desk.
-- `bin/echo-sidecar.mjs`: synthetic transport/fact-loop helper.
-- `sys/`: vendored 408 kernel files required by the current baseline.
+- `sur/theseus.hoon`, `sur/theseus-ui.hoon`: shared types.
+- `lib/theseus-kernel.hoon`: kernel-building helpers against the host kernel.
+- `bin/`: the legacy Node transport sidecar (not needed with the patched
+  runtime).
 
 ## Install Desk
 
@@ -64,10 +77,15 @@ In Dojo:
 Expected bill:
 
 ```text
-/desk/bill: ~[%theseus %theseus-pyre]
+/desk/bill: ~[%theseus %theseus-pyre %theseus-ui]
 ```
 
+The host must run the patched runtime (see NO-SIDECAR.md). For moon web apps,
+also start the web gateway (see ARCHITECTURE.md, "Web gateway").
+
 ## Boot A Virtual Moon
+
+From the console (**Boot moon**), or in Dojo:
 
 ```hoon
 :theseus|init-moon ~dostex-dolten-dilpun
@@ -95,10 +113,14 @@ boots the virtual planet with `%dawn`.
 :theseus|dojo ~sampel-palnet "+vats"
 ```
 
-For now, the transport sidecar still uses the `--moon` option name for any
-virtual ship. Pass the virtual planet there when testing live Ames.
+## Legacy: Node Transport Sidecar
 
-## Sidecar Setup
+Before the patched runtime, a Node sidecar carried virtual ships' Ames traffic
+over Eyre. It is kept for reference and experiments; it is not needed with the
+UDP-Lick runtime, and should not run alongside it. It uses the `--moon` option
+name for any virtual ship.
+
+### Sidecar Setup
 
 Do not run `npm ci` inside a mounted desk: Clay will try to commit
 `node_modules/`. Use the runner, which installs dependencies under the system temp directory and launches a copied sidecar from there.
@@ -158,9 +180,9 @@ The same path was verified for a real virtual planet:
 ; ~tadtus-tinluc is your neighbor
 ```
 
-## Gateway Mode
+### Sidecar galaxy-via-gateway mode
 
-`transport-sidecar.mjs` also supports:
+(Unrelated to the web gateway.) `transport-sidecar.mjs` also supports:
 
 ```bash
 --galaxy-via-gateway
@@ -173,19 +195,11 @@ mode was the path that produced `hi ~zod successful`.
 
 ## Development Direction
 
-Near-term hardening:
-
-- Reduce or eliminate Eyre channel clogging under packet bursts.
-- Add clearer sidecar startup/channel IDs to match Eyre clog logs.
-- Keep `node_modules/` out of Git and Clay commits.
-- Document port discovery and live-net verification commands.
-- Keep `%sueseht`-style experiment desks separate from canonical `%theseus`.
-
-Kernel/product refactor:
-
-- Encapsulate Arvo/Clay coupling behind `lib/theseus-kernel.hoon`.
-- Stop hand-modeling private kernel/vane molds.
-- Eventually remove vendored `/sys` so network install works cleanly on matching
-  kelvins.
-- After sidecar behavior is solid, move transport into Vere so Theseus no longer
-  needs Node for live Ames.
+- Measure Landscape and channel behavior inside moons; tune pyre's HTTP path.
+- Live acceptance of the remaining console flows on a disposable moon:
+  snapshot/restore, remove, Landscape install on a fresh moon.
+- Hosting: a documented public proxy setup (wildcard DNS, TLS) for the
+  console's Hosting mode.
+- Runtime: correct the version string to name the fork's commit; propose the
+  UDP-Lick transport upstream.
+- Virtual planets: finish the `init-planet` path on the new transport.

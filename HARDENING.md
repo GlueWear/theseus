@@ -7,6 +7,12 @@ The UDP-close change is also staged in the mounted desk; its Dojo activation and
 live kill/re-init acceptance have not been independently confirmed. No live moon
 was killed to test it automatically.
 
+**Update 2026-10-03:** the runtime now allocates guest UDP ports automatically
+and runs STUN per guest; the management console and web gateway are deployed.
+See "Runtime update" below, [ARCHITECTURE.md](ARCHITECTURE.md) and
+[MANAGEMENT-UI.md](MANAGEMENT-UI.md). Facts below this note are the 2026-10-02
+baseline unless marked otherwise.
+
 ## Working installation
 
 - Host: `~siglup-narwet`, Zuse 408, Hoon 135.
@@ -157,7 +163,39 @@ paused guests, or add timer/HTTP cancellation. Those remain separate work.
 The C allocation fix is included in the installed rebuild. The agent's new
 `%shut` request works with both that rebuild and the previous UDP-Lick fork.
 
+## Runtime update: automatic ports and per-guest STUN (2026-10-02/03)
+
+| Build | SHA-256 | Source | Status |
+| --- | --- | --- | --- |
+| Leak fix | `eb1f5c81…a5de` | `b5dab2e` | Installed 2026-10-02 morning; superseded |
+| Automatic ports | `1f76bcf1…96af` | `b5dab2e` + automatic-port patch | Installed 2026-10-02 17:35 for the restart test; superseded |
+| Automatic ports + STUN | `a5b8bdccb9983e9241c17d11324273f4926d74a6f20c04b68bf0184557f4e1b8` | GlueWear/vere `09b1224` (`main`) | Installed 2026-10-02 23:17; running |
+
+- All builds: Zig 0.15.2, ReleaseFast, `-j2`, aarch64 macOS. The running build
+  was verified on 2026-10-03 by rebuilding `09b1224` from a clean prefix: the
+  hash matches bit for bit. `lick-test`, `ames-test` and `newt-test` pass.
+- The version string still reads `urbit 4.6-8ddc4b7`; identify builds by hash.
+- Receipts with rollback copies for the first two builds are in
+  `zod/.toolchain/theseus-runtime-20261002*/` (not in Git).
+- Why STUN: the restart test on 2026-10-02 showed moons on an automatic port
+  could still reach only galaxies they contacted directly. Nothing relayed
+  through a galaxy (the host, its sponsor star `~nolset` on the same Mac)
+  ever arrived, because guest sockets kept no NAT mapping open to their galaxy.
+  Since the STUN build, moon `~fopwyn-libryp-siglup-narwet` has direct routes
+  to the host and `~nolset`, has heard from both, and installed `%landscape`.
+  An on-demand `|hi` in both directions has not been re-run since.
+- Host launch: `~sampel-siglup-narwet` (fixed `LICK_UDP` mapping to 41237) has
+  been removed from the fleet; the mapping is no longer needed.
+
 ## Remaining gates
+
+Progress since the baseline (2026-10-03): gate 1, automatic ports, fixed-port
+precedence and `EADDRINUSE`, setup failures and STUN are native-tested and the
+running build is reproducible; version generation is still wrong. Gate 4, no
+per-moon environment map is needed and the console exposes health, boot,
+snapshot/restore and per-moon Dojo; live acceptance of snapshot/restore and
+remove on a disposable moon is still pending. Gates 2 and 3 are unchanged.
+
 
 1. **Runtime ownership and provenance.** The leak fix is built and installed.
    Correct version generation and test UDP success/error callbacks, port collisions,
