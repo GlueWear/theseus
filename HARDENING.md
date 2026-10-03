@@ -169,8 +169,8 @@ The C allocation fix is included in the installed rebuild. The agent's new
 | --- | --- | --- | --- |
 | Leak fix | `eb1f5c81…a5de` | `b5dab2e` | Installed 2026-10-02 morning; superseded |
 | Automatic ports | `1f76bcf1…96af` | `b5dab2e` + automatic-port patch | Installed 2026-10-02 17:35 for the restart test; superseded |
-| Automatic ports + STUN | `a5b8bdccb9983e9241c17d11324273f4926d74a6f20c04b68bf0184557f4e1b8` | GlueWear/vere `09b1224` | Installed 2026-10-02 23:17; running |
-| + newt hang-up fix | `7956112f05bd578a9344a20aa2440cf0f4f0e5817a8e2869fb303602b18ef98f` | GlueWear/vere `2d68391` (`main`) | Built and staged 2026-10-03; install pending a restart |
+| Automatic ports + STUN | `a5b8bdccb9983e9241c17d11324273f4926d74a6f20c04b68bf0184557f4e1b8` | GlueWear/vere `09b1224` | Installed 2026-10-02 23:17; superseded |
+| + newt hang-up fix | `7956112f05bd578a9344a20aa2440cf0f4f0e5817a8e2869fb303602b18ef98f` | GlueWear/vere `2d68391` (`main`) | Installed 2026-10-03 13:41; running |
 
 - All builds: Zig 0.15.2, ReleaseFast, `-j2`, aarch64 macOS. The running build
   was verified on 2026-10-03 by rebuilding `09b1224` from a clean prefix: the
@@ -218,7 +218,19 @@ precedence and `EADDRINUSE`, setup failures and STUN are native-tested and the
 running build is reproducible; version generation is still wrong. Gate 4, no
 per-moon environment map is needed and the console exposes health, boot,
 snapshot/restore and per-moon Dojo; live acceptance of snapshot/restore and
-remove on a disposable moon is still pending. Gates 2 and 3 are unchanged.
+remove on a disposable moon is still pending. Gate 2 is unchanged.
+
+Gate 3, boot time (2026-10-03): building a moon's kernel took minutes per
+boot. Timing each step on the live host showed every step at milliseconds
+(kernel 150 ms, Clay seeding about 35 ms, vanes 13 ms, builder compile 49 ms)
+except `make-arvo`'s `;;((list (pair term vase)) vns)`: `;;` on a vase walks
+its whole type, about 6.4 seconds for Behn alone and minutes for all nine
+vanes. `make-arvo` now takes a typed sample and calls the builder directly;
+kernel, seeding and construction take 81 ms in total. A per-kernel/per-type
+cache of compiled code was also built and verified equivalent, but measured
+only about 0.1 s per boot and 2 ms per event of reusable work, so it was not
+shipped. The moon's own first start (installing `%base`) remains; compiled
+agents are shared between moons through Vere's persistent memo cache.
 
 
 1. **Runtime ownership and provenance.** The leak fix is built and installed.

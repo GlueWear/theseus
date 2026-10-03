@@ -48,7 +48,10 @@ runtime, timers through Behn, terminal output to the console's Dojo view.
 - **Boot:** the console's **Boot moon**, or `:theseus|init-moon ~moon`. The host
   registers the moon's keys in its own Jael, then boots the kernel from a cache
   of desks (the default cache has only `%base`; install more per moon, e.g.
-  `|install ~siglup-narwet %landscape` in the moon's Dojo).
+  `|install ~siglup-narwet %landscape` in the moon's Dojo). Building the
+  moon's kernel takes well under a second; most of a boot is the moon's own
+  first start (installing `%base` and starting its agents), and the whole boot
+  runs as one event, so the host is busy until it finishes.
 - **Pause/resume:** a paused moon queues events instead of running them.
 - **Snapshot/restore:** a snapshot pauses the selected moons and copies their
   state; restoring replaces their state and resumes them.
@@ -256,7 +259,8 @@ launchctl kickstart -k gui/$(id -u)/io.theseus.gateway.siglup-narwet   # restart
   the host's Eyre, with the same identity check.
 - Gateway setting changes apply within about a minute, not instantly.
 - Not yet measured: Landscape speed inside a moon, long-running channel health,
-  boot timings, memory under repeated boot/kill (see HARDENING.md gates).
+  a whole boot end to end, memory under repeated boot/kill (see HARDENING.md
+  gates).
 - Not yet re-run live on a disposable moon: snapshot/restore and remove from the
   console, and an on-demand `|hi` between a moon and the host in both directions.
 - Each moon shows its host's sigil (the sigil library cannot draw moons).
@@ -272,6 +276,10 @@ launchctl kickstart -k gui/$(id -u)/io.theseus.gateway.siglup-narwet   # restart
   - automatic guest UDP ports
   - per-guest STUN, which made local and relayed traffic reach moons
 - **2026-10-03:**
+  - runtime crash on control-socket hang-ups fixed (upstream newt fix,
+    regression test, launcher client)
+  - moon kernel construction from minutes to under a second (no `;;` over
+    vane types)
   - web gateway with discovery, identity checks and launchd supervision
   - chunked moon responses
   - Gateway settings in the console
