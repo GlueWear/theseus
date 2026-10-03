@@ -28,23 +28,37 @@
   ::  Per-guest ports re-spin lazily on the next packet; on-init does NOT run on
   ::  a code upgrade, so just re-bind the /theseus eyre route here.
   :_  this
-  :~  [%pass /bind %arvo %e %connect `/theseus %theseus-pyre]
-  ==
+  [[%pass /bind %arvo %e %connect `/theseus %theseus-pyre] legacy-sites:hc]
 ++  on-poke
   |=  [=mark =vase]
   ^-  (quip card _this)
   ?+    mark  (on-poke:def mark vase)
       %handle-http-request
     =+  !<([rid=@tas req=inbound-request:^eyre] vase)
-    =^  who=ship  url.request.req
-      (parse-url:theseus-pyre (trip url.request.req))
+    ::  /theseus/~<moon>/<path>: the web gateway maps each <moon>.<domain>
+    ::  origin onto this prefix, so the moon's absolute paths never collide
+    ::  with the host's Eyre bindings or its URL-keyed cache.
+    =/  par=(unit [who=ship url=@t])  (parse-url:theseus-pyre url.request.req)
+    ?:  |(?=(~ par) !(has-moon:hc who.u.par))
+      [(not-found:hc rid) this]
+    =.  url.request.req  url.u.par
+    =.  http-ids  (~(put by http-ids) rid who.u.par)
     :_  this
-    cards:(pass-request:(eyre:hc who) rid req)
+    cards:(pass-request:(eyre:hc who.u.par) rid req)
   ::
       %theseus-effect
     =+  ef=!<([theseus-effect] vase)
     ?-    -.q.uf.ef
     ::  ames
+        %saxo
+      ::  Vere runs STUN on the same UDP socket used by this guest.  Passing
+      ::  the complete chain lets it select the terminal sponsoring galaxy in
+      ::  the same way as the stock Ames driver.
+      =/  wir=wire  /utp/(scot %p who.ef)
+      :_  this
+      :~  [%pass wir %arvo %l %spin wir]
+          [%pass wir %arvo %l %spit wir [%saxo sponsors.q.uf.ef]]
+      ==
         %send
       ::  A2 UDP transport: this guest's own lick port carries the packet.  Spin
       ::  (idempotent) then spit [%send lane blob] -- the port name is the guest
@@ -78,6 +92,11 @@
     ::  eyre
         %thus  `this
         %response
+      =/  done=?
+        =/  ev  http-event.q.uf.ef
+        ?-(-.ev %cancel &, %start complete.ev, %continue complete.ev)
+      =?  http-ids  &(done ?=([@ @ ~] p.uf.ef))
+        (~(del by http-ids) i.t.p.uf.ef)
       =^  cards  eyre-piers
         abet:(handle-response:(eyre who.ef) uf.ef)
       [cards this]
@@ -125,7 +144,7 @@
   ^-  (quip card _this)
   ?+  path  (on-watch:def path)
     [%http-response *]    `this
-    [%blit ~]             `this
+    [%blit ~]             ?>  =(src.bowl our.bowl)  `this
     [%ames %outbound ~]   `this
   ==
 ::
@@ -154,6 +173,10 @@
       ::  bind ack. on-load re-issues %connect every upgrade; eyre returns
       ::  %.n when /theseus is already bound to us -- that's fine, don't crash.
       [%bind ~]  ?>(?=([%eyre %bound *] sign-arvo) `this)
+      [%bind-site ~]
+    ?>  ?=([%eyre %bound *] sign-arvo)
+    ~?  !accepted.sign-arvo  [%theseus-pyre-site-refused binding.sign-arvo]
+    `this
   ::
       ::  Inbound datagram on a guest's UDP transport port (/utp/<ship>).  Vere
       ::  soaks mark %heer (mesa) or %hear (legacy ames) with noun [lane blob];
@@ -162,6 +185,13 @@
       [%utp @ ~]
     ?.  ?=([%lick %soak *] sign-arvo)  `this
     =/  who=@p  (slav %p i.t.wire)
+    ?:  =(%stun mark.sign-arvo)
+      =/  inb  ;;([mode=?(%once %stop %fail) galaxy=@p lane=?([%.y p=@pC] [%.n p=@uxaddress])] noun.sign-arvo)
+      :_  this
+      :~  :*  %pass  /ames/stun  %agent  [our.bowl %theseus]  %poke
+              %theseus-action
+              !>(`action`[%ames-stun who mode.inb galaxy.inb lane.inb])
+      ==  ==
     ?:  =(%heer mark.sign-arvo)
       =/  inb  ;;([lane=mesa-lane blob=@] noun.sign-arvo)
       :_  this
@@ -179,7 +209,19 @@
   ==
 ::
 ++  on-agent  on-agent:def
-++  on-leave  on-leave:def
+::  Eyre leaves when the browser drops a request (e.g. a channel stream).
+::  Tell the moon's Eyre, or it keeps the dead connection open.
+::
+++  on-leave
+  |=  =path
+  ^-  (quip card _this)
+  ?.  ?=([%http-response @ ~] path)  (on-leave:def path)
+  ?~  who=(~(get by http-ids) i.t.path)  `this
+  =.  http-ids  (~(del by http-ids) i.t.path)
+  :_  this
+  :~  :*  %pass  /theseus-events  %agent  [our.bowl %theseus]  %poke  %theseus-events
+          !>(`(list theseus-event)`[u.who /e/(scot %p u.who)/[i.t.path] %cancel-request ~]~)
+  ==  ==
 ++  on-peek   on-peek:def
 ++  on-fail   on-fail:def
 --
@@ -187,7 +229,38 @@
 =|  behn-piers=(map ship behn-pier)
 =|  eyre-piers=(map ship eyre-pier)
 =|  iris-piers=(map ship iris-pier)
+::  open moon HTTP requests by Eyre id, to cancel them when the browser leaves
+=|  http-ids=(map @ta ship)
 |_  bowl=bowl:gall
+::
+++  has-moon
+  |=  who=ship
+  ^-  ?
+  =/  res  .^(* %gx /(scot %p our.bowl)/theseus/(scot %da now.bowl)/ships/noun)
+  ?=(^ (find ~[who] +:;;([%ships (list ship)] res)))
+::
+++  not-found
+  |=  rid=@ta
+  ^-  (list card:agent:gall)
+  =/  paths  [/http-response/[rid]]~
+  =/  bod=octs  (as-octs:mimes:html 'No such moon on this host.')
+  :~  [%give %fact paths %http-response-header !>(`response-header:http`[404 ['content-type'^'text/plain' ~]])]
+      [%give %fact paths %http-response-data !>(`(unit octs)``bod)]
+      [%give %kick paths ~]
+  ==
+::
+::  Hostname-specific Eyre bindings this agent owns.  Moon origins used to be
+::  bound per <moon>.localhost:<port>; the gateway's /theseus/~<moon> prefix
+::  replaced them, so any left over are removed on load.
+::
+++  legacy-sites
+  ^-  (list card:agent:gall)
+  =/  all
+    .^((list [binding:^eyre * action:^eyre]) %e /(scot %p our.bowl)/bindings/(scot %da now.bowl))
+  %+  murn  all
+  |=  [=binding:^eyre * act=action:^eyre]
+  ?.  &(?=([%app %theseus-pyre] act) ?=(^ site.binding))  ~
+  `[%pass /bind-site %arvo %e %disconnect binding]
 ++  ames
   |%
   ++  send
@@ -349,6 +422,29 @@
     %-  emit-cards
     [%pass /theseus-events %agent [our.bowl %theseus] %poke %theseus-events !>(aes)]~
   ::
+  ::  Keep large guest responses below Gall's practical fact size.  In
+  ::  particular, Docket may return an entire glob asset in one Eyre event.
+  ::
+  ++  response-data-cards
+    |=  [paths=(list path) data=(unit octs)]
+    ^-  (list card:agent:gall)
+    ?~  data
+      [%give %fact paths %http-response-data !>(data)]~
+    =/  total=@ud  p.u.data
+    =/  bytes=@  q.u.data
+    ?:  =(0 total)
+      [%give %fact paths %http-response-data !>(data)]~
+    =/  offset=@ud  0
+    =/  cards=(list card:agent:gall)  ~
+    |-
+    ?:  =(offset total)
+      (flop cards)
+    =/  len=@ud  (min 65.536 (sub total offset))
+    =/  chunk=octs  [len (cut 3 [offset len] bytes)]
+    =/  card=card:agent:gall
+      [%give %fact paths %http-response-data !>(`(unit octs)``chunk)]
+    $(offset (add offset len), cards [card cards])
+  ::
   ++  pass-request
     |=  [rid=@t req=inbound-request:^eyre]
     ::  NO server-side cookie injection: the browser/broker is the sole session
@@ -366,7 +462,7 @@
     ^+  ..abet
     ?>  ?=([@ @ ~] way)
     =/  paths  [/http-response/[i.t.way]]~
-    =/  kicks  [%give %kick paths ~]~
+    =/  kicks=(list card:agent:gall)  [%give %kick paths ~]~
     ?-    -.ev
     :: TODO to get zero edits to eyre, we need to create our own theseus frontend
     ::   that auto-pokes the correct POST endpoint with the requisite data
@@ -376,15 +472,17 @@
       =.  headers.hed  (parse-headers:theseus-pyre headers.hed)
       =.  this
         %-  emit-cards
-        :+  [%give %fact paths [%http-response-header !>(hed)]]
-          [%give %fact paths %http-response-data !>(data.ev)]
-        ?:(complete.ev kicks ~)
+        ;:  weld
+          [%give %fact paths [%http-response-header !>(hed)]]~
+          (response-data-cards paths data.ev)
+          ?:(complete.ev kicks ~)
+        ==
       ..abet
     ::
         %continue
       =.  this
         %-  emit-cards
-        :-  [%give %fact paths %http-response-data !>(data.ev)]
+        %+  weld  (response-data-cards paths data.ev)
         ?:(complete.ev kicks ~)
       ..abet
     ::

@@ -1,15 +1,17 @@
 |%
 ::
 ++  parse-url
-  |=  url=tape
-  ^-  [ship cord]
-  ::  format: /theseus/~ship/rest...  ->  [~ship "/rest..."]
-  ::  locate the "~" that begins the ship @p (robust to prefix length),
-  ::  instead of a hardcoded offset that only fit "/theseus/".
-  =.  url  (slag (need (find "~" url)) url)  :: now "~ship/rest..."
-  ?~  loc=(find "/" url)  [(slav %p (crip url)) '']
-  :-  (slav %p (crip (scag u.loc url)))
-  (crip (slag u.loc url))
+  ::  /theseus/~<ship>[/rest]  ->  [~<ship> '/rest'], or ~ if malformed
+  |=  url=@t
+  ^-  (unit [ship @t])
+  =/  txt=tape  (trip url)
+  ?.  =("/theseus/~" (scag 10 txt))  ~
+  =.  txt  (slag 9 txt)
+  =/  end=@ud  (fall (find "/" txt) (lent txt))
+  =/  who=(unit ship)  (slaw %p (crip (scag end txt)))
+  ?~  who  ~
+  =/  rest=tape  (slag end txt)
+  `[u.who ?~(rest '/' (crip rest))]
 ::
 ++  has-cookie
   |=  hed=header-list:http

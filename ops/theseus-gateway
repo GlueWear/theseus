@@ -1,0 +1,419 @@
+#!/bin/bash
+# theseus-gateway: run the local Theseus web gateway (Caddy) for one host ship.
+#
+#   theseus-gateway check      show what would run; changes nothing
+#   theseus-gateway run        foreground gateway (what launchd runs)
+#   theseus-gateway sync       re-discover Eyre after a host restart, reload
+#   theseus-gateway status     agents, listener, and Theseus' view
+#   theseus-gateway install    install launchd agents for this ship
+#   theseus-gateway uninstall  remove them
+#
+# Configuration (environment, or KEY=value lines in ops/theseus-gateway.env):
+#   THESEUS_PIER      host pier directory (required)
+#   THESEUS_SHIP      host ship, e.g. ~siglup-narwet (default: from pier name)
+#   THESEUS_WEB_BIND  listen address (default 127.0.0.1)
+#   THESEUS_WEB_BASE  first port tried in auto mode (default 8084)
+#   THESEUS_ADMIN     Caddy admin address for this gateway (default localhost:2019)
+#   CADDY             caddy binary (default: caddy on PATH)
+#
+# The gateway port comes from the console's Gateway settings: in auto mode the
+# first free port from THESEUS_WEB_BASE, in declared mode exactly that port.
+# The host's Eyre port is read from <pier>/.http.ports (its public HTTP port,
+# never the loopback one) and accepted only if it answers /~/host as THESEUS_SHIP.
+
+set -u
+OPS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+CADDYFILE="$OPS_DIR/Caddyfile.local"
+ENV_FILE="$OPS_DIR/theseus-gateway.env"
+
+log() { printf '%s theseus-gateway: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >&2; }
+die() { log "error: $*"; exit 1; }
+
+load_config() {
+  if [ -f "$ENV_FILE" ]; then
+    while IFS='=' read -r key value; do
+      case "$key" in
+        THESEUS_PIER|THESEUS_SHIP|THESEUS_WEB_BIND|THESEUS_WEB_BASE|THESEUS_ADMIN|CADDY)
+          # environment wins over the file
+          if [ -z "${!key:-}" ]; then export "$key=$value"; fi ;;
+      esac
+    done < <(grep -E '^[A-Z_]+=' "$ENV_FILE")
+  fi
+  [ -n "${THESEUS_PIER:-}" ] || die "THESEUS_PIER is not set"
+  THESEUS_PIER=${THESEUS_PIER%/}
+  [ -d "$THESEUS_PIER/.urb" ] || die "$THESEUS_PIER is not a pier"
+  : "${THESEUS_SHIP:=~$(basename "$THESEUS_PIER")}"
+  : "${THESEUS_WEB_BIND:=127.0.0.1}"
+  : "${THESEUS_WEB_BASE:=8084}"
+  : "${THESEUS_ADMIN:=localhost:2019}"
+  : "${CADDY:=$(command -v caddy || true)}"
+  [ -n "$CADDY" ] || die "caddy not found; install it or set CADDY"
+  export THESEUS_PIER THESEUS_SHIP THESEUS_WEB_BIND THESEUS_WEB_BASE THESEUS_ADMIN CADDY
+  LABEL="io.theseus.gateway.${THESEUS_SHIP#\~}"
+  HELPER_DIR="$HOME/Library/Application Support/Theseus/$LABEL"
+  HELPER="$HELPER_DIR/theseus-gateway-helper"
+}
+
+# Host Eyre's public HTTP port from .http.ports ("8083 insecure public").
+eyre_port() {
+  [ -f "$THESEUS_PIER/.http.ports" ] || return 1
+  awk '$2 == "insecure" && $3 == "public" { print $1; exit }' "$THESEUS_PIER/.http.ports"
+}
+
+# Accept the port only if it answers as our ship.
+verify_eyre() {
+  local who
+  who=$(curl -s --max-time 5 "http://127.0.0.1:$1/~/host") || return 1
+  [ "$who" = "$THESEUS_SHIP" ]
+}
+
+# Run ted/theseus-gateway on the ship over conn.sock (Khan %fyrd), printing the
+# result noun. Fails if the ship is down or the thread fails.
+ship_call() {
+  local out
+  out=$(printf '[0 %%fyrd [%%theseus %%theseus-gateway %%noun [%%noun %s]]]' "$1" \
+        | "$THESEUS_PIER/.run" eval --jam -n 2>/dev/null \
+        | nc -U -w 10 "$THESEUS_PIER/.urb/conn.sock" 2>/dev/null \
+        | "$THESEUS_PIER/.run" eval --cue -n 2>/dev/null) || return 1
+  case "$out" in
+    '[0 %avow 0 %noun '*) out=${out#\[0 %avow 0 %noun }; printf '%s\n' "${out%\]}" ;;
+    *) return 1 ;;
+  esac
+}
+
+# Sets MODE (auto|declared|hosting) and DECLARED (port or empty).
+read_settings() {
+  local cfg
+  MODE=auto; DECLARED=
+  if ! cfg=$(ship_call '[%config ~]'); then
+    log "warning: could not read Gateway settings from Theseus; using auto"
+    return 0
+  fi
+  cfg=$(printf '%s' "$cfg" | tr -d '[].')     # "%declared 0 9000" / "%auto 0"
+  set -- $cfg
+  MODE=${1#%}
+  if [ "$MODE" = declared ] && [ "${2:-}" = 0 ]; then DECLARED=${3:-}; fi
+  case "$MODE" in auto|declared|hosting) ;; *) die "unexpected settings: $cfg" ;; esac
+}
+
+# Hoon writes @ud in groups of three: 8086 -> 8.086.
+hoon_ud() { printf '%s' "$1" | rev | sed 's/\([0-9]\{3\}\)/\1./g' | rev | sed 's/^\.//'; }
+
+port_busy() { lsof -nP -iTCP:"$1" -sTCP:LISTEN -t >/dev/null 2>&1; }
+
+admin_up() { curl -s --max-time 2 "http://$THESEUS_ADMIN/config/" >/dev/null 2>&1; }
+
+# Port of the gateway already running on THESEUS_ADMIN, if any.
+running_port() {
+  curl -s --max-time 2 "http://$THESEUS_ADMIN/config/apps/http/servers/srv0/listen" \
+    | tr -d '[]"' | awk -F: '{ print $NF }'
+}
+
+# Sets WEB_PORT from the settings, or dies.
+choose_port() {
+  local p
+  case "$MODE" in
+    declared)
+      [ -n "$DECLARED" ] || die "declared mode without a port"
+      if port_busy "$DECLARED" && [ "$(running_port)" != "$DECLARED" ]; then
+        die "declared port $DECLARED is in use by another program"
+      fi
+      WEB_PORT=$DECLARED ;;
+    auto)
+      p=$(running_port)
+      if [ -n "$p" ]; then WEB_PORT=$p; return; fi
+      p=$THESEUS_WEB_BASE
+      while port_busy "$p"; do
+        p=$((p + 1))
+        [ "$p" -le $((THESEUS_WEB_BASE + 100)) ] || die "no free port from $THESEUS_WEB_BASE"
+      done
+      WEB_PORT=$p ;;
+    hosting)
+      die "Gateway settings are in hosting mode: the web proxy is operator-managed" ;;
+  esac
+}
+
+# Sets EYRE, verified, or dies.
+discover_eyre() {
+  EYRE=$(eyre_port) || die "$THESEUS_PIER/.http.ports not found; is the ship running?"
+  [ -n "$EYRE" ] || die "no public HTTP port in .http.ports"
+  verify_eyre "$EYRE" || die "port $EYRE does not answer as $THESEUS_SHIP"
+}
+
+caddy_env() {
+  export THESEUS_WEB_PORT=$WEB_PORT
+  export THESEUS_EYRE_UPSTREAM="127.0.0.1:$EYRE"
+  export THESEUS_EYRE_HOST="localhost:$EYRE"
+}
+
+register() {
+  if ship_call "[%live $(hoon_ud "$WEB_PORT") $(hoon_ud "$EYRE")]" >/dev/null; then
+    log "registered with Theseus: port $WEB_PORT -> Eyre $EYRE"
+  else
+    log "warning: could not register with Theseus (is the theseus desk current?)"
+  fi
+}
+
+cmd_check() {
+  load_config
+  discover_eyre
+  read_settings
+  choose_port
+  printf 'ship       %s\npier       %s\neyre       127.0.0.1:%s (verified)\nmode       %s\ngateway    http://%s:%s (moons at http://<moon>.localhost:%s)\nadmin      %s%s\n' \
+    "$THESEUS_SHIP" "$THESEUS_PIER" "$EYRE" "$MODE" "$THESEUS_WEB_BIND" "$WEB_PORT" "$WEB_PORT" \
+    "$THESEUS_ADMIN" "$(admin_up && echo ' (a gateway is running)')"
+}
+
+# Wait until the ship's Eyre answers as THESEUS_SHIP; sets EYRE.
+wait_for_eyre() {
+  local n=0
+  until EYRE=$(eyre_port) && [ -n "$EYRE" ] && verify_eyre "$EYRE"; do
+    [ $((n % 12)) -eq 0 ] && log "waiting for $THESEUS_SHIP's Eyre"
+    n=$((n + 1)); sleep 5
+  done
+}
+
+# Report down only if no other gateway took over the admin address (e.g. an
+# install replacing this one); otherwise this would erase its registration.
+report_down() {
+  admin_up || ship_call '[%down ~]' >/dev/null || true
+}
+
+stop_caddy() {   # graceful (grace_period bounds it), then report down
+  [ -n "${CADDY_PID:-}" ] || return 0
+  kill -TERM "$CADDY_PID" 2>/dev/null
+  wait "$CADDY_PID" 2>/dev/null
+  CADDY_PID=
+  report_down
+}
+
+# Supervisor: start Caddy per the console's Gateway settings, re-read them
+# about once a minute, and restart Caddy when the mode or declared port
+# changes. Host Eyre moves are handled by `sync` (launchd WatchPaths).
+cmd_run() {
+  load_config
+  if admin_up; then die "a gateway is already running on $THESEUS_ADMIN"; fi
+  CADDY_PID=
+  trap 'log "stopping"; stop_caddy; exit 0' TERM INT
+  while :; do
+    wait_for_eyre
+    read_settings
+    local want="$MODE:$DECLARED"
+    if [ "$MODE" = hosting ]; then
+      log "hosting mode: the web proxy is operator-managed; idle"
+      while sleep 60; do
+        read_settings; [ "$MODE:$DECLARED" = "$want" ] || break
+      done
+      continue
+    fi
+    choose_port
+    caddy_env
+    "$CADDY" run --config "$CADDYFILE" --adapter caddyfile &
+    CADDY_PID=$!
+    local i=0
+    until port_busy "$WEB_PORT"; do
+      kill -0 "$CADDY_PID" 2>/dev/null || die "caddy exited during startup"
+      i=$((i + 1)); [ $i -le 50 ] || { stop_caddy; die "caddy did not listen on $WEB_PORT"; }
+      sleep 0.2
+    done
+    log "listening on $THESEUS_WEB_BIND:$WEB_PORT -> Eyre $EYRE"
+    register
+    i=0
+    while kill -0 "$CADDY_PID" 2>/dev/null; do
+      sleep 5 & wait $!
+      i=$((i + 1))
+      if [ $((i % 12)) -eq 0 ]; then
+        read_settings
+        if [ "$MODE:$DECLARED" != "$want" ]; then
+          log "Gateway settings changed ($want -> $MODE:$DECLARED); restarting"
+          stop_caddy
+          continue 2
+        fi
+        # heartbeat: Theseus' view heals within a minute whatever happened
+        register_quiet || true
+      fi
+    done
+    wait "$CADDY_PID"; local status=$?
+    CADDY_PID=
+    report_down
+    die "caddy exited ($status)"
+  done
+}
+
+cmd_sync() {
+  load_config
+  if ! admin_up; then log "no gateway running; nothing to sync"; exit 0; fi
+  if [ ! -f "$THESEUS_PIER/.http.ports" ]; then
+    log "ship stopped; gateway keeps serving 503 until it returns"; exit 0
+  fi
+  # The ship has just (re)started: its Eyre and conn.sock may need a moment.
+  local i=0
+  until EYRE=$(eyre_port) && [ -n "$EYRE" ] && verify_eyre "$EYRE"; do
+    i=$((i + 1)); [ $i -le 30 ] || die "Eyre did not come up as $THESEUS_SHIP"
+    sleep 2
+  done
+  read_settings
+  WEB_PORT=$(running_port)
+  [ -n "$WEB_PORT" ] || die "cannot read the running gateway's port"
+  caddy_env
+  "$CADDY" reload --config "$CADDYFILE" --adapter caddyfile --address "$THESEUS_ADMIN" \
+    || die "caddy reload failed"
+  log "reloaded: port $WEB_PORT -> Eyre $EYRE"
+  i=0
+  until register_quiet; do
+    i=$((i + 1)); [ $i -le 15 ] || { log "warning: could not register with Theseus"; break; }
+    sleep 2
+  done
+}
+register_quiet() { ship_call "[%live $(hoon_ud "$WEB_PORT") $(hoon_ud "$EYRE")]" >/dev/null; }
+
+# Build the per-ship helper (ops/gateway-helper.c) that launchd runs. macOS
+# ties Full Disk Access to the binary's signature, so it is rebuilt only when
+# its source or compiled-in settings change.
+build_helper() {
+  local v
+  for v in "$OPS_DIR" "$THESEUS_PIER" "$THESEUS_SHIP" "$THESEUS_WEB_BIND" \
+           "$THESEUS_WEB_BASE" "$THESEUS_ADMIN" "$CADDY" "$HOME"; do
+    case "$v" in *'"'*|*'\'*) die "unsupported character in: $v" ;; esac
+  done
+  local defs=(
+    "-DGW_SCRIPT=\"$OPS_DIR/theseus-gateway\""
+    "-DGW_PATH=\"$(dirname "$CADDY"):/usr/bin:/bin:/usr/sbin:/sbin\""
+    "-DGW_HOME=\"$HOME\""
+    "-DGW_PIER=\"$THESEUS_PIER\""
+    "-DGW_SHIP=\"$THESEUS_SHIP\""
+    "-DGW_WEB_BIND=\"$THESEUS_WEB_BIND\""
+    "-DGW_WEB_BASE=\"$THESEUS_WEB_BASE\""
+    "-DGW_ADMIN=\"$THESEUS_ADMIN\""
+    "-DGW_CADDY=\"$CADDY\""
+  )
+  local stamp
+  stamp=$({ cat "$OPS_DIR/gateway-helper.c"; printf '%s\n' "${defs[@]}"; } | shasum -a 256 | cut -c1-64)
+  if [ -x "$HELPER" ] && [ "$(cat "$HELPER.stamp" 2>/dev/null)" = "$stamp" ]; then
+    return 0
+  fi
+  mkdir -p "$HELPER_DIR"
+  cc -O2 -Wall -Wextra -Werror -o "$HELPER.new" "$OPS_DIR/gateway-helper.c" "${defs[@]}" \
+    || die "could not build the helper"
+  codesign -s - -f --identifier "$LABEL" "$HELPER.new" 2>/dev/null \
+    || die "could not sign the helper"
+  mv -f "$HELPER.new" "$HELPER"
+  printf '%s\n' "$stamp" > "$HELPER.stamp"
+  log "built $HELPER"
+}
+
+plist() {   # $1 = run|sync|check, $2 = label, $3 = log file
+  local extra=
+  case "$1" in
+    run)   extra="<key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict><key>ThrottleInterval</key><integer>10</integer>" ;;
+    sync)  extra="<key>WatchPaths</key><array><string>$THESEUS_PIER/.http.ports</string></array>" ;;
+    check) extra="<key>RunAtLoad</key><true/>" ;;
+  esac
+  cat <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>$2</string>
+<key>ProgramArguments</key><array><string>$HELPER</string><string>$1</string></array>
+$extra
+<key>StandardOutPath</key><string>$3</string>
+<key>StandardErrorPath</key><string>$3</string>
+</dict></plist>
+PLIST
+}
+
+# Run `check` once as a launchd job: the only reliable way to learn whether
+# macOS lets the helper read the pier. Sets PROBE_LOG.
+helper_allowed() {
+  local label="$LABEL.probe" file="$HELPER_DIR/probe.plist" i=0
+  PROBE_LOG="$HELPER_DIR/probe.log"
+  rm -f "$PROBE_LOG"
+  plist check "$label" "$PROBE_LOG" > "$file"
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null
+  launchctl bootstrap "gui/$(id -u)" "$file" || die "could not start the permission check"
+  until grep -q -e '^eyre' -e 'Operation not permitted' -e 'error:' "$PROBE_LOG" 2>/dev/null; do
+    i=$((i + 1)); [ $i -le 60 ] || break
+    sleep 0.5
+  done
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null
+  rm -f "$file"
+  grep -q '^eyre' "$PROBE_LOG" 2>/dev/null
+}
+
+cmd_install() {
+  load_config
+  discover_eyre
+  build_helper
+  if ! helper_allowed; then
+    if grep -q 'Operation not permitted' "$PROBE_LOG" 2>/dev/null; then
+      cat >&2 <<HELP
+
+macOS has not yet allowed the gateway helper to read $THESEUS_PIER.
+Do this once:
+  1. Open System Settings > Privacy & Security > Full Disk Access.
+  2. Click +, press Cmd-Shift-G, paste this folder and press Return:
+       $HELPER_DIR
+  3. Select theseus-gateway-helper, click Open, and check it is switched on.
+  4. Run ops/theseus-gateway install again.
+Any gateway already running keeps serving until then.
+HELP
+      exit 3
+    fi
+    die "the helper's check failed: $(grep -v '^{' "$PROBE_LOG" 2>/dev/null | tail -1)"
+  fi
+  log "macOS allows the helper"
+  local dir="$HOME/Library/LaunchAgents" kind label
+  mkdir -p "$dir"
+  if admin_up && ! launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
+    log "stopping the gateway already running on $THESEUS_ADMIN"
+    "$CADDY" stop --address "$THESEUS_ADMIN" || die "could not stop it"
+    sleep 1
+  fi
+  for kind in run sync; do
+    label=$LABEL; [ $kind = sync ] && label="$LABEL.sync"
+    launchctl bootout "gui/$(id -u)/$label" 2>/dev/null
+    plist $kind "$label" "$HOME/Library/Logs/$label.log" > "$dir/$label.plist"
+    plutil -lint "$dir/$label.plist" >/dev/null || die "bad plist $label"
+    launchctl bootstrap "gui/$(id -u)" "$dir/$label.plist" || die "could not load $label"
+    log "loaded $label"
+  done
+}
+
+cmd_uninstall() {
+  load_config
+  local kind label
+  for kind in sync run; do
+    label=$LABEL; [ $kind = sync ] && label="$LABEL.sync"
+    launchctl bootout "gui/$(id -u)/$label" 2>/dev/null && log "unloaded $label"
+    rm -f "$HOME/Library/LaunchAgents/$label.plist"
+  done
+  log "kept $HELPER_DIR so a reinstall keeps its permission; delete it (and remove it from Full Disk Access) to remove everything"
+}
+
+cmd_status() {
+  load_config
+  local kind label
+  for kind in run sync; do
+    label=$LABEL; [ $kind = sync ] && label="$LABEL.sync"
+    if launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
+      printf '%-40s loaded\n' "$label"
+    else
+      printf '%-40s not loaded\n' "$label"
+    fi
+  done
+  if admin_up; then echo "gateway    running on port $(running_port)"; else echo "gateway    not running"; fi
+  echo "eyre       $(eyre_port || echo 'ship not running')"
+  echo "theseus    $(ship_call '[%config ~]' || echo 'unreachable')"
+}
+
+# Dispatch only when executed (tests source the functions).
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
+case "${1:-}" in
+  check) cmd_check ;;
+  run) cmd_run ;;
+  sync) cmd_sync ;;
+  install) cmd_install ;;
+  uninstall) cmd_uninstall ;;
+  status) cmd_status ;;
+  *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

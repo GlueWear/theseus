@@ -2,3 +2,7 @@ node_modules/
 .DS_Store
 .env
 *.log
+ui/dist/
+ui/test-results/
+ui/playwright-report/
+ops/theseus-gateway.env

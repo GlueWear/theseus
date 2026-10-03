@@ -1,0 +1,51 @@
+# Local Theseus web gateway. Run it with ops/theseus-gateway, which discovers
+# the host's Eyre port, verifies the ship, and sets the variables below.
+#
+# Browser-facing moon origins remain isolated as <moon>.localhost:<port>.
+# Requests are namespaced before they reach the host Eyre so its global URL
+# cache cannot intercept a virtual moon's Docket assets at the same path.
+#
+#   THESEUS_SHIP           host ship, e.g. ~siglup-narwet (required)
+#   THESEUS_EYRE_UPSTREAM  host Eyre's public HTTP port, e.g. 127.0.0.1:8083.
+#                          Never its loopback port: Eyre treats loopback
+#                          requests as the ship's owner.
+#   THESEUS_EYRE_HOST      Host header to send, e.g. localhost:8083
+#   THESEUS_WEB_PORT       browser-facing port
+#   THESEUS_WEB_BIND       listen address (keep loopback for local use)
+#   THESEUS_ADMIN          Caddy admin API address for this gateway
+{
+	admin {$THESEUS_ADMIN:localhost:2019}
+	# Eyre channels are long-lived event streams that never finish on their
+	# own; without a bound, stop/reload waits on them forever. Browsers
+	# reconnect their channels after the cutoff.
+	grace_period 10s
+}
+
+(eyre) {
+	reverse_proxy {$THESEUS_EYRE_UPSTREAM} {
+		header_up Host {$THESEUS_EYRE_HOST}
+		# Eyre's port is chosen at boot (first free from 8080), so another
+		# ship can hold it after a restart. Only forward while the upstream
+		# answers /~/host as our ship; otherwise clients get 503.
+		health_uri /~/host
+		health_body "^{$THESEUS_SHIP}$"
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+
+http://:{$THESEUS_WEB_PORT:8084} {
+	bind {$THESEUS_WEB_BIND:127.0.0.1}
+
+	@moon header_regexp moon Host ^(?P<ship>[a-z-]+)\.localhost(?::[0-9]+)?$
+	handle @moon {
+		rewrite * /theseus/~{re.moon.ship}{uri}
+		import eyre
+	}
+
+	# Keep the host management UI on the same browser-facing port. Cookies do
+	# not depend on ports, so an existing localhost host session remains valid.
+	handle {
+		import eyre
+	}
+}

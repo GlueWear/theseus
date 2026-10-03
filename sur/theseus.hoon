@@ -51,6 +51,7 @@
       ::
       [%send p=lane:ames q=@]                 ::  legacy Ames packet
       [%push p=(list mesa-lane) q=@]          ::  408 Mesa packet + route set
+      [%saxo sponsors=(list ship)]            ::  Ames sponsorship chain
       [%doze p=(unit @da)]                    ::  behn set timer
       [%ergo p=@tas q=mode:clay]              ::  clay ???
       [%blit p=(list blit:dill)]              ::  dill console effect
@@ -110,6 +111,9 @@
       ::  Mesa-era inbound packet injection. 408 Ames receives pact packets via
       ::  %heer with a pact lane, distinct from legacy %hear/+.lane.
       [%mesa-inbound who=ship lane=mesa-lane blob=@]
+      ::  Per-guest Vere STUN result.  Injected into the virtual Ames on /ames,
+      ::  matching the event shape emitted by a stock Vere Ames driver.
+      [%ames-stun who=ship mode=?(%once %stop %fail) galaxy=ship lane=lane:ames]
       ::  sidecar smoke-test path.  This proves the outbound fact -> sidecar ->
       ::  inbound poke loop without claiming the blob is a valid Ames packet.
       [%ames-test-inbound who=ship from=ship blob=@]

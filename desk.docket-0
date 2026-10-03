@@ -1,0 +1,10 @@
+:~
+  title+'Theseus'
+  info+'Boot and manage the virtual moons running inside this ship: health, a Dojo per moon, snapshots and restore.'
+  color+0xe6.6949
+  image+'/apps/theseus/icon.png'
+  site+/apps/theseus
+  version+[0 1 0]
+  website+'https://github.com/GlueWear/theseus'
+  license+'Unspecified'
+==

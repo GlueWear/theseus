@@ -1,0 +1,127 @@
+import {test,expect} from '@playwright/test';
+const moon = '~sampel-siglup-narwet';
+test.beforeEach(async ({request,page})=>{await request.get('http://127.0.0.1:8085/reset');page.on('pageerror',e=>console.log('PAGE ERROR',e.message));});
+test('fleet, boot, snapshot pause, restore, and removal',async({page})=>{
+  await page.goto('/'); await expect(page.getByRole('button',{name:moon,exact:true})).toBeVisible();
+  await page.screenshot({path:'test-results/fleet-desktop.png',fullPage:true});
+  await page.getByRole('button',{name:'Boot moon',exact:true}).click();
+  const name=await page.getByLabel('Moon name',{exact:true}).inputValue();
+  await page.getByRole('dialog').getByRole('button',{name:'Boot moon',exact:true}).click();
+  await expect(page.getByRole('button',{name,exact:true})).toBeVisible();
+  await page.getByRole('button',{name:`Snapshot ${moon}`,exact:true}).click();
+  await page.getByLabel('Snapshot name').fill('test-checkpoint');
+  await page.getByRole('button',{name:'Snapshot & pause'}).click();
+  await expect(page.getByRole('button',{name:`Resume ${moon}`,exact:true})).toBeVisible();
+  await page.getByRole('button',{name:/^Snapshots/}).click();
+  const row=page.locator('article').filter({hasText:'/test-checkpoint'});
+  await row.getByRole('button',{name:'Restore',exact:true}).click();
+  await expect(page.getByRole('dialog')).toContainText(moon);
+  await page.getByRole('button',{name:'Restore & resume'}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button',{name:/^Moons/}).click();
+  await expect(page.getByRole('button',{name:`Pause ${moon}`,exact:true})).toBeVisible();
+  await page.getByRole('button',{name:`Remove ${name}`,exact:true}).click();
+  await page.getByRole('dialog').getByRole('button',{name:'Remove moon',exact:true}).click();
+  await expect(page.getByRole('button',{name,exact:true})).toHaveCount(0);
+});
+test('dedicated Dojo receives output and keeps rejected command',async({page})=>{
+  await page.goto('/');await page.getByRole('button',{name:`Open Dojo for ${moon}`}).click();
+  const input=page.getByLabel(`Command for ${moon}`); await expect(input).toBeEnabled(); await expect(input).toBeFocused();
+  await input.fill('(add 2 2)');await page.getByRole('button',{name:'Send command'}).click();await expect(input).toHaveValue('');
+  await expect(input).toBeFocused();
+  await page.waitForTimeout(250); await page.screenshot({path:'test-results/dojo-desktop.png',fullPage:true});
+  await expect(page.locator('.xterm-rows')).toContainText('4');
+  await page.getByRole('button',{name:'Download transcript'}).focus();await expect(input).not.toBeFocused();
+  await page.getByTestId('terminal').click();await expect(input).toBeFocused();
+  await input.press('ArrowUp');await expect(input).toHaveValue('(add 2 2)');
+  await input.fill('fail');await page.getByRole('button',{name:'Send command'}).click();
+  await expect(page.getByRole('alert')).toContainText('rejected'); await expect(input).toHaveValue('fail'); await expect(input).toBeFocused();
+});
+test('mobile layout and keyboard dialog cancellation',async({page})=>{
+  await page.setViewportSize({width:390,height:844});await page.goto('/');await expect(page.getByRole('button',{name:moon,exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  await page.screenshot({path:'test-results/fleet-mobile.png',fullPage:true});
+  await page.getByRole('button',{name:'Boot moon',exact:true}).click();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button',{name:moon,exact:true}).click();await page.screenshot({path:'test-results/dojo-mobile.png',fullPage:true});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+});
+test('offline is explicit and disables actions',async({page})=>{
+  await page.route('**/~/scry/theseus/ui.json',route=>route.fulfill({status:503,body:'offline'}));await page.goto('/');
+  await expect(page.getByRole('alert')).toContainText('503');await expect(page.getByRole('button',{name:'Boot moon',exact:true})).toBeDisabled();
+});
+test('workspace is top-aligned and closing the page deletes the channel',async({page,request})=>{
+  await page.setViewportSize({width:1280,height:1600});await page.goto('/');await expect(page.getByRole('button',{name:moon,exact:true})).toBeVisible();
+  expect(await page.locator('main').evaluate(el=>el.getBoundingClientRect().top)).toBeLessThan(5);
+  await page.getByRole('button',{name:`Open Dojo for ${moon}`}).click();await expect(page.getByLabel(`Command for ${moon}`)).toBeEnabled();
+  await page.goto('about:blank');
+  await expect.poll(async()=>Number(await (await request.get('http://127.0.0.1:8085/deletes')).text())).toBeGreaterThan(0);
+});
+test('Landscape opens on the moon origin and logs in with a posted code',async({page,context,request})=>{
+  await page.goto('/');await expect(page.getByRole('button',{name:moon,exact:true})).toBeVisible();
+  const login=context.waitForEvent('request',r=>r.method()==='POST'&&r.url().endsWith('/~/login'));
+  await page.getByRole('button',{name:`Open Landscape for ${moon}`}).click();
+  const req=await login;
+  expect(req.url()).toBe('http://sampel-siglup-narwet.localhost:5174/~/login');
+  expect(req.postData()).toBe('password=lidlut-tabwed-pillex-ridrup&redirect=%2Fapps%2Flandscape%2F');
+});
+test('a moon without Landscape offers to install it, then opens',async({page,context})=>{
+  await page.goto('/');await page.getByRole('button',{name:'Boot moon',exact:true}).click();
+  const name=await page.getByLabel('Moon name',{exact:true}).inputValue();
+  await page.getByRole('dialog').getByRole('button',{name:'Boot moon',exact:true}).click();
+  await expect(page.getByRole('button',{name,exact:true})).toBeVisible();
+  await page.getByRole('button',{name:`Open Landscape for ${name}`}).click();
+  await expect(page.getByRole('dialog')).toContainText('does not have Landscape');
+  await expect(page.getByRole('dialog')).toContainText('|install ~siglup-narwet %landscape');
+  await page.getByRole('button',{name:'Install Landscape'}).last().click();
+  await expect(page.getByLabel(`Command for ${name}`)).toBeVisible();
+  const login=context.waitForEvent('request',r=>r.method()==='POST'&&r.url().endsWith('/~/login'));
+  await page.getByRole('button',{name:'Landscape',exact:true}).click();
+  expect((await login).url()).toBe(`http://${name.slice(1)}.localhost:5174/~/login`);
+});
+test('+code is shown on request and copied',async({page,context})=>{
+  await context.grantPermissions(['clipboard-read','clipboard-write']);
+  await page.goto('/');await page.getByRole('button',{name:`Show +code for ${moon}`}).click();
+  await expect(page.getByTestId('moon-code')).toHaveText('lidlut-tabwed-pillex-ridrup');
+  await page.getByRole('button',{name:'Copy code'}).click();
+  await expect(page.getByRole('status').filter({hasText:'Copied'})).toBeVisible();
+  expect(await page.evaluate(()=>navigator.clipboard.readText())).toBe('lidlut-tabwed-pillex-ridrup');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+test('without a gateway, Landscape explains instead of opening a blank tab',async({page,context,request})=>{
+  await request.get('http://127.0.0.1:8085/gateway-down');
+  await page.goto('/');await expect(page.getByRole('button',{name:/^Gateway/})).toContainText('off');
+  await page.getByRole('button',{name:`Open Landscape for ${moon}`}).click();
+  await expect(page.getByRole('dialog')).toContainText('No web gateway is running');
+  expect(context.pages()).toHaveLength(1);
+  await page.getByRole('button',{name:'Open Gateway settings'}).click();
+  await expect(page.getByRole('heading',{name:'Gateway'})).toBeVisible();
+  await expect(page.locator('.gateway-status')).toContainText('Not running');
+  await expect(page.locator('.gateway-status')).toContainText('ops/theseus-gateway install');
+});
+test('gateway settings validate, apply, and drive moon origins',async({page,context})=>{
+  await page.goto('/');await page.getByRole('button',{name:/^Gateway/}).click();
+  const status=page.locator('.gateway-status'), form=page.locator('.gateway-form');
+  await expect(status).toContainText('Running');await expect(status).toContainText('http://{moon}.localhost:5174');
+  await expect(status).toContainText('Can reach the gateway');
+  await page.screenshot({path:'test-results/gateway-desktop.png',fullPage:true});
+  await page.getByRole('radio',{name:/Declared port/}).check();
+  await page.getByLabel('Gateway port').fill('70000');await page.getByRole('button',{name:'Save settings'}).click();
+  await expect(form.getByRole('alert')).toContainText('1 to 65535');
+  await page.getByLabel('Gateway port').fill('9000');await page.getByRole('button',{name:'Save settings'}).click();
+  await expect(status).toContainText('Applying change');await expect(status).toContainText('http://{moon}.localhost:9000');
+  await page.getByRole('radio',{name:/Hosting/}).check();
+  await page.getByLabel('Moon address').fill('https://example.com/{moon}');await page.getByRole('button',{name:'Save settings'}).click();
+  await expect(form.getByRole('alert')).toContainText('{moon} in the hostname');
+  await page.getByLabel('Moon address').fill('http://{moon}.localhost:5174');await page.getByRole('button',{name:'Save settings'}).click();
+  await expect(status).toContainText('Hosting');
+  await page.getByRole('button',{name:/^Moons/}).click();
+  const login=context.waitForEvent('request',r=>r.method()==='POST'&&r.url().endsWith('/~/login'));
+  await page.getByRole('button',{name:`Open Landscape for ${moon}`}).click();
+  expect((await login).url()).toBe('http://sampel-siglup-narwet.localhost:5174/~/login');
+});
+test('gateway view fits a phone',async({page})=>{
+  await page.setViewportSize({width:390,height:844});await page.goto('/');
+  await page.getByRole('button',{name:/^Gateway/}).click();await expect(page.locator('.gateway-status')).toContainText('Running');
+  await page.screenshot({path:'test-results/gateway-mobile.png',fullPage:true});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+});

@@ -12,7 +12,7 @@
 ::  :theseus|unpause ~nec
 ::  :theseus|kill ~nec
 ::
-/-  *theseus
+/-  *theseus, ui=theseus-ui
 /+  theseus=theseus,
     default-agent,
     pill=pill,
@@ -258,6 +258,26 @@
     ^-  (quip card _this)
     =^  cards  state
       ?+  mark  ~|([%theseus-bad-mark mark] !!)
+        %theseus-ui
+          ?>  =(src.bowl our.bowl)
+          =/  cmd  !<(command:ui vase)
+          ?-  -.cmd
+            %boot
+              ?>  (child-of:dingy our.bowl who.cmd)
+              =/  kp  (gen-keypair:dingy (key-seed:dingy who.cmd 0 eny.bowl))
+              (poke-action:hc [%init-moon who.cmd cache.cmd pub.kp priv.kp])
+            %dojo
+              ?>  (lte (met 3 command.cmd) 16.384)
+              (poke-theseus-events:hc (dojo-events:theseus who.cmd (trip command.cmd)))
+            %pause   (poke-action:hc [%pause-ships ~[who.cmd]])
+            %resume  (poke-action:hc [%unpause-ships ~[who.cmd]])
+            %kill    (poke-action:hc [%kill-ships ~[who.cmd]])
+            %snapshot
+              ?>  ?&((gth (lent ships.cmd) 0) (lte (lent ships.cmd) 64))
+              (poke-action:hc [%snap-ships /[name.cmd] ships.cmd])
+            %restore  (poke-action:hc [%restore-snap path.cmd])
+            %delete   (poke-action:hc [%delete-snap path.cmd])
+          ==
         %theseus-events  (poke-theseus-events:hc !<((list theseus-event) vase))
         %theseus-action  (poke-action:hc !<(action vase))
         ::  Narrow JSON control surface for the external recycle orchestrator.
@@ -281,6 +301,13 @@
     |=  =path :: TODO (pole knot) faceless path
     ^-  (unit (unit cage))
     ?+    path  ~
+        [%x %ui ~]
+      ``json+!>(ui-state:hc)
+    ::  host-only (Eyre /~/scry requires the owner): login code and whether
+    ::  %landscape is installed, read from inside the moon at open time
+    ::
+        [%x %web @ ~]
+      ``json+!>((ui-web:hc (slav %p i.t.t.path)))
         [%x %snaps ~]
       :^  ~  ~  %theseus-update
       !>(`update`[%snaps (turn ~(tap by fleet-snaps) head)])
@@ -362,6 +389,65 @@
 |_  =bowl:gall
 ::
 ++  this  .
+::
+++  ui-state
+  ^-  json
+  =,  enjs:format
+  %-  pairs
+  :~  [%host s+(scot %p our.bowl)]
+      [%version (numb 1)]
+      [%moons a+(turn ~(tap by piers) ui-moon)]
+      [%caches a+(turn ~(tap by caches) |=([name=@tas cache=vase] s+name))]
+      [%snapshots a+(turn ~(tap by fleet-snaps) ui-snapshot)]
+  ==
+::
+++  ui-moon
+  |=  [who=ship saved=saved-pier]
+  ^-  json
+  =/  h  (health-of who saved)
+  =,  enjs:format
+  %-  pairs
+  :~  [%ship s+(scot %p who)]
+      [%status s+status.h]
+      [%paused b+paused.h]
+      [%queued (numb queued.h)]
+      [%identity b+identity-ok.h]
+      [%vanes a+(turn ~(tap in vanes.h) |=(v=@tas s+v))]
+  ==
+::
+++  ui-web
+  |=  who=ship
+  ^-  json
+  =/  saved  (~(got by piers) who)
+  ::  Jael only answers %code locally ([~ ~]) at the kernel's current time.
+  =/  peek
+    |=  [vis=term bem=beam]
+    ^-  (unit *)
+    =/  res  (mole |.((peek-arvo:theseus-kernel snap.saved [[~ ~] / vis bem])))
+    ?.  ?=([~ ~ ~ *] res)  ~
+    `q.q.u.u.u.res
+  =/  code=(unit @)
+    (bind (peek %j [who %code da+scry-time.saved] /(scot %p who)) |=(n=* ;;(@ n)))
+  =/  desks=(set desk)
+    (fall (bind (peek %cd [who %$ da+scry-time.saved] /) |=(n=* ;;((set desk) n))) ~)
+  =,  enjs:format
+  %-  pairs
+  :~  [%ship s+(scot %p who)]
+      [%code ?~(code ~ s+(rsh 3 (scot %p u.code)))]
+      [%landscape b+(~(has in desks) %landscape)]
+  ==
+::
+++  ui-snapshot
+  |=  [p=path shot=fleet-snapshot]
+  ^-  json
+  =,  enjs:format
+  %-  pairs
+  :~  [%path (path:enjs:format p)]
+      [%created s+(scot %da created-at.shot)]
+      [%compatible b+=(runtime.shot current-runtime)]
+      [%ships a+(turn ~(tap by ships.shot) |=([who=@p saved=saved-pier] s+(scot %p who)))]
+  ==
+::
 ::
 ::  Represents a single ship's state.
 ::
@@ -946,7 +1032,7 @@
     ::  A %fine request is normally answered by vere before Arvo sees it.
     ::  Virtual moons have no vere, so ask the moon's own /x/fine/hunk
     ::  responder to scry and sign the requested data, then carry each signed
-    ::  fragment back through the existing sidecar.  Never inject a fine
+    ::  fragment back through the guest's UDP transport.  Never inject a fine
     ::  request as %hear: Ames deliberately rejects that event shape.
     =/  fr  (fine-req-path blob.act)
     ?^  fr
@@ -955,7 +1041,9 @@
       ?~  u.res  `state
       =/  yowls  !<((list @) q.u.u.res)
       ?~  yowls  `state
-      =/  lane  ?~(origin.u.fr [%& sndr.u.fr] [%| u.origin.u.fr])
+      ::  Without a forwarded origin, answer on the packet's actual source
+      ::  lane.  The sender may be a star or planet, never a galaxy lane.
+      =/  lane  ?~(origin.u.fr lane.act [%| u.origin.u.fr])
       =.  this  apex-theseus  =<  abet-theseus
       =.  this
         =/  pc  (pe who.act)
@@ -984,6 +1072,22 @@
       =<  abet-pe:plow
       %-  push-events:(pe who.act)
       ~[[/a/newt/0v1n.2m9vh %heer lane.act blob.act]]
+    (pe who.act)
+  ::
+      %ames-stun
+    ?.  (~(has by piers) who.act)
+      `state
+    =/  stun=stun:ames
+      ?-  mode.act
+        %once  [%once galaxy.act lane.act]
+        %stop  [%stop galaxy.act lane.act]
+        %fail  [%fail galaxy.act lane.act]
+      ==
+    =.  this  apex-theseus  =<  abet-theseus
+    =.  this
+      =<  abet-pe:plow
+      %-  push-events:(pe who.act)
+      ~[[/ames %stun stun]]
     (pe who.act)
   ::
       %ames-test-inbound
