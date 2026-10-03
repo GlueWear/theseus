@@ -84,6 +84,34 @@ its own public address, and nothing kept the moons' NAT mappings open for
 relaying. After the STUN build, moon `~fopwyn-libryp-siglup-narwet` has direct
 routes to both and installed `%landscape` over the network.
 
+**The sponsor chain must be the real one.** Ships change sponsors: `~nolset`
+was spawned under galaxy `~set` and escaped to `~rus`. Every step above
+(`%ping`, STUN, relaying) uses the chain from the moon's own Jael. Theseus
+seeds that chain when it boots a moon: `%dawn` carries each sponsor's keys
+(`czar`) and its current sponsor (`spon`), both from the host's Jael
+(`+boot-chain` in `app/theseus.hoon`). After boot, the moon's own Jael and
+`%azimuth` agent track later changes, as on any ship.
+
+Before 2026-10-03, `spon` was empty, so a new moon derived `~nolset`'s
+sponsor from its @p (`~set`). It pinged, STUNned and relayed through `~set`,
+which dropped everything, including the host's replies. The moon could reach
+galaxies directly but not the host or `~nolset` until its own `%azimuth`
+caught up, or until someone ran `|hi ~rus` from the moon.
+
+With `+boot-chain`, verified on moon `~ropnet-tobryl-siglup-narwet`, the moon
+reaches `~rus` and the host as soon as it boots. One window remains, and stock
+moons have it too:
+
+1. Shortly after boot, the moon's `%azimuth` loads the public snapshot from
+   `bootstrap.urbit.org` (log: `ship: processing azimuth snapshot`).
+2. That snapshot predates `~nolset`'s escape, so it sets `~nolset`'s sponsor
+   back to `~set`, and traffic to `~nolset` fails.
+3. When `%azimuth` catches up on newer events (log: `l2-sig-failed`),
+   `~nolset` is under `~rus` again and pending messages go through.
+
+The host and other ships whose sponsor hasn't changed are unaffected
+throughout.
+
 ## The console
 
 `http://localhost:<eyre port>/apps/theseus`, or the Theseus tile in Landscape.
@@ -249,6 +277,8 @@ launchctl kickstart -k gui/$(id -u)/io.theseus.gateway.siglup-narwet   # restart
 | `+vats` on a moon shows "bad desk" | An install is waiting for its first download | The moon cannot reach the source ship; check the moon is running and its network (STUN). |
 | Host crashes with `newt: write failed broken pipe` then a fault in `uv__drain` | A control-socket client hung up before the ship replied (fixed in runtime `7956112f`) | Install that runtime. Until then, don't use clients that time out early (`nc -w`, `click`) against a busy ship. |
 | A moon cannot `\|hi` a ship on the same network | No relay path to the moon | Confirm the runtime is the STUN build (hash in HARDENING.md) and the moon has sent traffic recently. |
+| A new moon reaches `~zod` but not the host or `~nolset`; `%ping` state names the wrong galaxy | The moon booted with a stale sponsor chain (Theseus before `+boot-chain`) | Commit the current desk and boot a new moon; an existing one recovers after its Azimuth snapshot loads, or `\|hi ~rus` from the moon. |
+| A new moon reaches the host but `\|hi ~nolset` hangs for a few minutes after boot | The moon's Azimuth snapshot predates `~nolset`'s escape, so it routes through `~set` until `%azimuth` catches up | Wait for `l2-sig-failed` in the log; the pending `\|hi` then succeeds. |
 
 ## Known limits
 
@@ -264,6 +294,10 @@ launchctl kickstart -k gui/$(id -u)/io.theseus.gateway.siglup-narwet   # restart
 - Not yet re-run live on a disposable moon: snapshot/restore and remove from the
   console, and an on-demand `|hi` between a moon and the host in both directions.
 - Each moon shows its host's sigil (the sigil library cannot draw moons).
+- A new moon can't reach ships that changed sponsors after the public
+  Azimuth snapshot was taken (for example `~nolset`) until its `%azimuth` catches
+  up, usually a few minutes. Seeding each moon's `%azimuth` from the host's
+  caught-up state would close this; not built.
 
 ## History
 
@@ -284,3 +318,5 @@ launchctl kickstart -k gui/$(id -u)/io.theseus.gateway.siglup-narwet   # restart
   - chunked moon responses
   - Gateway settings in the console
   - new Theseus icon
+  - moons boot with the host's current sponsor chain, including escapes
+    (`~nolset` → `~rus`), instead of chains derived from @p

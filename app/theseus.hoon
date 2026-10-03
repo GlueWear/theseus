@@ -688,29 +688,11 @@
       `[old-rift-val u.old-life]
     =/  moon-rift=@ud  ?~(prior 0 +(rift.u.prior))
     =/  moon-life=@ud  ?~(prior 1 +(life.u.prior))
-    ::  Provision the moon with correct CURRENT keys for its whole sponsor
-    ::  chain (us -> star -> galaxy), scried from our Jael.  A minimal czar
-    ::  (just the galaxy) left stale rift/life for the sponsor, causing
-    ::  %fine-mismatch on remote scry and breaking third-party key
-    ::  resolution.  Unit scries (%lyfe/%ryft/%puby) so an unknown ship is
-    ::  skipped, never crashing the poke.
+    ::  Provision the moon with our current view of its whole sponsor chain
+    ::  (us -> star -> galaxy); see +boot-chain.
     =/  chain=(list ship)
       .^((list ship) %j /(scot %p our.bowl)/saxo/(scot %da now.bowl)/(scot %p our.bowl))
-    =/  czar=(map ship [rift=@ud life=@ud =pass])
-      %+  roll  chain
-      |=  [s=ship acc=(map ship [rift=@ud life=@ud =pass])]
-      =/  ul=(unit @ud)
-        .^((unit @ud) %j /(scot %p our.bowl)/lyfe/(scot %da now.bowl)/(scot %p s))
-      ?~  ul  acc
-      =/  ur=(unit @ud)
-        .^((unit @ud) %j /(scot %p our.bowl)/ryft/(scot %da now.bowl)/(scot %p s))
-      ?~  ur  acc
-      =/  uk=(unit [suite=@ud =pass])
-        .^  (unit [@ud pass])  %j
-          /(scot %p our.bowl)/puby/(scot %da now.bowl)/(scot %p s)/(scot %ud u.ul)
-        ==
-      ?~  uk  acc
-      (~(put by acc) s [u.ur u.ul pass.u.uk])
+    =/  boot  (boot-chain chain)
     =/  turves=(list turf)
       .^((list turf) %j /(scot %p our.bowl)/turf/(scot %da now.bowl))
     ::  register the moon's public key with our Jael (self-sufficient
@@ -743,11 +725,10 @@
       =<  abet-pe:plow
       %-  push-events:(pe who.act)
       ^-  (list unix-event)
-      ::  boot %dawn with the real key (ring) + galaxy trust anchor (czar) and
-      ::  turf, scried from our Jael.  spon stays empty (jael doesn't expose
-      ::  full azimuth points); the galaxy key is enough to start bootstrap.
+      ::  boot %dawn with the real key (ring), the sponsor chain (spon, czar)
+      ::  and turf, scried from our Jael.
       ::  feed %2 = [[%2 ~] who rift [life ring]~].
-      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act moon-rift [moon-life key.act]~] ~ czar turves 0 ~]
+      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act moon-rift [moon-life key.act]~] spon.boot czar.boot turves 0 ~]
           [/b/behn/0v1n.2m9vh %born ~]
           [/i/http-client/0v1n.2m9vh %born ~]
           [/e/http-server/0v1n.2m9vh %born ~]
@@ -825,23 +806,7 @@
     =/  priv=ring  key.u.key-row
     =/  chain=(list ship)
       .^((list ship) %j /(scot %p our.bowl)/saxo/(scot %da now.bowl)/(scot %p who.act))
-    =/  sponsors=(list ship)
-      ?~(chain ~ t.chain)
-    =/  czar=(map ship [rift=@ud life=@ud =pass])
-      %+  roll  sponsors
-      |=  [s=ship acc=(map ship [rift=@ud life=@ud =pass])]
-      =/  ul=(unit @ud)
-        .^((unit @ud) %j /(scot %p our.bowl)/lyfe/(scot %da now.bowl)/(scot %p s))
-      ?~  ul  acc
-      =/  ur=(unit @ud)
-        .^((unit @ud) %j /(scot %p our.bowl)/ryft/(scot %da now.bowl)/(scot %p s))
-      ?~  ur  acc
-      =/  uk=(unit [suite=@ud =pass])
-        .^  (unit [@ud pass])  %j
-          /(scot %p our.bowl)/puby/(scot %da now.bowl)/(scot %p s)/(scot %ud u.ul)
-        ==
-      ?~  uk  acc
-      (~(put by acc) s [u.ur u.ul pass.u.uk])
+    =/  boot  (boot-chain ?~(chain ~ t.chain))
     =/  turves=(list turf)
       .^((list turf) %j /(scot %p our.bowl)/turf/(scot %da now.bowl))
     =^  cards  state
@@ -859,7 +824,7 @@
       =<  abet-pe:plow
       %-  push-events:(pe who.act)
       ^-  (list unix-event)
-      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act u.planet-rift [u.planet-life priv]~] ~ czar turves 0 ~]
+      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act u.planet-rift [u.planet-life priv]~] spon.boot czar.boot turves 0 ~]
           [/b/behn/0v1n.2m9vh %born ~]
           [/i/http-client/0v1n.2m9vh %born ~]
           [/e/http-server/0v1n.2m9vh %born ~]
@@ -1149,6 +1114,57 @@
     ~&  theseus+rebuild+[name.act des.park.act]
     [(weld cad car) state]
   ==
+::
+::  +boot-chain: %dawn sponsor data for a guest, from our Jael
+::
+::    .chain is the guest's sponsorship chain, starting from its immediate
+::    sponsor.  .czar carries current keys for every ship we know, so the
+::    guest can verify them at once (a stale rift or life breaks remote
+::    scry and third-party key lookup); unknown ships are skipped.
+::
+::    .czar has no sponsors, so a guest booted from it alone derives each
+::    sponsor from the @p.  A star that escaped from its original galaxy
+::    then looks like it is still under the old one, and the guest pings,
+::    STUNs and relays through that galaxy, which drops the traffic, until
+::    its own Azimuth snapshot catches up.  .spon carries the sponsors our
+::    Jael has, ordered top down as Jael expects: the last entry becomes the
+::    guest's own sponsor, so .spon stops at the first ship whose keys we
+::    lack rather than skipping it.
+::
+++  boot-chain
+  |=  chain=(list ship)
+  ^-  $:  spon=(list [ship point:azimuth-types])
+          czar=(map ship [rift=@ud life=@ud =pass])
+      ==
+  =/  keys
+    |=  s=ship
+    ^-  (unit [rift=@ud life=@ud =pass])
+    =/  ul=(unit @ud)
+      .^((unit @ud) %j /(scot %p our.bowl)/lyfe/(scot %da now.bowl)/(scot %p s))
+    ?~  ul  ~
+    =/  ur=(unit @ud)
+      .^((unit @ud) %j /(scot %p our.bowl)/ryft/(scot %da now.bowl)/(scot %p s))
+    ?~  ur  ~
+    =/  uk=(unit [suite=@ud =pass])
+      .^  (unit [@ud pass])  %j
+        /(scot %p our.bowl)/puby/(scot %da now.bowl)/(scot %p s)/(scot %ud u.ul)
+      ==
+    ?~  uk  ~
+    `[u.ur u.ul pass.u.uk]
+  =|  spon=(list [ship point:azimuth-types])
+  =|  czar=(map ship [rift=@ud life=@ud =pass])
+  =/  whole=?  &
+  |-
+  ?~  chain  [spon czar]
+  =/  key  (keys i.chain)
+  ?~  key  $(chain t.chain, whole |)
+  =.  czar  (~(put by czar) i.chain u.key)
+  ?.  whole  $(chain t.chain)
+  =/  dad=ship
+    .^(ship %j /(scot %p our.bowl)/sein/(scot %da now.bowl)/(scot %p i.chain))
+  =|  pot=point:azimuth-types
+  =.  net.pot  `[life.u.key pass.u.key rift.u.key [!=(dad i.chain) dad] ~]
+  $(chain t.chain, spon [[i.chain pot] spon])
 ::
 ++  drop-paths
   |=  [pax=(list path) dat=(map path (each page lobe:clay))]
