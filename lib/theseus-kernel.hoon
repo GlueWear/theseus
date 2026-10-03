@@ -303,7 +303,13 @@
   =/  builder=vase
     %+  slap  arvo.ker
     !,  *hoon
-    |=  [who=@p fat=* lul=vase zus=vase wyn=* vns=*]
+    |=  $:  who=@p
+            fat=(axal (cask))
+            lul=vase
+            zus=vase
+            wyn=wynn
+            vns=(list (pair term vase))
+        ==
     =/  new  ..^load:+>
     =.  sol.new
       ^-  soul
@@ -311,15 +317,21 @@
           &
           :_  |
           :-  [~.nonce /theseus]
-          ;;(wynn wyn)
-          :^  ;;((axal (cask)) fat)  lul  zus
+          wyn
+          :^  fat  lul  zus
           %-  ~(gas by *(map term vane))
-          %+  turn  ;;((list (pair term vase)) vns)
+          %+  turn  vns
           |=([t=term v=vase] [t v *worm])
       ==
     new
+  ::  Call the builder directly, typed by its declared product.  Its arguments
+  ::  are built just above with exactly these types.  The sample used to be
+  ::  untyped and normalized with ;;, and ;; on a vase walks its whole type:
+  ::  about 6 seconds for Behn alone, minutes for all nine vanes on every boot.
   =/  snap=vase
-    (slam builder !>([who files lull.ker zuse.ker (runtime-wynn ker) vanes]))
+    :-  (~(play ut p.builder) [%limb %$])
+    .*  q.builder
+    [9 2 10 [6 1 [who files lull.ker zuse.ker (runtime-wynn ker) vanes]] 0 1]
   =/  vit  (arvo-vitals snap)
   ?~  vit
     ~|([%theseus-init-vane-build-failed who %empty] !!)
