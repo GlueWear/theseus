@@ -67,13 +67,50 @@ verify_eyre() {
   [ "$who" = "$THESEUS_SHIP" ]
 }
 
+# One newt-framed request and its reply over conn.sock. Unlike `nc -w`, this
+# never hangs up while the ship is still working (a long event such as a moon
+# boot): a reply written to a closed socket crashes runtimes without Vere's
+# newt hang-up fix (upstream c0a35c6). It gives up only after
+# THESEUS_CALL_TIMEOUT seconds (default 300).
+conn_exchange() {
+  /usr/bin/perl -e '
+    use strict; use warnings; use Socket qw(SOCK_STREAM); use IO::Socket::UNIX;
+    my ($path, $limit) = @ARGV;
+    binmode STDIN; binmode STDOUT;
+    my $req = do { local $/; <STDIN> };
+    exit 3 unless defined $req && length $req;
+    my $s = IO::Socket::UNIX->new(Type => SOCK_STREAM, Peer => $path) or exit 2;
+    $SIG{ALRM} = sub { exit 5 };
+    alarm $limit;
+    my $off = 0;
+    while ($off < length $req) {
+      my $n = syswrite($s, $req, length($req) - $off, $off);
+      exit 4 unless defined $n;
+      $off += $n;
+    }
+    my $read = sub {
+      my ($want) = @_; my $buf = "";
+      while (length($buf) < $want) {
+        my $n = sysread($s, $buf, $want - length($buf), length($buf));
+        exit 6 unless $n;
+      }
+      return $buf;
+    };
+    my $hdr = $read->(5);
+    my $body = $read->(unpack("V", substr($hdr, 1, 4)));
+    alarm 0;
+    syswrite(STDOUT, $hdr . $body);
+    close $s;
+  ' "$THESEUS_PIER/.urb/conn.sock" "${THESEUS_CALL_TIMEOUT:-300}"
+}
+
 # Run ted/theseus-gateway on the ship over conn.sock (Khan %fyrd), printing the
 # result noun. Fails if the ship is down or the thread fails.
 ship_call() {
   local out
   out=$(printf '[0 %%fyrd [%%theseus %%theseus-gateway %%noun [%%noun %s]]]' "$1" \
         | "$THESEUS_PIER/.run" eval --jam -n 2>/dev/null \
-        | nc -U -w 10 "$THESEUS_PIER/.urb/conn.sock" 2>/dev/null \
+        | conn_exchange 2>/dev/null \
         | "$THESEUS_PIER/.run" eval --cue -n 2>/dev/null) || return 1
   case "$out" in
     '[0 %avow 0 %noun '*) out=${out#\[0 %avow 0 %noun }; printf '%s\n' "${out%\]}" ;;
@@ -81,19 +118,35 @@ ship_call() {
   esac
 }
 
-# Sets MODE (auto|declared|hosting) and DECLARED (port or empty).
+# Sets MODE (auto|declared|hosting) and DECLARED (port or empty) from the
+# console's settings. If they cannot be read, the current values are kept:
+# an unreachable or busy ship is not a settings change. Returns 1 then.
 read_settings() {
-  local cfg
-  MODE=auto; DECLARED=
-  if ! cfg=$(ship_call '[%config ~]'); then
-    log "warning: could not read Gateway settings from Theseus; using auto"
-    return 0
-  fi
+  local cfg mode declared=
+  : "${MODE:=auto}" "${DECLARED:=}"
+  cfg=$(ship_call '[%config ~]') || return 1
   cfg=$(printf '%s' "$cfg" | tr -d '[].')     # "%declared 0 9000" / "%auto 0"
   set -- $cfg
-  MODE=${1#%}
-  if [ "$MODE" = declared ] && [ "${2:-}" = 0 ]; then DECLARED=${3:-}; fi
-  case "$MODE" in auto|declared|hosting) ;; *) die "unexpected settings: $cfg" ;; esac
+  mode=${1#%}
+  if [ "$mode" = declared ] && [ "${2:-}" = 0 ]; then declared=${3:-}; fi
+  case "$mode" in
+    auto|declared|hosting) MODE=$mode; DECLARED=$declared ;;
+    *) log "warning: unexpected settings from Theseus: $cfg"; return 1 ;;
+  esac
+}
+
+# At startup, wait up to about a minute for the settings (the ship may be
+# busy, e.g. booting a moon) before falling back to automatic.
+initial_settings() {
+  local i=0
+  until read_settings; do
+    i=$((i + 1))
+    if [ $i -ge 12 ]; then
+      log "warning: could not read Gateway settings from Theseus; starting in automatic mode until they can be read"
+      return 0
+    fi
+    sleep 5
+  done
 }
 
 # Hoon writes @ud in groups of three: 8086 -> 8.086.
@@ -157,7 +210,7 @@ register() {
 cmd_check() {
   load_config
   discover_eyre
-  read_settings
+  read_settings || log "warning: could not read Gateway settings from Theseus; showing automatic"
   choose_port
   printf 'ship       %s\npier       %s\neyre       127.0.0.1:%s (verified)\nmode       %s\ngateway    http://%s:%s (moons at http://<moon>.localhost:%s)\nadmin      %s%s\n' \
     "$THESEUS_SHIP" "$THESEUS_PIER" "$EYRE" "$MODE" "$THESEUS_WEB_BIND" "$WEB_PORT" "$WEB_PORT" \
@@ -197,12 +250,13 @@ cmd_run() {
   trap 'log "stopping"; stop_caddy; exit 0' TERM INT
   while :; do
     wait_for_eyre
-    read_settings
+    initial_settings
     local want="$MODE:$DECLARED"
     if [ "$MODE" = hosting ]; then
       log "hosting mode: the web proxy is operator-managed; idle"
       while sleep 60; do
-        read_settings; [ "$MODE:$DECLARED" = "$want" ] || break
+        read_settings || continue
+        [ "$MODE:$DECLARED" = "$want" ] || break
       done
       continue
     fi
@@ -222,16 +276,15 @@ cmd_run() {
     while kill -0 "$CADDY_PID" 2>/dev/null; do
       sleep 5 & wait $!
       i=$((i + 1))
-      if [ $((i % 12)) -eq 0 ]; then
-        read_settings
+      if [ $((i % 12)) -eq 0 ] && read_settings; then
         if [ "$MODE:$DECLARED" != "$want" ]; then
           log "Gateway settings changed ($want -> $MODE:$DECLARED); restarting"
           stop_caddy
           continue 2
         fi
-        # heartbeat: Theseus' view heals within a minute whatever happened
-        register_quiet || true
       fi
+      # heartbeat every 10 minutes: Theseus' view heals on its own
+      if [ $((i % 120)) -eq 0 ]; then register_quiet || true; fi
     done
     wait "$CADDY_PID"; local status=$?
     CADDY_PID=
@@ -252,7 +305,7 @@ cmd_sync() {
     i=$((i + 1)); [ $i -le 30 ] || die "Eyre did not come up as $THESEUS_SHIP"
     sleep 2
   done
-  read_settings
+  read_settings || true
   WEB_PORT=$(running_port)
   [ -n "$WEB_PORT" ] || die "cannot read the running gateway's port"
   caddy_env

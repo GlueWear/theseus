@@ -93,8 +93,10 @@ Settings live in the console's **Gateway** view:
   clients get 503 rather than that ship.
 - It reports `[%live port eyre]` to `%theseus-ui` through
   `ted/theseus-gateway` over the pier's `conn.sock` (Khan), so the console knows
-  where moons live, and repeats it every minute so Theseus' view heals on its
-  own. It reports `[%down ~]` when it stops, unless another gateway has already
+  where moons live, and repeats it every 10 minutes so Theseus' view heals on
+  its own. Its control-socket client waits for each reply instead of timing
+  out (see the 2026-10-03 incident in HARDENING.md), and a settings read that
+  fails keeps the current settings. It reports `[%down ~]` when it stops, unless another gateway has already
   taken over its admin address. It re-reads the settings about once a minute
   and restarts Caddy when the mode or declared port changes.
 - `install` builds a small per-ship helper in
@@ -159,6 +161,18 @@ npm test            # model unit tests
 npm run test:e2e    # Playwright against test/mock-host.mjs (mock Eyre on :8085)
 npm run build       # writes ../web/theseus.html
 ```
+
+## Incident and fixes (2026-10-03, afternoon)
+
+The host crashed twice while a moon booted. The launcher's `nc -w 10` hung up
+on the busy ship; the late reply failed with EPIPE and the runtime freed the
+connection twice (upstream bug, fixed in Vere `c0a35c6`). The launcher also
+treated the failed settings read as a switch to automatic mode and moved the
+gateway from 8086 to 8084. Fixes: the launcher's client waits for replies and
+failed reads keep the settings (tested against a fake socket replying after
+12 seconds, a forced 2-second timeout, and the live ship); the runtime carries
+the upstream fix plus a regression test that reproduces the double destructor
+call without it (build `7956112f`, staged for install).
 
 ## Verification done (2026-10-03, web gateway)
 

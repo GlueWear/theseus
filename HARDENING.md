@@ -169,7 +169,8 @@ The C allocation fix is included in the installed rebuild. The agent's new
 | --- | --- | --- | --- |
 | Leak fix | `eb1f5c81…a5de` | `b5dab2e` | Installed 2026-10-02 morning; superseded |
 | Automatic ports | `1f76bcf1…96af` | `b5dab2e` + automatic-port patch | Installed 2026-10-02 17:35 for the restart test; superseded |
-| Automatic ports + STUN | `a5b8bdccb9983e9241c17d11324273f4926d74a6f20c04b68bf0184557f4e1b8` | GlueWear/vere `09b1224` (`main`) | Installed 2026-10-02 23:17; running |
+| Automatic ports + STUN | `a5b8bdccb9983e9241c17d11324273f4926d74a6f20c04b68bf0184557f4e1b8` | GlueWear/vere `09b1224` | Installed 2026-10-02 23:17; running |
+| + newt hang-up fix | `7956112f05bd578a9344a20aa2440cf0f4f0e5817a8e2869fb303602b18ef98f` | GlueWear/vere `2d68391` (`main`) | Built and staged 2026-10-03; install pending a restart |
 
 - All builds: Zig 0.15.2, ReleaseFast, `-j2`, aarch64 macOS. The running build
   was verified on 2026-10-03 by rebuilding `09b1224` from a clean prefix: the
@@ -186,6 +187,29 @@ The C allocation fix is included in the installed rebuild. The agent's new
   An on-demand `|hi` in both directions has not been re-run since.
 - Host launch: `~sampel-siglup-narwet` (fixed `LICK_UDP` mapping to 41237) has
   been removed from the fleet; the mapping is no longer needed.
+
+## Incident: control-socket hang-up crash (2026-10-03)
+
+The host crashed twice, at about 12:10 and again before 13:22, while a moon was
+booting. Terminal output: `newt: write failed broken pipe`, then
+`loom: external fault: 0x70` in `uv__drain` and an abort. No macOS memory kill
+was involved (the 13:22 Jetsam report no longer lists the host).
+
+Cause: the new web gateway launcher asked the ship for its settings over
+`conn.sock` every minute with `nc -w 10`. Booting a moon is one long event, so
+`nc` hung up first; the ship's late reply hit the closed socket (EPIPE),
+`conn.c` queued an error message on the same socket and closed it, and that
+second write's failure ran the connection's destructor a second time while
+libuv still owned the handle. Upstream Vere fixed this in July 2026
+(`c0a35c6`, "newt: do not run bal_f if handle is already closing"); our runtime
+predated it. The same failure can be triggered by any early-timeout client,
+including `click` (`nc -w 3`), against a busy ship.
+
+Fixes: GlueWear/vere cherry-picks the upstream fix and adds a regression test
+that reproduces the double destructor call with a real socket pair (build
+`7956112f`). The launcher now waits for replies (5-minute limit), keeps its
+settings when a read fails (it had moved the gateway from 8086 to 8084), and
+re-registers every 10 minutes instead of every minute.
 
 ## Remaining gates
 

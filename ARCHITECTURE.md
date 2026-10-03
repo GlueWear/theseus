@@ -153,10 +153,14 @@ fixed ports:
   that check every 5 seconds. If another ship ever holds the port, browsers get
   503 rather than that ship.
 - It tells Theseus where it listens (`[%live port eyre]`) through a thread over
-  the pier's control socket, repeats that every minute, and reports `down` when
-  it stops.
+  the pier's control socket (`conn.sock`), repeats that every 10 minutes, and
+  reports `down` when it stops.
 - It re-reads the console's settings every minute and restarts Caddy if the mode
-  or declared port changed.
+  or declared port changed. A read that fails (ship busy or down) changes
+  nothing.
+- Its control-socket client always waits for the reply (up to 5 minutes) instead
+  of hanging up. A client that hangs up while the ship is busy crashed runtimes
+  without Vere's newt hang-up fix; see HARDENING.md, 2026-10-03 incident.
 - Two launchd agents run it through a small helper program in
   `~/Library/Application Support/Theseus/io.theseus.gateway.siglup-narwet/`:
   `io.theseus.gateway.siglup-narwet` (starts at login, restarts on failure,
@@ -240,6 +244,7 @@ launchctl kickstart -k gui/$(id -u)/io.theseus.gateway.siglup-narwet   # restart
 | Moon tab returns 404 "No such moon" | The hostname isn't one of the host's moons | Check the moon name in the console. |
 | `install` prints Full Disk Access steps | macOS blocks the helper from reading `/Volumes/DEV` | Follow the printed steps (add the helper in System Settings → Privacy & Security → Full Disk Access), then rerun `install`. |
 | `+vats` on a moon shows "bad desk" | An install is waiting for its first download | The moon cannot reach the source ship; check the moon is running and its network (STUN). |
+| Host crashes with `newt: write failed broken pipe` then a fault in `uv__drain` | A control-socket client hung up before the ship replied (fixed in runtime `7956112f`) | Install that runtime. Until then, don't use clients that time out early (`nc -w`, `click`) against a busy ship. |
 | A moon cannot `\|hi` a ship on the same network | No relay path to the moon | Confirm the runtime is the STUN build (hash in HARDENING.md) and the moon has sent traffic recently. |
 
 ## Known limits
