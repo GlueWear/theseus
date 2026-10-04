@@ -207,7 +207,7 @@ reconnect to world", with other users never appearing. It's the same reason a
 real ship must never boot an old copy of its pier.
 
 So when Theseus restores one of the host's moons, it runs a persisted recovery
-transaction (`state-10` in `app/theseus.hoon`) and treats the restore as a
+transaction (`state-11` in `app/theseus.hoon`) and treats the restore as a
 breach:
 
 1. **Freeze before replacement.** Theseus unions the peers known by the live

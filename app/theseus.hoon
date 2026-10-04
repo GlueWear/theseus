@@ -264,7 +264,31 @@
           recoveries=(map ship recovery-job)
           recovery-timer=(unit @da)
       ==
-    +$  versioned-state  $%(state-5 state-6 state-7 state-8 state-9 state-10)
+    ::  A managed fleet is a durable grouping and one shared boot recipe.
+    ::  Members may briefly be absent while the console drives their separate
+    ::  boot events; retaining planned identities makes a partial boot retryable.
+    ::
+    +$  managed-fleet
+      $:  ships=(set ship)
+          desks=(list [=desk from=desk-from])
+          created=@da
+      ==
+    +$  state-11
+      $:  %11
+          piers=fleet
+          fleet-snaps=(map path fleet-snapshot)
+          files=(axal (cask))
+          park=vase
+          caches=(map @tas vase)
+          boot-caches=(map (set desk) boot-cache)
+          install-plans=(map ship install-plan)
+          install-timer=(unit @da)
+          booted=(map ship @da)
+          recoveries=(map ship recovery-job)
+          recovery-timer=(unit @da)
+          fleets=(map @tas managed-fleet)
+      ==
+    +$  versioned-state  $%(state-5 state-6 state-7 state-8 state-9 state-10 state-11)
     ++  pack-park
       |=  pak=task:clay
       ^-  vase
@@ -327,7 +351,7 @@
     +$  card  $+(card card:agent:gall)
     --
 ::
-=|  state-10
+=|  state-11
 =*  state  -
 =<
   %-  agent:dbug
@@ -360,29 +384,34 @@
     ::  cast failure here used to erase every pier and every snapshot.
     |^
     ?+    -.q.old-vase  ~|([%theseus-unknown-state -.q.old-vase] !!)
+        %11
+      =/  old  !<(state-11 old-vase)
+      ~&  [%theseus-state-load %11]
+      (load-state old)
+    ::
         %10
       =/  old  !<(state-10 old-vase)
-      ~&  [%theseus-state-load %10]
-      (load-state old)
+      ~&  [%theseus-state-migrate %10 %11]
+      (load-state (state-10-to-11 old))
     ::
         %9
       =/  old  !<(state-9 old-vase)
-      ~&  [%theseus-state-migrate %9 %10]
-      (load-state (state-9-to-10 old))
+      ~&  [%theseus-state-migrate %9 %11]
+      (load-state (state-10-to-11 (state-9-to-10 old)))
     ::
         %8
       =/  old  !<(state-8 old-vase)
-      ~&  [%theseus-state-migrate %8 %10]
-      (load-state (state-9-to-10 (state-8-to-9 old)))
+      ~&  [%theseus-state-migrate %8 %11]
+      (load-state (state-10-to-11 (state-9-to-10 (state-8-to-9 old))))
     ::
         %7
       =/  old  !<(state-7 old-vase)
-      ~&  [%theseus-state-migrate %7 %10]
-      (load-state (state-9-to-10 (state-7-to-9 old)))
+      ~&  [%theseus-state-migrate %7 %11]
+      (load-state (state-10-to-11 (state-9-to-10 (state-7-to-9 old))))
     ::
         %6
       =/  old  !<(state-6 old-vase)
-      ~&  [%theseus-state-migrate %6 %10]
+      ~&  [%theseus-state-migrate %6 %11]
       ::  every plan so far installed from us
       ::
       =/  plans=(map ship install-plan)
@@ -398,6 +427,7 @@
             updated.p
         ==
       %-  load-state
+      %-  state-10-to-11
       %-  state-9-to-10
       %-  state-7-to-9
       :*  %7  piers.old  fleet-snaps.old  files.old  park.old  caches.old
@@ -406,8 +436,9 @@
     ::
         %5
       =/  old  !<(state-5 old-vase)
-      ~&  [%theseus-state-migrate %5 %10]
+      ~&  [%theseus-state-migrate %5 %11]
       %-  load-state
+      %-  state-10-to-11
       %-  state-9-to-10
       (state-7-to-9 [%7 piers.old fleet-snaps.old files.old park.old caches.old ~ ~ ~])
     ==
@@ -415,7 +446,7 @@
     ::  timer and re-arm it from persisted jobs before accepting traffic.
     ::
     ++  load-state
-      |=  new=state-10
+      |=  new=state-11
       ^-  (quip card _this)
       =.  this  this(state new(recovery-timer ~))
       =^  cards  state  arm-recovery-timer:hc
@@ -465,6 +496,26 @@
           *(map ship recovery-job)
           *(unit @da)
       ==
+    ::  %11 adds durable console groupings.  Existing installations begin
+    ::  with all of their moons ungrouped.
+    ::
+    ++  state-10-to-11
+      |=  old=state-10
+      ^-  state-11
+      :*  %11
+          piers.old
+          fleet-snaps.old
+          files.old
+          park.old
+          caches.old
+          boot-caches.old
+          install-plans.old
+          install-timer.old
+          booted.old
+          recoveries.old
+          recovery-timer.old
+          *(map @tas managed-fleet)
+      ==
     --
   ::
   ++  on-poke
@@ -481,6 +532,36 @@
               ?>  ?&((gth (lent desks.cmd) 0) (lte (lent desks.cmd) 64))
               =/  kp  (gen-keypair:dingy (key-seed:dingy who.cmd 0 eny.bowl))
               (poke-action:hc [%init-moon-desks who.cmd desks.cmd pub.kp priv.kp])
+            %fleet-new
+              ?>  ?&  (gth count.cmd 0)
+                      (lte count.cmd 64)
+                      (gth (lent desks.cmd) 0)
+                      (lte (lent desks.cmd) 64)
+                  ==
+              ?:  (~(has by fleets) name.cmd)
+                ~|([%theseus-fleet-exists name.cmd] !!)
+              =/  ships  (allocate-fleet-ships:hc name.cmd count.cmd)
+              =.  fleets
+                (~(put by fleets) name.cmd [ships desks.cmd now.bowl])
+              ~&  [%theseus-fleet-created name.cmd ~(wyt in ships)]
+              `state
+            %fleet-pause
+              =/  group  (~(get by fleets) name.cmd)
+              ?~  group  ~|([%theseus-fleet-missing name.cmd] !!)
+              =/  hers  (skim ~(tap in ships.u.group) |=(who=ship (~(has by piers) who)))
+              (poke-action:hc [%pause-ships hers])
+            %fleet-resume
+              =/  group  (~(get by fleets) name.cmd)
+              ?~  group  ~|([%theseus-fleet-missing name.cmd] !!)
+              =/  hers  (skim ~(tap in ships.u.group) |=(who=ship (~(has by piers) who)))
+              (poke-action:hc [%unpause-ships hers])
+            %fleet-kill
+              =/  group  (~(get by fleets) name.cmd)
+              ?~  group  ~|([%theseus-fleet-missing name.cmd] !!)
+              =/  hers  (skim ~(tap in ships.u.group) |=(who=ship (~(has by piers) who)))
+              =^  kill-cards  state  (poke-action:hc [%kill-ships hers])
+              =.  fleets  (~(del by fleets) name.cmd)
+              [kill-cards state]
             %dojo
               ?>  (lte (met 3 command.cmd) 16.384)
               ?>  !(recovery-blocked:hc who.cmd)
@@ -655,15 +736,71 @@
 ::
 ++  this  .
 ::
+++  all-fleet-ships
+  ^-  (set ship)
+  =/  groups  ~(tap by fleets)
+  =/  shots  ~(tap by fleet-snaps)
+  =/  out=(set ship)  ~(key by piers)
+  |-
+  ?^  groups
+    $(groups t.groups, out (~(uni in out) ships.q.i.groups))
+  ?~  shots  out
+  $(shots t.shots, out (~(uni in out) ~(key by ships.q.i.shots)))
+::
+++  allocate-fleet-ships
+  |=  [name=@tas count=@ud]
+  ^-  (set ship)
+  =/  used=(set ship)  all-fleet-ships
+  =/  start=@ud  (end 5 (shaz (jam [our.bowl name now.bowl eny.bowl])))
+  =/  index=@ud  ?:(=(0 start) 1 start)
+  =/  out  *(set ship)
+  |-
+  ?:  =(count ~(wyt in out))  out
+  =/  who=ship  (mint:dingy our.bowl index)
+  =/  next=@ud  (end 5 +(index))
+  =/  next  ?:(=(0 next) 1 next)
+  ?:  (~(has in used) who)
+    $(index next)
+  $(index next, used (~(put in used) who), out (~(put in out) who))
+::
+++  drop-fleet-ship
+  |=  [who=ship groups=(map @tas managed-fleet)]
+  ^-  (map @tas managed-fleet)
+  =/  rows  ~(tap by groups)
+  =/  out  *(map @tas managed-fleet)
+  |-
+  ?~  rows  out
+  =/  name  p.i.rows
+  =/  group  q.i.rows
+  =/  left  (~(del in ships.group) who)
+  $(rows t.rows, out ?:(=(~ left) out (~(put by out) name group(ships left))))
+::
 ++  ui-state
   ^-  json
   =,  enjs:format
   %-  pairs
   :~  [%host s+(scot %p our.bowl)]
-      [%version (numb 2)]
+      [%version (numb 3)]
       [%moons a+(turn ~(tap by piers) ui-moon)]
+      [%fleets a+(turn ~(tap by fleets) ui-fleet)]
       [%caches a+(turn ~(tap by caches) |=([name=@tas cache=vase] s+name))]
       [%snapshots a+(turn ~(tap by fleet-snaps) ui-snapshot)]
+  ==
+::
+++  ui-fleet
+  |=  [name=@tas group=managed-fleet]
+  ^-  json
+  =/  js-desks=(list json)
+    %+  turn  desks.group
+    |=  [d=@tas from=desk-from]
+    =,  enjs:format
+    (pairs ~[[%desk s+d] [%from s+from]])
+  =,  enjs:format
+  %-  pairs
+  :~  [%name s+name]
+      [%ships a+(turn ~(tap in ships.group) |=(who=@p s+(scot %p who)))]
+      [%desks a+js-desks]
+      [%created (numb (unm:chrono:userlib created.group))]
   ==
 ::
 ++  ui-moon
@@ -1744,6 +1881,12 @@
     =.  recoveries
       %-  ~(dif by recoveries)
       (~(gas by *(map ship recovery-job)) (turn hers.act |=(=ship [ship *recovery-job])))
+    =.  fleets
+      =/  pending  hers.act
+      =/  groups  fleets
+      |-
+      ?~  pending  groups
+      $(pending t.pending, groups (drop-fleet-ship i.pending groups))
     ~&  [%theseus-killed hers.act]
     [kill-cards state]
   ::

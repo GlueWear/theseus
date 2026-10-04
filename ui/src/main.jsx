@@ -1,12 +1,12 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {Orbit, LayoutList, Camera, TerminalSquare, Plus, RefreshCw, Pause, Play, Trash2, RotateCcw, X, ArrowUpRight, ArrowLeft, AlertCircle, Check, CircleCheck, CircleAlert, Search, Download, LoaderCircle, Shuffle, AppWindow, KeyRound, Globe} from 'lucide-react';
+import {Orbit, LayoutList, Camera, TerminalSquare, Plus, RefreshCw, Pause, Play, Trash2, RotateCcw, X, ArrowUpRight, ArrowLeft, AlertCircle, Check, CircleCheck, CircleAlert, Search, Download, LoaderCircle, Shuffle, AppWindow, KeyRound, Globe, Folder, FolderOpen, FolderPlus, ChevronRight} from 'lucide-react';
 import '@urbit/sigil-js';
 import {Terminal} from '@xterm/xterm';
 import {FitAddon} from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import {fleet, hostDesks as fetchHostDesks, watchDojo, command, term as sendTerm, moonWeb, gateway, setGateway, reachable} from './api';
-import {blitsToAnsi, keysToBelts, byBoot, deskTally, daMs, newMoon, validateMoon, snapshotName, dateLabel, moonOrigin, validPort, validTemplate, gatewayProblem, resolveDeskSelection, deskPublisher, bootDesks} from './model.mjs';
+import {blitsToAnsi, keysToBelts, byBoot, deskTally, daMs, newMoon, validateMoon, snapshotName, dateLabel, moonOrigin, validPort, validTemplate, gatewayProblem, resolveDeskSelection, deskPublisher, bootDesks, fleetState} from './model.mjs';
 import icon from './icon.png';
 import './style.css';
 
@@ -128,6 +128,27 @@ function BootStatus({boot, moon, dismiss}) {
     {detail && <p>{detail}</p>}
   </div>;
 }
+function FleetBootStatus({boot, group, moons, dismiss}) {
+  const [, tick] = useState(0);
+  const finished = boot.phase === 'ready' || boot.phase === 'failed';
+  useEffect(() => {if (finished) return; const timer = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(timer);}, [finished]);
+  const seconds = Math.max(0, Math.round(((boot.finished || Date.now()) - boot.started) / 1000));
+  const state = group ? fleetState(group, moons) : {members:[],missing:[],running:0,paused:0,attention:0};
+  const complete = state.members.filter(m => deskTally(m.desks).done).length;
+  const total = group?.ships.length || boot.total || 0;
+  const percent = total ? Math.round(100 * (boot.phase === 'installing' || finished ? complete : state.members.length) / total) : 0;
+  const title = {creating:`Creating ${boot.name}`,booting:`Booting ${boot.name}`,installing:`Installing ${boot.name}`,ready:`${boot.name} is ready`,failed:`${boot.name} needs attention`}[boot.phase];
+  const detail = boot.phase === 'creating' ? 'Allocating moon identities.' : boot.phase === 'booting' ? `${state.members.length} of ${total} moons built${boot.current ? `; starting ${boot.current}` : ''}.` : boot.phase === 'installing' ? `${complete} of ${total} moons finished installing desks.` : boot.phase === 'ready' ? `${total} moons are ready. Took ${seconds} seconds.` : boot.error;
+  return <div className={`boot-status ${boot.phase}`} role="status" aria-live="polite" aria-label="Fleet boot status">
+    <div className="boot-status-head">
+      {boot.phase === 'ready' ? <CircleCheck size={18}/> : boot.phase === 'failed' ? <CircleAlert size={18}/> : <LoaderCircle size={18} className="spin"/>}
+      <strong>{title}</strong><span className="muted">{seconds}s</span>
+      {finished && <IconButton label="Dismiss fleet boot status" onClick={dismiss}><X size={15}/></IconButton>}
+    </div>
+    <div className="progress" role="progressbar" aria-label={title} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{width:`${percent}%`}}/></div>
+    <p>{detail}</p>
+  </div>;
+}
 const gatewayStatus = {ok: 'Running', down: 'Not running', stale: 'Out of date', mismatch: 'Applying change', external: 'Hosting'};
 function gatewayHint(gw) {
   const live = gw.live;
@@ -208,16 +229,23 @@ function App() {
   const [deskCatalog, setDeskCatalog] = useState(null);
   const [deskLoading, setDeskLoading] = useState(false);
   const [boot, setBoot] = useState(null);
+  const [fleetBoot, setFleetBoot] = useState(null);
+  const [expanded, setExpanded] = useState(() => new Set());
   const refreshing = useRef(false);
   const mounted = useRef(true);
+  async function readFleet() {
+    const next = await fleet();
+    if (!mounted.current) return next;
+    setData(next); setOnline(true);
+    setSelected(prev => prev.filter(s => next.moons.some(m => m.ship === s)));
+    return next;
+  }
   async function refresh() {
     if (refreshing.current) return;
     refreshing.current = true;
     try {
-      const next = await fleet(); if (!mounted.current) return;
-      setData(next); setOnline(true);
+      await readFleet(); if (!mounted.current) return;
       gateway().then(g => mounted.current && setGw(g)).catch(() => mounted.current && setGw(null));
-      setSelected(prev => prev.filter(s => next.moons.some(m => m.ship === s)));
       await watchDojo(receive, status => mounted.current && setChannel(status));
     } catch (err) {if (mounted.current) {setError(err.message); setOnline(false);}}
     finally {refreshing.current = false; if (mounted.current) setLoading(false);}
@@ -226,7 +254,7 @@ function App() {
   async function run(kind, value) {
     if (busy || !online) return false;
     setBusy(true); setError(''); setNotice('');
-    try {await command(kind, value); await refresh(); if (kind !== 'dojo') setNotice(`${({snapshot: 'Snapshot', restore: 'Restore', delete: 'Delete', kill: 'Remove', pause: 'Pause', resume: 'Resume'})[kind]} accepted.`); return true;}
+    try {await command(kind, value); await refresh(); if (kind !== 'dojo') setNotice(`${({snapshot:'Snapshot',restore:'Restore',delete:'Delete',kill:'Remove',pause:'Pause',resume:'Resume','fleet-pause':'Fleet pause','fleet-resume':'Fleet resume','fleet-kill':'Fleet removal'})[kind]} accepted.`); return true;}
     catch (err) {setError(err.message || 'The host rejected this action. Check its Dojo for the error trace.'); return false;}
     finally {setBusy(false);}
   }
@@ -250,6 +278,45 @@ function App() {
       error: tally.failed.map(d => `%${d.desk}: ${d.reason || 'failed'}`).join(' ') || undefined}));
   }, [boot?.phase, bootRow]);
   useEffect(() => {if (boot?.phase !== 'ready') return; const timer = setTimeout(() => setBoot(null), 12000); return () => clearTimeout(timer);}, [boot?.phase]);
+  async function bootFleetMembers(group) {
+    if (busy || !online) return false;
+    setBusy(true); setError(''); setNotice(''); setModal(null);
+    setExpanded(current => new Set(current).add(group.name));
+    setFleetBoot({name:group.name,phase:'booting',started:Date.now(),total:group.ships.length,current:null});
+    const failed = [];
+    try {
+      let current = await readFleet();
+      for (const who of group.ships) {
+        if (current.moons.some(m => m.ship === who)) continue;
+        setFleetBoot(value => ({...value,current:who}));
+        try {await command('boot',{who,desks:group.desks});}
+        catch (err) {failed.push(`${who}: ${err.message || 'boot rejected'}`);}
+        current = await readFleet();
+      }
+      if (failed.length) setFleetBoot(value => ({...value,phase:'failed',finished:Date.now(),current:null,error:failed.join(' ')}));
+      else setFleetBoot(value => ({...value,phase:'installing',current:null}));
+      return failed.length === 0;
+    } catch (err) {
+      setFleetBoot(value => ({...value,phase:'failed',finished:Date.now(),current:null,error:err.message || 'Fleet boot failed.'}));
+      setError(err.message || 'Fleet boot failed.'); return false;
+    } finally {setBusy(false);}
+  }
+  async function createFleet(payload) {
+    if (busy || !online) return;
+    setBusy(true); setError(''); setNotice(''); setModal(null);
+    setFleetBoot({name:payload.name,phase:'creating',started:Date.now(),total:payload.count,current:null});
+    try {
+      await command('fleet-new',payload);
+      const next = await readFleet();
+      const group = next.fleets.find(row => row.name === payload.name);
+      if (!group) throw new Error('The host created no fleet record.');
+      setBusy(false);
+      await bootFleetMembers(group);
+    } catch (err) {
+      setFleetBoot(value => ({...value,phase:'failed',finished:Date.now(),error:err.message || 'Fleet creation failed.'}));
+      setError(err.message || 'Fleet creation failed.'); setBusy(false);
+    }
+  }
   async function saveGateway(settings) {
     if (busy || !online) return false;
     setBusy(true); setError(''); setNotice('');
@@ -297,8 +364,9 @@ function App() {
   function open(type, value) {
     setFormError(''); setModal({type, value});
     setForm(type === 'boot' ? {ship: newMoon(data.host, data.moons.map(m => m.ship)), desks: [], from: {}}
+      : type === 'boot-fleet' ? {name:'', count:3, desks:[], from:{}}
       : type === 'snapshot' || type === 'moon-snapshots' ? {name: snapshotName(), resume: true} : {});
-    if (type === 'boot') {
+    if (type === 'boot' || type === 'boot-fleet') {
       setDeskCatalog(null); setDeskLoading(true);
       fetchHostDesks().then(result => {if (mounted.current) setDeskCatalog(result.desks);}).catch(err => {if (mounted.current) setFormError(err.message);}).finally(() => {if (mounted.current) setDeskLoading(false);});
     }
@@ -321,6 +389,14 @@ function App() {
       if (!deskCatalog) return setFormError('Host desks are not available yet.');
       return bootMoon({who: form.ship, desks: bootDesks(deskCatalog, resolveDeskSelection(deskCatalog, form.desks).desks, form.from, data.host)});
     }
+    if (type === 'boot-fleet') {
+      if (!/^[a-z][a-z0-9-]{0,63}$/.test(form.name)) return setFormError('Use a lowercase fleet name with letters, numbers, and hyphens.');
+      if (data.fleets.some(group => group.name === form.name)) return setFormError('A fleet with this name already exists.');
+      const count = Number(form.count);
+      if (!Number.isInteger(count) || count < 1 || count > 64) return setFormError('Choose between 1 and 64 moons.');
+      if (!deskCatalog) return setFormError('Host desks are not available yet.');
+      return createFleet({name:form.name,count,desks:bootDesks(deskCatalog,resolveDeskSelection(deskCatalog,form.desks).desks,form.from,data.host)});
+    }
     let kind = type, payload;
     if (type === 'snapshot' || type === 'moon-snapshots') {
       if (!/^[a-z][a-z0-9-]{0,63}$/.test(form.name)) return setFormError('Use a lowercase name with letters, numbers, and hyphens.');
@@ -328,6 +404,7 @@ function App() {
       kind = 'snapshot';
       payload = {name: form.name, ships: type === 'snapshot' ? value : [value.ship], resume: !!form.resume};
     } else if (type === 'kill') payload = {who: value.ship};
+    else if (type === 'fleet-kill') {kind = 'fleet-kill'; payload = {name:value.name};}
     else payload = {path: value.path};
     if (!(await run(kind, payload))) return;
     // The moon's snapshot tool stays open, so the new snapshot shows up in
@@ -336,12 +413,26 @@ function App() {
     setModal(null); if (type === 'kill' && dojo === value.ship) setDojo(null);
   }
   const moons = data?.moons || [];
+  const fleets = data?.fleets || [];
   const snapshots = [...(data?.snapshots || [])].sort((a, b) => (daMs(b.created) || 0) - (daMs(a.created) || 0));
   const activeMoon = moons.find(m => m.ship === dojo);
+  const fleetBootGroup = fleetBoot && fleets.find(group => group.name === fleetBoot.name);
+  useEffect(() => {
+    if (fleetBoot?.phase !== 'installing' || !fleetBootGroup) return;
+    const state = fleetState(fleetBootGroup, moons);
+    if (state.missing.length || state.members.some(moon => !deskTally(moon.desks).done)) return;
+    const failed = state.members.flatMap(moon => deskTally(moon.desks).failed.map(desk => `${moon.ship}/%${desk.desk}: ${desk.reason || 'failed'}`));
+    setFleetBoot(value => ({...value,phase:failed.length ? 'failed' : 'ready',finished:Date.now(),error:failed.join(' ') || undefined}));
+  }, [fleetBoot?.phase, fleetBootGroup, moons]);
+  useEffect(() => {if (fleetBoot?.phase !== 'ready') return; const timer = setTimeout(() => setFleetBoot(null), 12000); return () => clearTimeout(timer);}, [fleetBoot?.phase]);
   const canAct = online && !busy;
-  const visible = byBoot(moons).filter(m => m.ship.includes(filter.toLowerCase()));
+  const grouped = new Set(fleets.flatMap(group => group.ships));
+  const query = filter.toLowerCase();
+  const visibleFleets = fleets.filter(group => group.name.includes(query) || group.ships.some(ship => ship.includes(query)));
+  const visibleUngrouped = byBoot(moons.filter(moon => !grouped.has(moon.ship) && moon.ship.includes(query)));
+  const visible = [...visibleUngrouped, ...visibleFleets.flatMap(group => group.ships.map(ship => moons.find(moon => moon.ship === ship)).filter(Boolean))];
   const healthySelected = selected.length > 0 && selected.every(s => {const m=moons.find(m => m.ship === s); return m?.status === 'healthy' && !m.recovery;});
-  const resolvedDesks = modal?.type === 'boot' && deskCatalog ? resolveDeskSelection(deskCatalog, form.desks) : {desks:['base'],reasons:new Map()};
+  const resolvedDesks = ['boot','boot-fleet'].includes(modal?.type) && deskCatalog ? resolveDeskSelection(deskCatalog, form.desks) : {desks:['base'],reasons:new Map()};
   const toggleDesk = (name, checked) => setForm(current => ({...current, desks: checked ? [...new Set([...(current.desks || []), name])] : (current.desks || []).filter(d => d !== name)}));
   const moonSnaps = modal?.type === 'moon-snapshots' ? snapshots.filter(s => s.ships.includes(modal.value.ship)) : [];
   const booting = boot?.phase === 'booting' && !moons.some(m => m.ship === boot.ship);
@@ -353,6 +444,39 @@ function App() {
     <IconButton label={`Snapshots of ${m.ship}`} disabled={!canAct || !!m.recovery || m.status === 'empty'} onClick={() => open('moon-snapshots', m)}><Camera size={16}/></IconButton>
     <IconButton label={`Remove ${m.ship}`} disabled={!canAct} onClick={() => open('kill', m)}><Trash2 size={16}/></IconButton>
   </div>;
+  const fleetActions = group => {
+    const state = fleetState(group, moons), allPaused = state.members.length > 0 && state.members.every(moon => moon.paused);
+    const ready = state.members.length > 0 && state.members.every(moon => moon.status === 'healthy' && !moon.recovery);
+    return <div className="moon-actions fleet-actions">
+      {!!state.missing.length && <IconButton label={`Boot missing moons in ${group.name}`} disabled={!canAct} onClick={() => bootFleetMembers(group)}><Plus size={16}/></IconButton>}
+      <IconButton label={`${allPaused ? 'Resume' : 'Pause'} fleet ${group.name}`} disabled={!canAct || !ready} onClick={() => run(allPaused ? 'fleet-resume' : 'fleet-pause',{name:group.name})}>{allPaused ? <Play size={16}/> : <Pause size={16}/>}</IconButton>
+      <IconButton label={`Snapshot fleet ${group.name}`} disabled={!canAct || !ready} onClick={() => open('snapshot',state.members.map(moon => moon.ship))}><Camera size={16}/></IconButton>
+      <IconButton label={`Remove fleet ${group.name}`} disabled={!canAct} onClick={() => open('fleet-kill',group)}><Trash2 size={16}/></IconButton>
+    </div>;
+  };
+  const moonRow = (m, child = false) => <tr key={m.ship} className={child ? 'fleet-child' : ''}>
+    <td className="select-cell"><input type="checkbox" aria-label={`Select ${m.ship}`} checked={selected.includes(m.ship)} onChange={e => setSelected(p => e.target.checked ? [...new Set([...p,m.ship])] : p.filter(s => s !== m.ship))}/></td>
+    <td className="moon-cell"><button className="ship-link" onClick={() => setDojo(m.ship)} title={m.booted ? `Booted ${new Date(m.booted).toLocaleString()}` : undefined}><ShipIcon ship={m.ship}/><strong>{m.ship}</strong></button>{moonActions(m)}<div className="mobile-desks"><DeskProgress desks={m.desks}/></div></td>
+    <td><Badge moon={m}/></td><td className="desk-column"><DeskProgress desks={m.desks}/></td><td>{m.vanes.length} / 9</td><td>{m.queued}</td>
+  </tr>;
+  const fleetRow = group => {
+    const open = expanded.has(group.name) || !!query;
+    const state = fleetState(group,moons), liveShips = state.members.map(moon => moon.ship);
+    const vaneCount = state.members.reduce((sum,moon) => sum + moon.vanes.length,0);
+    const checked = liveShips.length > 0 && liveShips.every(ship => selected.includes(ship));
+    const paused = state.members.length > 0 && state.members.every(moon => moon.paused);
+    const status = state.attention ? `${state.attention} need attention` : paused ? 'paused' : `${state.running} running`;
+    const deskNames = group.desks.map(row => ({desk:row.desk,stage:'seeded',reason:null,source:null}));
+    return <React.Fragment key={group.name}>
+      <tr className="fleet-row">
+        <td className="select-cell"><input type="checkbox" aria-label={`Select fleet ${group.name}`} checked={checked} onChange={e => setSelected(current => e.target.checked ? [...new Set([...current,...liveShips])] : current.filter(ship => !liveShips.includes(ship)))}/></td>
+        <td className="moon-cell"><button className="fleet-link" aria-expanded={open} onClick={() => setExpanded(current => {const next=new Set(current); next.has(group.name)?next.delete(group.name):next.add(group.name); return next;})}><ChevronRight size={15} className={open ? 'open' : ''}/>{open ? <FolderOpen size={22}/> : <Folder size={22}/>}<span><strong>{group.name}</strong><small>{state.members.length} of {group.ships.length} moons booted</small></span></button>{fleetActions(group)}<div className="mobile-desks"><DeskProgress desks={deskNames}/></div></td>
+        <td><span className={`badge ${state.attention ? 'degraded' : paused ? 'paused' : 'running'}`}><i/>{status}</span></td><td className="desk-column"><DeskProgress desks={deskNames}/></td><td>{vaneCount} / {group.ships.length * 9}</td><td>{state.members.reduce((sum,moon) => sum + moon.queued,0)}</td>
+      </tr>
+      {open && group.ships.map(ship => {const moon=moons.find(row => row.ship===ship); return moon ? moonRow(moon,true) : <tr className="fleet-child pending-member" key={ship}><td className="select-cell"/><td className="moon-cell"><span className="ship-link"><LoaderCircle size={20}/><strong>{ship}</strong></span></td><td><span className="badge paused"><i/>not booted</span></td><td className="desk-column"><span className="muted">Waiting</span></td><td>0 / 9</td><td>0</td></tr>;})}
+    </React.Fragment>;
+  };
+  const deskPicker = <><fieldset className="desk-picker"><legend>Desks</legend>{deskLoading && <div className="pending"><LoaderCircle size={15} className="spin"/>Loading host desks</div>}{deskCatalog?.map(row => {const auto=resolvedDesks.reasons.has(row.desk), checked=resolvedDesks.desks.includes(row.desk), pub=deskPublisher(row,data.host); return <div className="desk-choice" key={row.desk}><label><input type="checkbox" aria-label={`Include %${row.desk}`} checked={checked} disabled={row.desk==='base'||auto} onChange={e=>toggleDesk(row.desk,e.target.checked)}/><span><strong>%{row.desk}{row.title?` · ${row.title}`:''}</strong><small>{row.running?'running':'suspended'}{row.source?` · ${row.source.ship}/%${row.source.desk}`:' · local'}</small></span></label>{checked&&pub&&<select aria-label={`Updates for %${row.desk}`} value={form.from?.[row.desk]||'host'} onChange={e=>setForm(current=>({...current,from:{...(current.from||{}),[row.desk]:e.target.value}}))}><option value="host">Updates from {data.host}</option><option value="publisher">Updates from {pub.ship}</option></select>}</div>;})}</fieldset>{[...resolvedDesks.reasons].map(([dependency,owner])=><p className="dependency-note" key={dependency}>Added <strong>%{dependency}</strong> because <strong>%{owner}</strong> has a Landscape tile.</p>)}</>;
   const snapshotFields = (who, many) => <>
     <label>Snapshot name<input autoFocus value={form.name} onChange={e => setForm({...form, name: e.target.value})} maxLength={64}/></label>
     <label className="check"><input type="checkbox" checked={!!form.resume} onChange={e => setForm({...form, resume: e.target.checked})}/>Keep {many ? 'these moons' : who} running after saving</label>
@@ -364,8 +488,9 @@ function App() {
       <button className={view === 'snapshots' ? 'active' : ''} onClick={() => {setView('snapshots'); setDojo(null);}}><Camera size={18}/>Snapshots<span>{snapshots.length}</span></button>
       <button className={view === 'gateway' ? 'active' : ''} onClick={() => {setView('gateway'); setDojo(null);}}><Globe size={18}/>Gateway<span>{gw?.status === 'ok' || gw?.status === 'external' ? 'on' : gw === undefined ? '' : 'off'}</span></button>
     </nav><div className="host"><span className="section-label">HOST SHIP</span><div>{data && <ShipIcon ship={data.host}/>}<strong>{data?.host || 'Not connected'}</strong></div><span className={`connection ${online ? 'live' : ''}`}><i/>{online ? 'Connected' : loading ? 'Connecting' : 'Offline'}</span></div></aside>
-    <main><header className="page-header"><div><span className="section-label">THESEUS / {view.toUpperCase()}</span><h1>{activeMoon ? 'Dojo' : view === 'moons' ? 'Moons' : view === 'gateway' ? 'Gateway' : 'Snapshots'}</h1></div><div className="tools"><IconButton label="Refresh fleet" onClick={() => {setError(''); refresh();}} disabled={loading}><RefreshCw size={18}/></IconButton>{view === 'moons' && <button className="primary" disabled={!canAct} onClick={() => open('boot')}><Plus size={17}/>Boot moon</button>}</div></header>
+    <main><header className="page-header"><div><span className="section-label">THESEUS / {view.toUpperCase()}</span><h1>{activeMoon ? 'Dojo' : view === 'moons' ? 'Moons' : view === 'gateway' ? 'Gateway' : 'Snapshots'}</h1></div><div className="tools"><IconButton label="Refresh fleet" onClick={() => {setError(''); refresh();}} disabled={loading}><RefreshCw size={18}/></IconButton>{view === 'moons' && <><button className="primary" disabled={!canAct} onClick={() => open('boot-fleet')}><FolderPlus size={17}/>Boot Fleet</button><button className="primary" disabled={!canAct} onClick={() => open('boot')}><Plus size={17}/>Boot moon</button></>}</div></header>
       {boot && <BootStatus boot={boot} moon={bootRow} dismiss={() => setBoot(null)}/>}
+      {fleetBoot && <FleetBootStatus boot={fleetBoot} group={fleetBootGroup} moons={moons} dismiss={() => setFleetBoot(null)}/>}
       {error && <div role="alert" className="banner error"><AlertCircle size={18}/><span>{error}</span>{!online && <a href="/~/login?redirect=/apps/theseus">Sign in <ArrowUpRight size={14}/></a>}<IconButton label="Dismiss error" onClick={() => setError('')}><X size={16}/></IconButton></div>}
       {notice && <div role="status" className="banner success"><Check size={17}/><span>{notice}</span><IconButton label="Dismiss notification" onClick={() => setNotice('')}><X size={16}/></IconButton></div>}
       {busy && boot?.phase !== 'booting' && <div className="pending" role="status"><LoaderCircle size={16} className="spin"/>Waiting for host acknowledgement</div>}
@@ -386,25 +511,23 @@ function App() {
         <div className="table-wrap"><table>
           <thead><tr><th className="select-cell"><input type="checkbox" aria-label="Select all visible moons" checked={visible.length > 0 && visible.every(m => selected.includes(m.ship))} onChange={e => setSelected(e.target.checked ? visible.map(m => m.ship) : [])}/></th><th>Moon</th><th>Status</th><th className="desk-column">Desks</th><th>Vanes</th><th>Queue</th></tr></thead>
           <tbody>
-            {visible.map(m => <tr key={m.ship}>
-              <td className="select-cell"><input type="checkbox" aria-label={`Select ${m.ship}`} checked={selected.includes(m.ship)} onChange={e => setSelected(p => e.target.checked ? [...p, m.ship] : p.filter(s => s !== m.ship))}/></td>
-              <td className="moon-cell"><button className="ship-link" onClick={() => setDojo(m.ship)} title={m.booted ? `Booted ${new Date(m.booted).toLocaleString()}` : undefined}><ShipIcon ship={m.ship}/><strong>{m.ship}</strong></button>{moonActions(m)}<div className="mobile-desks"><DeskProgress desks={m.desks}/></div></td>
-              <td><Badge moon={m}/></td><td className="desk-column"><DeskProgress desks={m.desks}/></td><td>{m.vanes.length} / 9</td><td>{m.queued}</td>
-            </tr>)}
+            {visibleFleets.map(fleetRow)}
+            {visibleUngrouped.map(m => moonRow(m))}
             {booting && <tr className="booting-row"><td className="select-cell"/><td className="moon-cell" colSpan={5}><span className="ship-link"><LoaderCircle size={20} className="spin"/><strong>{boot.ship}</strong></span><span className="muted">Booting...</span></td></tr>}
           </tbody>
         </table></div>
-        {!visible.length && !booting && <div className="empty"><Orbit size={34}/><h2>{loading ? 'Loading fleet' : filter ? 'No matching moons' : 'No moons'}</h2>{!filter && online && <button className="primary" onClick={() => open('boot')}><Plus size={16}/>Boot moon</button>}</div>}
+        {!visibleFleets.length && !visibleUngrouped.length && !booting && <div className="empty"><Orbit size={34}/><h2>{loading ? 'Loading fleet' : filter ? 'No matching moons' : 'No moons'}</h2>{!filter && online && <div className="tools"><button className="primary" onClick={() => open('boot-fleet')}><FolderPlus size={16}/>Boot Fleet</button><button className="primary" onClick={() => open('boot')}><Plus size={16}/>Boot moon</button></div>}</div>}
       </> : <>
         <div className="list-toolbar"><span className="muted">{snapshots.length} saved snapshots</span><button disabled={!canAct || !healthySelected} onClick={() => open('snapshot', selected)}><Camera size={16}/>New snapshot</button></div>
         <div className="snapshots">{snapshots.map(s => <article className="snapshot-row" key={s.path}><div className="snapshot-icon"><Camera size={21}/></div><div className="snapshot-info"><h2>{s.path}</h2><span className="muted">{dateLabel(s.created)}</span><div className="snapshot-ships">{s.ships.map(ship => <span key={ship}>{ship}</span>)}</div></div><span className={`badge ${s.compatible ? 'healthy' : 'degraded'}`}><i/>{s.compatible ? 'Compatible' : 'Runtime mismatch'}</span><div className="tools"><button disabled={!canAct || !s.compatible} onClick={() => open('restore', s)}><RotateCcw size={16}/>Restore</button><IconButton label={`Delete ${s.path}`} disabled={!canAct} onClick={() => open('delete', s)}><Trash2 size={17}/></IconButton></div></article>)}</div>
         {!snapshots.length && <div className="empty"><Camera size={34}/><h2>No snapshots</h2></div>}
       </>}
       </>}
-      <footer><span>{online ? data?.host : 'Host unavailable'}</span><span>{data ? `${moons.length} moons / ${snapshots.length} snapshots` : 'Awaiting fleet state'}</span></footer>
+      <footer><span>{online ? data?.host : 'Host unavailable'}</span><span>{data ? `${fleets.length} fleets / ${moons.length} moons / ${snapshots.length} snapshots` : 'Awaiting fleet state'}</span></footer>
     </main>
-    {modal && <Dialog title={{boot: 'Boot moon', snapshot: 'Take snapshot', 'moon-snapshots': `Snapshots of ${modal.value?.ship}`, restore: 'Restore snapshot', kill: 'Remove moon', delete: 'Delete snapshot', landscape: 'Install Landscape', code: '+code', gateway: 'Web gateway'}[modal.type]} close={() => setModal(null)} busy={busy}><form onSubmit={confirm}>
-      {modal.type === 'boot' && <><label>Moon name<div className="input-group"><input autoFocus aria-label="Moon name" value={form.ship} onChange={e => setForm({...form, ship: e.target.value})}/><IconButton type="button" label="Generate moon name" onClick={() => setForm({...form, ship: newMoon(data.host, moons.map(m => m.ship))})}><Shuffle size={18}/></IconButton></div></label><fieldset className="desk-picker"><legend>Desks</legend>{deskLoading && <div className="pending"><LoaderCircle size={15} className="spin"/>Loading host desks</div>}{deskCatalog?.map(row => {const auto=resolvedDesks.reasons.has(row.desk), checked=resolvedDesks.desks.includes(row.desk), pub=deskPublisher(row, data.host); return <div className="desk-choice" key={row.desk}><label><input type="checkbox" aria-label={`Include %${row.desk}`} checked={checked} disabled={row.desk === 'base' || auto} onChange={e => toggleDesk(row.desk,e.target.checked)}/><span><strong>%{row.desk}{row.title ? ` · ${row.title}` : ''}</strong><small>{row.running ? 'running' : 'suspended'}{row.source ? ` · ${row.source.ship}/%${row.source.desk}` : ' · local'}</small></span></label>{checked && pub && <select aria-label={`Updates for %${row.desk}`} value={form.from?.[row.desk] || 'host'} onChange={e => setForm(current => ({...current, from: {...(current.from || {}), [row.desk]: e.target.value}}))}><option value="host">Updates from {data.host}</option><option value="publisher">Updates from {pub.ship}</option></select>}</div>;})}</fieldset>{[...resolvedDesks.reasons].map(([dependency,owner]) => <p className="dependency-note" key={dependency}>Added <strong>%{dependency}</strong> because <strong>%{owner}</strong> has a Landscape tile.</p>)}</>}
+    {modal && <Dialog title={{boot: 'Boot moon', 'boot-fleet':'Boot Fleet', snapshot: 'Take snapshot', 'moon-snapshots': `Snapshots of ${modal.value?.ship}`, restore: 'Restore snapshot', kill: 'Remove moon', 'fleet-kill':'Remove fleet', delete: 'Delete snapshot', landscape: 'Install Landscape', code: '+code', gateway: 'Web gateway'}[modal.type]} close={() => setModal(null)} busy={busy}><form onSubmit={confirm}>
+      {modal.type === 'boot' && <><label>Moon name<div className="input-group"><input autoFocus aria-label="Moon name" value={form.ship} onChange={e => setForm({...form, ship: e.target.value})}/><IconButton type="button" label="Generate moon name" onClick={() => setForm({...form, ship: newMoon(data.host, moons.map(m => m.ship))})}><Shuffle size={18}/></IconButton></div></label>{deskPicker}</>}
+      {modal.type === 'boot-fleet' && <><label>Fleet name<input autoFocus aria-label="Fleet name" value={form.name} onChange={e=>setForm({...form,name:e.target.value.toLowerCase().replace(/[^a-z0-9-]/g,'')})} maxLength={64} placeholder="workers"/></label><label>Number of moons<input aria-label="Number of moons" type="number" min="1" max="64" step="1" value={form.count} onChange={e=>setForm({...form,count:e.target.value})}/></label>{deskPicker}<p className="hint">Theseus generates valid child identities and boots each moon with this same desk plan. A partial boot remains grouped and can be retried.</p></>}
       {modal.type === 'snapshot' && <>{snapshotFields(null, true)}<ul className="affected">{modal.value.map(s => <li key={s}>{s}</li>)}</ul></>}
       {modal.type === 'moon-snapshots' && <>
         {snapshotFields(modal.value.ship, false)}
@@ -418,12 +541,13 @@ function App() {
       </>}
       {modal.type === 'restore' && <><p>Restore <strong>{modal.value.path}</strong>? This replaces the current state of every moon below. Changes since this snapshot will be lost.</p><ul className="affected">{modal.value.ships.map(s => <li key={s}>{s}</li>)}</ul><p className="restore-note">Theseus closes each moon's transport, registers a new network era, resets its local continuity, then resumes it only after the host confirms the new keys. Other ships drop their old connections, apps reconnect, and messages still in flight are lost.</p></>}
       {modal.type === 'kill' && <p>Remove <strong>{modal.value.ship}</strong> and close its transport? Its current state will be deleted. Saved snapshots are kept.</p>}
+      {modal.type === 'fleet-kill' && <><p>Remove fleet <strong>{modal.value.name}</strong> and all of its booted moons? Their current state will be deleted. Saved snapshots are kept.</p><ul className="affected">{modal.value.ships.map(ship=><li key={ship}>{ship}</li>)}</ul></>}
       {modal.type === 'delete' && <p>Permanently delete <strong>{modal.value.path}</strong>? Running moons will not be changed.</p>}
       {modal.type === 'landscape' && <p><strong>{modal.value.ship}</strong> does not have Landscape. Install it from this host? This runs <code>|install {data.host} %landscape</code> in the moon's Dojo; the download can take several minutes.</p>}
       {modal.type === 'gateway' && <p>{modal.value} Open the Gateway settings to see its status and how to start it.</p>}
       {modal.type === 'code' && <><p>Anyone with this code can log in to <strong>{modal.value.ship}</strong> and control it.</p><code className="secret" data-testid="moon-code">{modal.value.code}</code></>}
       {formError && <p className="form-error" role="alert">{formError}</p>}
-      <div className="dialog-actions"><button type="button" onClick={() => setModal(null)} disabled={busy}>{modal.type === 'moon-snapshots' ? 'Close' : 'Cancel'}</button><button className={['kill', 'delete', 'restore'].includes(modal.type) ? 'danger' : 'primary'} type="submit" disabled={!canAct || (modal.type === 'boot' && (!deskCatalog || deskLoading))}>{busy ? 'Waiting...' : {boot: 'Boot moon', snapshot: 'Take snapshot', 'moon-snapshots': 'Take snapshot', restore: 'Restore & resume', kill: 'Remove moon', delete: 'Delete snapshot', landscape: 'Install Landscape', code: 'Copy code', gateway: 'Open Gateway settings'}[modal.type]}</button></div>
+      <div className="dialog-actions"><button type="button" onClick={() => setModal(null)} disabled={busy}>{modal.type === 'moon-snapshots' ? 'Close' : 'Cancel'}</button><button className={['kill','fleet-kill','delete','restore'].includes(modal.type) ? 'danger' : 'primary'} type="submit" disabled={!canAct || (['boot','boot-fleet'].includes(modal.type) && (!deskCatalog || deskLoading))}>{busy ? 'Waiting...' : {boot:'Boot moon','boot-fleet':'Boot Fleet',snapshot:'Take snapshot','moon-snapshots':'Take snapshot',restore:'Restore & resume',kill:'Remove moon','fleet-kill':'Remove fleet',delete:'Delete snapshot',landscape:'Install Landscape',code:'Copy code',gateway:'Open Gateway settings'}[modal.type]}</button></div>
     </form></Dialog>}
   </div>;
 }

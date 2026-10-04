@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {newMoon, validateMoon, blitsToAnsi, validateFleet, validateHostDesks, resolveDeskSelection, bootDesks, deskPublisher, keysToBelts, byBoot, deskTally, snapshotName} from '../src/model.mjs';
+import {newMoon, validateMoon, blitsToAnsi, validateFleet, validateHostDesks, resolveDeskSelection, bootDesks, deskPublisher, keysToBelts, byBoot, deskTally, snapshotName, fleetState} from '../src/model.mjs';
 test('generated moon belongs to host and avoids existing identities', () => {
   const a = newMoon('~siglup-narwet', [], 123);
   assert.equal(validateMoon(a, '~siglup-narwet'), '');
@@ -16,12 +16,22 @@ test('Dill output preserves Unicode and generated controls, strips guest escapes
 });
 test('API contract refuses unknown or missing data', () => {
   assert.throws(() => validateFleet({}));
-  assert.throws(() => validateFleet({version: 1, host:'~zod', moons:[], snapshots:[], caches:[]}));
-  assert.equal(validateFleet({version:2, host:'~zod', moons:[], snapshots:[], caches:[]}).host, '~zod');
+  assert.throws(() => validateFleet({version: 2, host:'~zod', moons:[], fleets:[], snapshots:[], caches:[]}));
+  assert.equal(validateFleet({version:3, host:'~zod', moons:[], fleets:[], snapshots:[], caches:[]}).host, '~zod');
   const recovering = {ship:'~sampel-zod',desks:[],recovery:{stage:'registering',attempts:1,reason:null}};
-  assert.equal(validateFleet({version:2, host:'~zod', moons:[recovering], snapshots:[], caches:[]}).moons[0].recovery.stage, 'registering');
-  assert.throws(() => validateFleet({version:2, host:'~zod', moons:[{...recovering,recovery:{stage:'ready',attempts:0}}], snapshots:[], caches:[]}));
+  assert.equal(validateFleet({version:3, host:'~zod', moons:[recovering], fleets:[], snapshots:[], caches:[]}).moons[0].recovery.stage, 'registering');
+  assert.throws(() => validateFleet({version:3, host:'~zod', moons:[{...recovering,recovery:{stage:'ready',attempts:0}}], fleets:[], snapshots:[], caches:[]}));
   assert.match(snapshotName(), /^[a-z][a-z0-9-]+$/);
+});
+test('fleet records are exclusive and report missing members', () => {
+  const host = '~siglup-narwet';
+  const a = newMoon(host, [], 10), b = newMoon(host, [a], 11);
+  const group = {name:'workers', ships:[a,b], desks:[{desk:'base',from:'host'}], created:1};
+  const moon = {ship:a,status:'healthy',paused:false,recovery:null};
+  const data = validateFleet({version:3,host,moons:[{...moon,desks:[]}],fleets:[group],snapshots:[],caches:[]});
+  assert.equal(data.fleets[0].name, 'workers');
+  assert.deepEqual(fleetState(group,[moon]), {members:[moon],missing:[b],running:1,paused:0,attention:1});
+  assert.throws(() => validateFleet({...data,fleets:[group,{...group,name:'other'}]}), /overlapping/);
 });
 test('desk selection locks base and resolves docket dependencies', () => {
   const catalog = validateHostDesks({version:1,desks:[

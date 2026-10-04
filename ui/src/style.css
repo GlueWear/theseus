@@ -144,6 +144,29 @@ tbody tr:hover td { background: #fdf9f1; }
 .moon-actions .icon-button { width: 30px; min-width: 30px; height: 30px; min-height: 30px; padding: 6px; }
 .booting-row .ship-link { color: var(--sea-deep); }
 .booting-row .muted { margin-left: 44px; display: block; }
+.fleet-row td { background: #faf3e5; }
+.fleet-row:hover td { background: #f7eddc; }
+.fleet-link {
+  justify-content: flex-start; min-width: 238px; min-height: 36px; padding: 0;
+  border: 0; background: transparent; color: var(--ink); text-align: left;
+}
+.fleet-link:hover:not(:disabled) { background: transparent; color: var(--sky-deep); }
+.fleet-link > svg:first-child { transition: transform .15s ease; }
+.fleet-link > svg:first-child.open { transform: rotate(90deg); }
+.fleet-link span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fleet-link strong { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+.fleet-link small { font-size: 10px; font-weight: 500; color: var(--ink-3); }
+.fleet-actions { margin-left: 60px; }
+.fleet-child td { background: #fffdf9; }
+.fleet-child:hover td { background: #fbf7ef; }
+.fleet-child .moon-cell { padding-left: 42px; }
+.fleet-child .ship-link { position: relative; }
+.fleet-child .ship-link:before {
+  content: ''; position: absolute; left: -22px; top: -14px; width: 12px; height: 30px;
+  border-left: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2);
+}
+.pending-member .ship-link { cursor: default; color: var(--ink-3); }
+.pending-member .ship-link:hover { color: var(--ink-3); }
 .badge { display: inline-flex; align-items: center; gap: 7px; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 550; text-transform: capitalize; white-space: nowrap; background: var(--ok-tint); color: var(--ok); }
 td .badge { margin-top: 6px; }
 .badge.paused { background: var(--warn-tint); color: var(--warn); }
@@ -280,6 +303,10 @@ dialog .form-error { margin-top: 12px; color: var(--bad); }
   th { padding: 10px; }
   table th:nth-child(5), table td:nth-child(5), table th:nth-child(6), table td:nth-child(6) { display: none; }
   .moon-actions { margin-left: 0; flex-wrap: wrap; }
+  .fleet-link { min-width: 0; }
+  .fleet-actions { margin-left: 36px; }
+  .fleet-child .moon-cell { padding-left: 30px; }
+  .fleet-child .ship-link:before { left: -16px; }
   .mobile-desks { margin-left: 0; }
   .mobile-desks .desk-state { padding: 2px 5px; font-size: 9px; }
   .terminal { height: clamp(360px, 60vh, 520px); padding: 8px 6px; }

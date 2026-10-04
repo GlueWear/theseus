@@ -98,9 +98,27 @@ export function deskTally(desks = []) {
   return {total: desks.length, running, failed, done: running + failed.length === desks.length};
 }
 export function validateFleet(data) {
-  if (data?.version !== 2 || !Array.isArray(data.moons) || !Array.isArray(data.snapshots) || !Array.isArray(data.caches) || !ob.isValidPatp(data.host)) throw new Error('Theseus management API is unavailable or incompatible.');
+  if (data?.version !== 3 || !Array.isArray(data.moons) || !Array.isArray(data.fleets) || !Array.isArray(data.snapshots) || !Array.isArray(data.caches) || !ob.isValidPatp(data.host)) throw new Error('Theseus management API is unavailable or incompatible.');
   if (data.moons.some(m => !Array.isArray(m.desks) || (m.recovery != null && (!['registering', 'restarting', 'failed'].includes(m.recovery.stage) || typeof m.recovery.attempts !== 'number')))) throw new Error('Theseus returned an invalid moon record.');
+  const members = new Set();
+  for (const group of data.fleets) {
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(group?.name) || !Array.isArray(group.ships) || !Array.isArray(group.desks) || typeof group.created !== 'number') throw new Error('Theseus returned an invalid fleet record.');
+    for (const ship of group.ships) {
+      if (validateMoon(ship, data.host) || members.has(ship)) throw new Error('Theseus returned overlapping fleet membership.');
+      members.add(ship);
+    }
+  }
   return data;
+}
+
+export function fleetState(group, moons) {
+  const byShip = new Map(moons.map(moon => [moon.ship, moon]));
+  const members = group.ships.map(ship => byShip.get(ship)).filter(Boolean);
+  const missing = group.ships.filter(ship => !byShip.has(ship));
+  const running = members.filter(moon => moon.status === 'healthy' && !moon.paused && !moon.recovery).length;
+  const paused = members.filter(moon => moon.paused && !moon.recovery).length;
+  const attention = members.length - running - paused + missing.length;
+  return {members, missing, running, paused, attention};
 }
 export function validateHostDesks(data) {
   if (data?.version !== 1 || !Array.isArray(data.desks)) throw new Error('Theseus host desk inventory is unavailable or incompatible.');

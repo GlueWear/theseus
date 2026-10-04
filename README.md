@@ -31,9 +31,10 @@ Verified on `[%zuse 408]` (October 2026, host `~siglup-narwet`):
   Node sidecar. Moons have completed `|hi ~zod`, reached the host and its
   sponsor star, and installed `%landscape`.
 - The web console at `/apps/theseus` (also a Landscape tile): fleet health,
-  boot with a choice of host desks, pause/resume/remove, a terminal Dojo per
-  moon, per-moon snapshots and restore, each moon's `+code`, and one-click
-  Landscape per moon.
+  boot individual moons or generated fleets with a choice of host desks,
+  pause/resume/remove at moon or fleet scope, a terminal Dojo per moon,
+  per-moon snapshots and restore, each moon's `+code`, and one-click Landscape
+  per moon.
 - Moon web apps open on their own origin, `http://<moon>.localhost:<port>`,
   through a local Caddy gateway that `ops/theseus-gateway` runs under launchd.
 
@@ -180,6 +181,12 @@ From the console, click **Boot moon**:
 
 The moon's Dojo opens as a terminal: click it and type. Its camera button holds
 the moon's snapshots: take one, or restore an earlier one.
+
+**Boot Fleet** creates a named group of 1-64 generated child moons with the
+same desk plan. The folder persists before its members boot, so an interrupted
+boot can resume with **Boot missing moons**. Expand the folder for each moon's
+normal controls; the folder itself pauses, resumes, snapshots, or removes all
+of its booted members together.
 
 Or in Dojo:
 
