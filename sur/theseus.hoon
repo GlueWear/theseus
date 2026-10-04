@@ -86,6 +86,11 @@
       ::  public key with our (the host's) Jael as this moon's key -- the
       ::  self-sufficient resident-moon path.  key = sec:ex ring, pub = pub:ex.
       [%init-moon who=ship cache=@tas pub=pass key=@]
+      ::  like %init-moon, but seed .desks from our Clay (reusing a boot
+      ::  cache for the same set while our desk hashes match), then |install
+      ::  each from us, or from the ship we installed it from (%publisher).
+      ::  %base is always included, and always tracks our %kids.
+      [%init-moon-desks who=ship desks=(list [=desk from=desk-from]) pub=pass key=@]
       ::  boot a real Azimuth planet with a supplied keyfile feed.
       ::  continuity and public-key data come from host Jael; no Jael mutation.
       [%init-planet who=ship cache=@tas =feed:jael]
@@ -139,6 +144,23 @@
       [%mesa-inbound who=ship lane=mesa-lane blob=@]
       [%ames-test-inbound who=ship from=ship blob=@]
   ==
+::
+::  Kiln's per-desk status, as /hood/kiln/pikes gives it ($pike in
+::  /sur/hood).  Copied here because /sur/hood imports /mar/kelvin, which
+::  this desk does not carry; values are clammed, not trusted.
+::
++$  kiln-pike
+  $:  sync=(unit [=ship =desk])
+      hash=@uv
+      =zest:clay
+      wic=(set [lal=@tas num=@ud])
+  ==
++$  kiln-pikes  (map desk kiln-pike)
+::
+::  where a desk chosen at boot takes its updates from: us, or the ship
+::  our own copy syncs from
+::
++$  desk-from  ?(%host %publisher)
 ::
 +$  behn-pier  next-timer=(unit @da)
 +$  eyre-pier  cookie=(unit @t)

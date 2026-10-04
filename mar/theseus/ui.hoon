@@ -6,7 +6,11 @@
   ++  json
     =,  dejs:format
     %-  of
-    :~  [%boot (ot ~[[%who (se %p)] [%cache (se %tas)]])]
+    :~  :-  %boot
+        %-  ot
+        :~  [%who (se %p)]
+            [%desks (ar (ot ~[[%desk (se %tas)] [%from (su (perk %host %publisher ~))]]))]
+        ==
         [%dojo (ot ~[[%who (se %p)] [%command so]])]
         [%pause (ot ~[[%who (se %p)]])]
         [%resume (ot ~[[%who (se %p)]])]

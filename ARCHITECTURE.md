@@ -128,6 +128,56 @@ Under the hood the page reads `/~/scry/theseus/ui.json` every few seconds,
 sends commands as pokes that succeed only when the agent acknowledges them, and
 subscribes to pyre's `/blit` for Dojo output.
 
+## Choosing a moon's desks
+
+**Boot moon** lists every desk on the host, not only Landscape apps. It reads
+`/~/scry/theseus/desks.json`, which gives each desk's title, whether it runs,
+and where the host's own copy comes from.
+
+- `%base` is always included, and it tracks the host's `%kids`.
+- `%kids` and `%theseus` are never offered.
+- A desk with a docket (a Landscape app) brings `%landscape` with it, and the
+  dialog says why.
+- Each chosen desk takes updates from the host by default. If the host's own
+  copy syncs from another ship (glurff from `~nolset`), you can choose that
+  ship instead. The host works out that ship itself, so the console cannot
+  point a moon at an arbitrary ship.
+
+What happens on boot (`%init-moon-desks` in `app/theseus.hoon`):
+
+1. **Boot cache.** Theseus builds a cache of the chosen desks from the host's
+   Clay. It reuses the cache for the same set while the host's desk hashes
+   match. At most 8 caches are kept, and stale ones are dropped.
+2. **Boot with only `%base`.** Clay already holds every chosen desk's commits
+   and files, but not the desks themselves. Kiln's `+on-init` revives every
+   desk it finds during the boot cascade, and Eyre's `%init` runs later in that
+   cascade and resets Eyre's bindings. An app started that way loses its
+   `/apps/...` binding, so its pages return 404.
+3. **Add the desks after boot.** `+inject-desks` adds them with their history
+   intact. Clay `%zest %live` starts their agents.
+4. **Install.** Each desk is `|install`ed from its chosen source. Its files are
+   already local, so nothing is downloaded.
+5. **Ally publishers.** If `%landscape` is on the moon, each publisher (the
+   ship the host's copy syncs from) is allied in the moon's `%treaty`, as a
+   Landscape install would do. Docket only installs apps whose treaty it has,
+   so an app's in-app "install X" button needs this.
+6. **Progress.** A 2-second timer reads the moon's Kiln until each desk runs
+   from the expected source. A desk is marked failed only on a wrong source,
+   or after 20 minutes. Each moon row shows each desk's stage, and hovering
+   shows its source.
+
+Verified live on 2026-10-03:
+
+- Moons booted with `%glurff`, `%noltbook`, `%noltbook-data` and `%landscape`
+  ran each desk from `~siglup-narwet` at the host's hash.
+- Measured by the session that started this work: the second and third moon
+  from the same cache added about 18 MB together.
+- After the boot-ordering fix, moon `~holdep-namlys-siglup-narwet` serves
+  `/apps/landscape/` and `/apps/glurff/` (307 to login, then the apps), and its
+  Eyre has docket's and glurff's bindings.
+
+Not yet tested live: the "publisher" source choice and the treaty allies.
+
 ## Moon web apps and the web gateway
 
 A moon's apps (Landscape and anything installed on it) need their own browser
@@ -278,6 +328,8 @@ launchctl kickstart -k gui/$(id -u)/io.theseus.gateway.siglup-narwet   # restart
 | Host crashes with `newt: write failed broken pipe` then a fault in `uv__drain` | A control-socket client hung up before the ship replied (fixed in runtime `7956112f`) | Install that runtime. Until then, don't use clients that time out early (`nc -w`, `click`) against a busy ship. |
 | A moon cannot `\|hi` a ship on the same network | No relay path to the moon | Confirm the runtime is the STUN build (hash in HARDENING.md) and the moon has sent traffic recently. |
 | A new moon reaches `~zod` but not the host or `~nolset`; `%ping` state names the wrong galaxy | The moon booted with a stale sponsor chain (Theseus before `+boot-chain`) | Commit the current desk and boot a new moon; an existing one recovers after its Azimuth snapshot loads, or `\|hi ~rus` from the moon. |
+| A moon's `/apps/landscape/` (or another app) returns 404 "Not Found" | It was booted by the first desk-picker build: chosen apps started during boot and lost their Eyre bindings | Remove it and boot a new one; the current build adds chosen desks after boot. |
+| An app's in-app install button says "Docket refused the installation" (`peek bad result` in `/app/treaty`) | The moon has no treaty from that app's publisher | `:treaty\|ally ~<publisher>` in the moon's Dojo, wait a few seconds, try again; moons booted with the current build ally publishers automatically. |
 | A new moon reaches the host but `\|hi ~nolset` hangs for a few minutes after boot | The moon's Azimuth snapshot predates `~nolset`'s escape, so it routes through `~set` until `%azimuth` catches up | Wait for `l2-sig-failed` in the log; the pending `\|hi` then succeeds. |
 
 ## Known limits
@@ -320,3 +372,5 @@ launchctl kickstart -k gui/$(id -u)/io.theseus.gateway.siglup-narwet   # restart
   - new Theseus icon
   - moons boot with the host's current sponsor chain, including escapes
     (`~nolset` → `~rus`), instead of chains derived from @p
+- **2026-10-04:** desk picker: choose any host desks for a new moon, seeded
+  from the host's Clay and installed from the host or the desk's publisher

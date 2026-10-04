@@ -12,7 +12,7 @@
 ::  :theseus|unpause ~nec
 ::  :theseus|kill ~nec
 ::
-/-  *theseus, ui=theseus-ui
+/-  *theseus, ui=theseus-ui, dock=docket
 /+  theseus=theseus,
     default-agent,
     pill=pill,
@@ -152,7 +152,59 @@
           park=vase
           caches=(map @tas vase)
       ==
-    +$  versioned-state  $%(state-5)
+    ::  desks chosen in the console at boot: each is seeded into the moon's
+    ::  Clay from a boot cache, then installed from its source: us, or the
+    ::  ship our copy syncs from
+    ::
+    +$  desk-stage  ?(%seeded %installing %running %failed)
+    +$  desk-progress
+      $:  =desk
+          stage=desk-stage
+          reason=(unit @t)
+      ==
+    +$  install-plan
+      $:  desks=(set desk)
+          sources=(map desk [=ship =desk])
+          progress=(map desk desk-progress)
+          started=@da
+          updated=@da
+      ==
+    +$  install-plan-6
+      $:  desks=(set desk)
+          progress=(map desk desk-progress)
+          started=@da
+          updated=@da
+      ==
+    ::  boot cache for one exact desk set, valid while our desk hashes match
+    ::
+    +$  boot-cache
+      $:  hashes=(map desk @uv)
+          cache=vase
+          built-at=@da
+      ==
+    +$  state-6
+      $:  %6
+          piers=fleet
+          fleet-snaps=(map path fleet-snapshot)
+          files=(axal (cask))
+          park=vase
+          caches=(map @tas vase)
+          boot-caches=(map (set desk) boot-cache)
+          install-plans=(map ship install-plan-6)
+          install-timer=(unit @da)
+      ==
+    +$  state-7
+      $:  %7
+          piers=fleet
+          fleet-snaps=(map path fleet-snapshot)
+          files=(axal (cask))
+          park=vase
+          caches=(map @tas vase)
+          boot-caches=(map (set desk) boot-cache)
+          install-plans=(map ship install-plan)
+          install-timer=(unit @da)
+      ==
+    +$  versioned-state  $%(state-5 state-6 state-7)
     ++  pack-park
       |=  pak=task:clay
       ^-  vase
@@ -215,7 +267,7 @@
     +$  card  $+(card card:agent:gall)
     --
 ::
-=|  state-5
+=|  state-7
 =*  state  -
 =<
   %-  agent:dbug
@@ -246,12 +298,45 @@
     ::  Never turn a failed state load into a successful empty on-init.  Gall
     ::  already preserves the previous agent when on-load bails; swallowing a
     ::  cast failure here used to erase every pier and every snapshot.
-    ?:  ?=([%5 *] q.old-vase)
-      =/  old  !<(state-5 old-vase)
-      ~&  [%theseus-state-load %5]
+    ?+    -.q.old-vase  ~|([%theseus-unknown-state -.q.old-vase] !!)
+        %7
+      =/  old  !<(state-7 old-vase)
+      ~&  [%theseus-state-load %7]
       `this(state old)
-    ~|  [%theseus-unknown-state -.q.old-vase]
-    !!
+    ::
+        %6
+      =/  old  !<(state-6 old-vase)
+      ~&  [%theseus-state-migrate %6 %7]
+      ::  every plan so far installed from us
+      ::
+      =/  plans=(map ship install-plan)
+        %-  ~(run by install-plans.old)
+        |=  p=install-plan-6
+        ^-  install-plan
+        :*  desks.p
+            %-  ~(gas by *(map desk [=ship =desk]))
+            %+  turn  ~(tap in desks.p)
+            |=(d=desk [d our.bowl ?:(=(d %base) %kids d)])
+            progress.p
+            started.p
+            updated.p
+        ==
+      :-  ~
+      %=    this
+          state
+        :*  %7  piers.old  fleet-snaps.old  files.old  park.old  caches.old
+            boot-caches.old  plans  install-timer.old
+        ==
+      ==
+    ::
+        %5
+      =/  old  !<(state-5 old-vase)
+      ~&  [%theseus-state-migrate %5 %7]
+      :-  ~
+      %=  this
+        state  [%7 piers.old fleet-snaps.old files.old park.old caches.old ~ ~ ~]
+      ==
+    ==
   ::
   ++  on-poke
     |=  [=mark =vase]
@@ -264,8 +349,9 @@
           ?-  -.cmd
             %boot
               ?>  (child-of:dingy our.bowl who.cmd)
+              ?>  ?&((gth (lent desks.cmd) 0) (lte (lent desks.cmd) 64))
               =/  kp  (gen-keypair:dingy (key-seed:dingy who.cmd 0 eny.bowl))
-              (poke-action:hc [%init-moon who.cmd cache.cmd pub.kp priv.kp])
+              (poke-action:hc [%init-moon-desks who.cmd desks.cmd pub.kp priv.kp])
             %dojo
               ?>  (lte (met 3 command.cmd) 16.384)
               (poke-theseus-events:hc (dojo-events:theseus who.cmd (trip command.cmd)))
@@ -303,6 +389,8 @@
     ?+    path  ~
         [%x %ui ~]
       ``json+!>(ui-state:hc)
+        [%x %desks ~]
+      ``json+!>(ui-host-desks:hc)
     ::  host-only (Eyre /~/scry requires the owner): login code and whether
     ::  %landscape is installed, read from inside the moon at open time
     ::
@@ -374,7 +462,14 @@
   ++  on-watch  on-watch:def
   ++  on-leave  on-leave:def
   ++  on-agent  on-agent:def
-  ++  on-arvo   on-arvo:def
+  ++  on-arvo
+    |=  [=wire =sign-arvo]
+    ^-  (quip card _this)
+    ?.  ?=([%install-plans @ ~] wire)
+      (on-arvo:def wire sign-arvo)
+    ?>  ?=([%behn %wake *] sign-arvo)
+    =^  cards  state  (wake-install-plans:hc (slav %da i.t.wire))
+    [cards this]
   ++  on-fail   on-fail:def
   --
 ::
@@ -395,7 +490,7 @@
   =,  enjs:format
   %-  pairs
   :~  [%host s+(scot %p our.bowl)]
-      [%version (numb 1)]
+      [%version (numb 2)]
       [%moons a+(turn ~(tap by piers) ui-moon)]
       [%caches a+(turn ~(tap by caches) |=([name=@tas cache=vase] s+name))]
       [%snapshots a+(turn ~(tap by fleet-snaps) ui-snapshot)]
@@ -413,7 +508,80 @@
       [%queued (numb queued.h)]
       [%identity b+identity-ok.h]
       [%vanes a+(turn ~(tap in vanes.h) |=(v=@tas s+v))]
+      [%desks a+(ui-plan who)]
   ==
+::
+++  ui-plan
+  |=  who=ship
+  ^-  (list json)
+  =/  plan  (~(get by install-plans) who)
+  ?~  plan  ~
+  %+  turn  ~(tap by progress.u.plan)
+  |=  [=desk pro=desk-progress]
+  =/  src  (~(get by sources.u.plan) desk)
+  =,  enjs:format
+  %-  pairs
+  :~  [%desk s+desk]
+      [%stage s+stage.pro]
+      [%reason ?~(reason.pro ~ s+u.reason.pro)]
+      :-  %source
+      ?~  src  ~
+      (pairs ~[[%ship s+(scot %p ship.u.src)] [%desk s+desk.u.src]])
+  ==
+::
+++  host-desk-set
+  ^-  (set desk)
+  .^((set desk) %cd /(scot %p our.bowl)//(scot %da now.bowl))
+::
+++  host-pikes
+  ^-  kiln-pikes
+  ;;  kiln-pikes
+  .^(* %gx /(scot %p our.bowl)/hood/(scot %da now.bowl)/kiln/pikes/kiln-pikes)
+::
+::  a desk with a docket is a Landscape app and needs %landscape; the
+::  docket itself is only read for its title, so a bad one costs the title
+::
+++  host-has-docket
+  |=  des=desk
+  ^-  ?
+  .^(? %cu /(scot %p our.bowl)/[des]/(scot %da now.bowl)/desk/docket-0)
+::
+++  host-docket
+  |=  des=desk
+  ^-  (unit docket:dock)
+  ?.  (host-has-docket des)  ~
+  %-  mole  |.
+  .^(docket:dock %cx /(scot %p our.bowl)/[des]/(scot %da now.bowl)/desk/docket-0)
+::
+++  ui-host-desks
+  ^-  json
+  =/  pks  host-pikes
+  =/  rows=(list json)
+    %+  turn
+      %+  sort
+        %+  skim  ~(tap in host-desk-set)
+        |=(d=desk &(!=(d %kids) !=(d %theseus)))
+      |=  [a=desk b=desk]
+      ?:  =(a %base)  &
+      ?:  =(b %base)  |
+      (aor a b)
+    |=  des=desk
+    =/  pik  (~(get by pks) des)
+    =/  doc  (host-docket des)
+    =/  dep=(list desk)
+      ?:  |(=(des %landscape) !(host-has-docket des))  ~
+      ~[%landscape]
+    =,  enjs:format
+    %-  pairs
+    :~  [%desk s+des]
+        [%title ?~(doc ~ s+title.u.doc)]
+        [%running b+?:(?=(^ pik) =(%live zest.u.pik) |)]
+        [%hash ?~(pik ~ s+(scot %uv hash.u.pik))]
+        [%source ?~(pik ~ ?~(sync.u.pik ~ (pairs ~[[%ship s+(scot %p ship.u.sync.u.pik)] [%desk s+desk.u.sync.u.pik]])))]
+        [%dependencies a+(turn dep |=(d=desk s+d))]
+    ==
+  =,  enjs:format
+  (pairs ~[[%version (numb 1)] [%desks a+rows]])
 ::
 ++  ui-web
   |=  who=ship
@@ -524,8 +692,13 @@
       ?:  =(p.card.i.effects %push)
         ~&  [%theseus-rejected-push who]
         ..abet-pe
-      ?:  &(=(p.card.i.effects %unto) ?=(^ q.card.i.effects))
-        ((slog (flop ;;(tang +.q.card.i.effects))) ~&(who=who ..abet-pe))
+      ::  answers to pokes we injected (e.g. |install): report only nacks
+      ::
+      ?:  =(p.card.i.effects %unto)
+        =/  ack  (mole |.(;;([%poke-ack (unit tang)] q.card.i.effects)))
+        ?.  ?=([~ %poke-ack ^] ack)  ..abet-pe
+        %.  ..abet-pe
+        (slog leaf+"theseus: {<who>} rejected a poke" (flop u.+.u.ack))
       ..abet-pe
     $(effects t.effects)
   ::
@@ -632,6 +805,327 @@
   =.  this  abet-pe:plow:(pe u.active)
   $
 ::
+::  +resolve-host-desks: the desks for a new moon, and where each updates from
+::
+::    %base always comes, tracking our %kids.  A desk with a docket is a
+::    Landscape app and brings %landscape (from us, unless chosen).  A
+::    %publisher source is the ship our own copy syncs from; a desk we sync
+::    from no one can only come from us.
+::
+++  resolve-host-desks
+  |=  requested=(list [=desk from=desk-from])
+  ^-  (map desk [=ship =desk])
+  =/  available  host-desk-set
+  =/  asked=(map desk desk-from)
+    (~(put by (malt requested)) %base %host)
+  =/  invalid=(list desk)
+    %+  skim  ~(tap in ~(key by asked))
+    |=  d=desk
+    |(=(d %kids) =(d %theseus) !(~(has in available) d))
+  ?^  invalid
+    ~|([%theseus-boot-invalid-desks invalid] !!)
+  =?  asked
+      ?&  !(~(has by asked) %landscape)
+          (lien ~(tap in ~(key by asked)) host-has-docket)
+      ==
+    ?.  (~(has in available) %landscape)
+      ~|([%theseus-boot-missing-dependency %landscape] !!)
+    (~(put by asked) %landscape %host)
+  =/  pks  host-pikes
+  %-  ~(urn by asked)
+  |=  [d=desk from=desk-from]
+  ^-  [=ship =desk]
+  ?:  =(d %base)  [our.bowl %kids]
+  ?:  ?=(%host from)  [our.bowl d]
+  =/  up=(unit [=ship =desk])  (biff (~(get by pks) d) |=(k=kiln-pike sync.k))
+  ?~  up  ~|([%theseus-boot-no-publisher d] !!)
+  ?:  =(our.bowl ship.u.up)  ~|([%theseus-boot-no-publisher d] !!)
+  u.up
+::  +desk-publishers: ships our copies of .desks sync from, other than us
+::
+++  desk-publishers
+  |=  desks=(set desk)
+  ^-  (set ship)
+  =/  pks  host-pikes
+  %-  silt
+  %+  murn  ~(tap in desks)
+  |=  d=desk
+  ^-  (unit ship)
+  ?:  =(d %base)  ~
+  =/  up  (biff (~(get by pks) d) |=(k=kiln-pike sync.k))
+  ?~  up  ~
+  ?:  =(our.bowl ship.u.up)  ~
+  `ship.u.up
+::
+++  host-desk-hashes
+  |=  desks=(set desk)
+  ^-  (map desk @uv)
+  =/  pks  host-pikes
+  %-  ~(gas by *(map desk @uv))
+  %+  turn  ~(tap in desks)
+  |=  d=desk
+  =/  pik
+    ~|  [%theseus-boot-missing-pike d]
+    (~(got by pks) d)
+  [d hash.pik]
+::
+::  +plan-for: progress for a new install plan, every desk but %base at .stage
+::
+++  plan-for
+  |=  [sources=(map desk [=ship =desk]) stage=desk-stage]
+  ^-  install-plan
+  =/  desks  ~(key by sources)
+  :*  desks
+      sources
+      %-  ~(gas by *(map desk desk-progress))
+      %+  turn  ~(tap in desks)
+      |=(d=desk [d d ?:(=(d %base) %running stage) ~])
+      now.bowl
+      now.bowl
+  ==
+::  +kiln-install-event: |install .des from .src, inside the moon
+::
+::    Same as typing |install in the moon's dojo, without the parsing.  The
+::    seeded desk already has .src's history, so this sets its source.
+::
+++  kiln-install-event
+  |=  [who=ship des=desk src=[=ship =desk]]
+  ^-  theseus-event
+  :-  who
+  :*  /g
+      %deal
+      `sack`[who who /theseus/install/[des]]
+      %hood
+      `deal:gall`[%raw-poke %kiln-install [des ship.src desk.src]]
+  ==
+::  +treaty-ally-event: ally .her in the moon's %treaty
+::
+::    Landscape allies a publisher before installing its apps, and Docket
+::    installs only apps whose treaty it has.  Kiln's |install skips this, so
+::    without it the moon can't install anything else from .her (e.g. an
+::    app's in-app "install Noltbook" button).
+::
+++  treaty-ally-event
+  |=  [who=ship her=ship]
+  ^-  theseus-event
+  :-  who
+  :*  /g
+      %deal
+      `sack`[who who /theseus/ally]
+      %treaty
+      `deal:gall`[%raw-poke %ally-update-0 [%add her]]
+  ==
+::
+++  moon-pikes
+  |=  who=ship
+  ^-  (unit kiln-pikes)
+  =/  saved  (~(get by piers) who)
+  ?~  saved  ~
+  =/  res
+    %-  mole  |.
+    %+  peek-arvo:theseus-kernel  snap.u.saved
+    [[~ ~] / %gx [who %hood da+scry-time.u.saved] /kiln/pikes/kiln-pikes]
+  ?.  ?=([~ ~ ~ *] res)  ~
+  (mole |.(;;(kiln-pikes q.q.u.u.u.res)))
+::
+++  plan-pending
+  |=  plan=install-plan
+  ^-  ?
+  %+  lien  ~(val by progress.plan)
+  |=(pro=desk-progress ?=(?(%seeded %installing) stage.pro))
+::  +next-progress: one chosen desk's stage, from the moon's Kiln
+::
+::    Kiln may not have handled the install yet, and keeps a seeded desk
+::    %dead until its first merge from us, so neither is a failure until the
+::    plan is .late.  A desk that tracks some other source has failed.
+::
+++  next-progress
+  |=  [d=desk src=[=ship =desk] pik=(unit kiln-pike) late=?]
+  ^-  desk-progress
+  ?:  =(d %base)  [d %running ~]
+  =/  wait=desk-progress
+    ?.  late  [d %installing ~]
+    [d %failed `'Timed out waiting for Kiln to install the desk.']
+  ?~  pik  wait
+  ?~  sync.u.pik  wait
+  ?.  =(src u.sync.u.pik)
+    [d %failed `'The desk tracks another source.']
+  ?:(?=(%live zest.u.pik) [d %running ~] wait)
+::
+++  install-timeout  ~m20
+++  install-poll  ~s2
+::
+++  refresh-install-plans
+  ^-  (map ship install-plan)
+  %-  ~(urn by install-plans)
+  |=  [who=ship plan=install-plan]
+  ?.  (plan-pending plan)  plan
+  =/  pks  (moon-pikes who)
+  =/  late=?  (gth now.bowl (add started.plan install-timeout))
+  ?:  &(?=(~ pks) !late)  plan
+  =/  got=kiln-pikes  (fall pks ~)
+  %=    plan
+      updated  now.bowl
+      progress
+    %-  ~(urn by progress.plan)
+    |=  [d=desk pro=desk-progress]
+    ?.  ?=(?(%seeded %installing) stage.pro)  pro
+    (next-progress d (~(gut by sources.plan) d [our.bowl d]) (~(get by got) d) late)
+  ==
+::  +arm-install-timer: poll Kiln while any install is pending
+::
+++  arm-install-timer
+  ^-  (quip card _state)
+  ?^  install-timer  `state
+  ?.  (lien ~(val by install-plans) plan-pending)  `state
+  =/  when  (add now.bowl install-poll)
+  :_  state(install-timer `when)
+  [%pass /install-plans/(scot %da when) %arvo %b %wait when]~
+::
+++  wake-install-plans
+  |=  when=@da
+  ^-  (quip card _state)
+  ?.  =(`when install-timer)  `state
+  =.  install-timer  ~
+  =.  install-plans  refresh-install-plans
+  arm-install-timer
+::  +prune-boot-caches: keep the newest few still matching our desks
+::
+::    Each boot cache holds a copy of our Clay data, so drop any whose desk
+::    hashes no longer match ours (it would never be reused) and cap the rest.
+::
+++  max-boot-caches  8
+++  prune-boot-caches
+  |=  bcs=(map (set desk) boot-cache)
+  ^-  (map (set desk) boot-cache)
+  =/  pks  host-pikes
+  =/  live=(list [(set desk) boot-cache])
+    %+  skim  ~(tap by bcs)
+    |=  [desks=(set desk) bc=boot-cache]
+    %+  levy  ~(tap by hashes.bc)
+    |=  [d=desk h=@uv]
+    =(`h (bind (~(get by pks) d) |=(k=kiln-pike hash.k)))
+  %-  ~(gas by *(map (set desk) boot-cache))
+  %+  scag  max-boot-caches
+  %+  sort  live
+  |=  [a=[(set desk) boot-cache] b=[(set desk) boot-cache]]
+  (gth built-at.+.a built-at.+.b)
+::
+::  +boot-moon: boot .who from .cache, then install .installs from us
+::
+::    Only %base is in the moon's Clay at boot.  Kiln's +on-init revives
+::    every desk present then, during the boot cascade and before Eyre's
+::    %init, which resets Eyre's bindings: a Landscape app started that way
+::    loses its /apps binding.  So the cache's other desks are added once
+::    the moon has booted, with their history (the files are already in
+::    .ran from the cache), and revived; then each of .installs other than
+::    %base is |installed from us so it tracks our copy.
+::
+++  boot-moon
+  |=  $:  act=[who=ship cache=vase pub=pass key=@]
+          installs=(map desk [=ship =desk])
+          allies=(set ship)
+      ==
+  ^-  (quip card _state)
+  ?:  (~(has by piers) who.act)
+    ~|([%theseus-init-existing who.act] !!)
+  ::  Re-initializing a moon discards its Arvo state, so it is a breach as
+  ::  well as a key rotation.  Advancing only life falsely preserves the
+  ::  old continuity namespace: remote peers can then request Clay revisions
+  ::  from the discarded pier (for example /c/z/2/kids) that the new pier
+  ::  cannot serve.  Advance rift and life together, and boot %dawn with the
+  ::  exact pair registered in the host's Jael.
+  =/  old-life=(unit @ud)
+    .^  (unit @ud)  %j
+      /(scot %p our.bowl)/lyfe/(scot %da now.bowl)/(scot %p who.act)
+    ==
+  =/  prior=(unit [rift=@ud life=@ud])
+    ?~  old-life  ~
+    =/  old-rift=(unit @ud)
+      .^  (unit @ud)  %j
+        /(scot %p our.bowl)/ryft/(scot %da now.bowl)/(scot %p who.act)
+      ==
+    ~|  [%theseus-init-missing-rift who.act u.old-life]
+    =/  old-rift-val=@ud  (need old-rift)
+    `[old-rift-val u.old-life]
+  =/  moon-rift=@ud  ?~(prior 0 +(rift.u.prior))
+  =/  moon-life=@ud  ?~(prior 1 +(life.u.prior))
+  ::  Provision the moon with our current view of its whole sponsor chain
+  ::  (us -> star -> galaxy); see +boot-chain.
+  =/  chain=(list ship)
+    .^((list ship) %j /(scot %p our.bowl)/saxo/(scot %da now.bowl)/(scot %p our.bowl))
+  =/  boot  (boot-chain chain)
+  =/  turves=(list turf)
+    .^((list turf) %j /(scot %p our.bowl)/turf/(scot %da now.bowl))
+  ::  register the moon's public key with our Jael (self-sufficient
+  ::  resident moon; no separate dingy agent). jael only accepts our moons.
+  =/  rift-card=card
+    :*  %pass  /theseus/moon-rift/(scot %p who.act)  %arvo  %j
+        %moon  who.act  [*id:block:jael %rift moon-rift %.n]
+    ==
+  =/  key-card=card
+    :*  %pass  /theseus/moon/(scot %p who.act)  %arvo  %j
+        %moon  who.act  [*id:block:jael %keys [moon-life 1 pub.act] %.n]
+    ==
+  =/  reg-cards=(list card)
+    ?~(prior [key-card ~] [rift-card key-card ~])
+  =/  ker=kernel:theseus-kernel
+    (build:theseus-kernel our.bowl now.bowl)
+  =/  later=(set desk)
+    %-  ~(dif in (raft-desks:theseus-kernel clay.ker cache.act))
+    (sy ~[%base %kids])
+  =^  cards  state
+    =.  this  apex-theseus  =<  abet-theseus
+  =/  clay-vase
+    (seed-clay-keep:theseus-kernel clay.ker who.act cache.act (sy ~[%base]))
+  ::  Build the complete typed pier off-map.  Never expose an empty placeholder:
+  ::  if construction fails, no fleet record exists; if it succeeds, the first
+  ::  visible record already contains all nine vanes.
+  =/  new=pier  *pier
+  =.  new  new(snap (make-arvo:theseus-kernel who.act ker files clay-vase), paused |)
+  =.  piers  (~(put by piers) who.act (pack-pier new))
+  =.  this
+    =<  abet-pe:plow
+    %-  push-events:(pe who.act)
+    ^-  (list unix-event)
+    ::  boot %dawn with the real key (ring), the sponsor chain (spon, czar)
+    ::  and turf, scried from our Jael.
+    ::  feed %2 = [[%2 ~] who rift [life ring]~].
+    :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act moon-rift [moon-life key.act]~] spon.boot czar.boot turves 0 ~]
+        [/b/behn/0v1n.2m9vh %born ~]
+        [/i/http-client/0v1n.2m9vh %born ~]
+        [/e/http-server/0v1n.2m9vh %born ~]
+        [/e/http-server/0v1n.2m9vh %live 8.080 `8.445]
+        [/a/newt/0v1n.2m9vh %born ~]
+        [/c/commit/(scot %p who.act) (prune-boot-park (unpack-park park))]
+    ==
+    (pe who.act)
+  =/  boot-cards  (weld reg-cards cards)
+  =?  install-plans  !=(~ installs)
+    (~(put by install-plans) who.act (plan-for installs %installing))
+  ?:  =(~ later)  [boot-cards state]
+  =.  piers
+    =/  pier=pier  (unpack-pier (~(got by piers) who.act))
+    %+  ~(put by piers)  who.act
+    (pack-pier pier(snap (inject-desks:theseus-kernel snap.pier cache.act later)))
+  ::  revive the added desks, |install each from its source, then ally
+  ::  publishers once %treaty (in %landscape) is running
+  ::
+  =/  events=(list theseus-event)
+    ;:  weld
+      %+  turn  ~(tap in later)
+      |=(d=desk `theseus-event`[who.act /c/zest/[d] %zest d %live])
+    ::
+      %+  turn  (skip ~(tap by installs) |=([d=desk *] =(d %base)))
+      |=([d=desk src=[=ship =desk]] (kiln-install-event who.act d src))
+    ::
+      ?.  (~(has in later) %landscape)  ~
+      (turn ~(tap in allies) |=(her=ship (treaty-ally-event who.act her)))
+    ==
+  =^  event-cards  state  (poke-theseus-events events)
+  =^  timer-cards  state  arm-install-timer
+  [:(weld boot-cards event-cards timer-cards) state]
+::
 ++  poke-action
   |=  act=action
   ^-  (quip card _state)
@@ -665,79 +1159,28 @@
     (pe who.act)
   ::
       %init-moon
-    ?:  (~(has by piers) who.act)
-      ~|([%theseus-init-existing who.act] !!)
-    ::  Re-initializing a moon discards its Arvo state, so it is a breach as
-    ::  well as a key rotation.  Advancing only life falsely preserves the
-    ::  old continuity namespace: remote peers can then request Clay revisions
-    ::  from the discarded pier (for example /c/z/2/kids) that the new pier
-    ::  cannot serve.  Advance rift and life together, and boot %dawn with the
-    ::  exact pair registered in the host's Jael.
-    =/  old-life=(unit @ud)
-      .^  (unit @ud)  %j
-        /(scot %p our.bowl)/lyfe/(scot %da now.bowl)/(scot %p who.act)
-      ==
-    =/  prior=(unit [rift=@ud life=@ud])
-      ?~  old-life  ~
-      =/  old-rift=(unit @ud)
-        .^  (unit @ud)  %j
-          /(scot %p our.bowl)/ryft/(scot %da now.bowl)/(scot %p who.act)
-        ==
-      ~|  [%theseus-init-missing-rift who.act u.old-life]
-      =/  old-rift-val=@ud  (need old-rift)
-      `[old-rift-val u.old-life]
-    =/  moon-rift=@ud  ?~(prior 0 +(rift.u.prior))
-    =/  moon-life=@ud  ?~(prior 1 +(life.u.prior))
-    ::  Provision the moon with our current view of its whole sponsor chain
-    ::  (us -> star -> galaxy); see +boot-chain.
-    =/  chain=(list ship)
-      .^((list ship) %j /(scot %p our.bowl)/saxo/(scot %da now.bowl)/(scot %p our.bowl))
-    =/  boot  (boot-chain chain)
-    =/  turves=(list turf)
-      .^((list turf) %j /(scot %p our.bowl)/turf/(scot %da now.bowl))
-    ::  register the moon's public key with our Jael (self-sufficient
-    ::  resident moon; no separate dingy agent). jael only accepts our moons.
-    =/  rift-card=card
-      :*  %pass  /theseus/moon-rift/(scot %p who.act)  %arvo  %j
-          %moon  who.act  [*id:block:jael %rift moon-rift %.n]
-      ==
-    =/  key-card=card
-      :*  %pass  /theseus/moon/(scot %p who.act)  %arvo  %j
-          %moon  who.act  [*id:block:jael %keys [moon-life 1 pub.act] %.n]
-      ==
-    =/  reg-cards=(list card)
-      ?~(prior [key-card ~] [rift-card key-card ~])
-    =^  cards  state
-      =.  this  apex-theseus  =<  abet-theseus
-    =/  ker=kernel:theseus-kernel
-      (build:theseus-kernel our.bowl now.bowl)
-    =/  clay-vase
-      %^  seed-clay:theseus-kernel  clay.ker  who.act
+    =/  cache-vase
       ~|  "{<cache.act>} cache doesn't exist, try %default cache"
       (~(got by caches) cache.act)
-    ::  Build the complete typed pier off-map.  Never expose an empty placeholder:
-    ::  if construction fails, no fleet record exists; if it succeeds, the first
-    ::  visible record already contains all nine vanes.
-    =/  new=pier  *pier
-    =.  new  new(snap (make-arvo:theseus-kernel who.act ker files clay-vase), paused |)
-    =.  piers  (~(put by piers) who.act (pack-pier new))
-    =.  this
-      =<  abet-pe:plow
-      %-  push-events:(pe who.act)
-      ^-  (list unix-event)
-      ::  boot %dawn with the real key (ring), the sponsor chain (spon, czar)
-      ::  and turf, scried from our Jael.
-      ::  feed %2 = [[%2 ~] who rift [life ring]~].
-      :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act moon-rift [moon-life key.act]~] spon.boot czar.boot turves 0 ~]
-          [/b/behn/0v1n.2m9vh %born ~]
-          [/i/http-client/0v1n.2m9vh %born ~]
-          [/e/http-server/0v1n.2m9vh %born ~]
-          [/e/http-server/0v1n.2m9vh %live 8.080 `8.445]
-          [/a/newt/0v1n.2m9vh %born ~]
-          [/c/commit/(scot %p who.act) (prune-boot-park (unpack-park park))]
-      ==
-      (pe who.act)
-    [(weld reg-cards cards) state]
+    (boot-moon [who.act cache-vase pub.act key.act] ~ ~)
+  ::
+      %init-moon-desks
+    ?:  (~(has by piers) who.act)
+      ~|([%theseus-init-existing who.act] !!)
+    =/  sources  (resolve-host-desks desks.act)
+    =/  selected=(set desk)  ~(key by sources)
+    =/  hashes  (host-desk-hashes selected)
+    =/  prior  (~(get by boot-caches) selected)
+    =/  reuse=?  ?&(?=(^ prior) =(hashes hashes.u.prior))
+    =/  cache-vase=vase
+      ?:  reuse  cache:(need prior)
+      (cache-from-host:theseus-kernel our.bowl now.bowl ~(tap in selected))
+    =?  boot-caches  !reuse
+      %-  prune-boot-caches
+      (~(put by boot-caches) selected [hashes cache-vase now.bowl])
+    %^  boot-moon  [who.act cache-vase pub.act key.act]
+      sources
+    (desk-publishers selected)
   ::
       %init-planet
     ?:  (~(has by piers) who.act)
@@ -855,6 +1298,10 @@
       %-  ~(dif by piers)
       %-  ~(gas by *fleet)
       (turn hers.act |=(=ship [ship *saved-pier]))
+    =.  install-plans
+      %-  ~(dif by install-plans)
+      %-  ~(gas by *(map ship install-plan))
+      (turn hers.act |=(=ship [ship *install-plan]))
     ~&  [%theseus-killed hers.act]
     [kill-cards state]
   ::

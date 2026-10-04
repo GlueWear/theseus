@@ -1,6 +1,6 @@
 |%
 +$  command
-  $%  [%boot who=ship cache=@tas]
+  $%  [%boot who=ship desks=(list [=desk from=?(%host %publisher)])]
       [%dojo who=ship command=@t]
       [%pause who=ship]
       [%resume who=ship]

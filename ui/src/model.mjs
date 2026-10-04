@@ -42,8 +42,41 @@ export function blitsToAnsi(blits) {
   }).join('');
 }
 export function validateFleet(data) {
-  if (data?.version !== 1 || !Array.isArray(data.moons) || !Array.isArray(data.snapshots) || !Array.isArray(data.caches) || !ob.isValidPatp(data.host)) throw new Error('Theseus management API is unavailable or incompatible.');
+  if (data?.version !== 2 || !Array.isArray(data.moons) || !Array.isArray(data.snapshots) || !Array.isArray(data.caches) || !ob.isValidPatp(data.host)) throw new Error('Theseus management API is unavailable or incompatible.');
+  if (data.moons.some(m => !Array.isArray(m.desks))) throw new Error('Theseus returned an invalid moon desk plan.');
   return data;
+}
+export function validateHostDesks(data) {
+  if (data?.version !== 1 || !Array.isArray(data.desks)) throw new Error('Theseus host desk inventory is unavailable or incompatible.');
+  for (const row of data.desks) {
+    if (!/^[a-z][a-z0-9-]*$/.test(row?.desk) || !Array.isArray(row.dependencies) || typeof row.running !== 'boolean') throw new Error('Theseus returned an invalid host desk record.');
+  }
+  return {...data, desks: [...data.desks].sort((a, b) => a.desk === 'base' ? -1 : b.desk === 'base' ? 1 : a.desk.localeCompare(b.desk))};
+}
+export function resolveDeskSelection(catalog, explicit = []) {
+  const byName = new Map(catalog.map(row => [row.desk, row]));
+  const selected = new Set(['base', ...explicit.filter(name => byName.has(name))]);
+  const reasons = new Map();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const name of [...selected]) for (const dependency of byName.get(name)?.dependencies || []) {
+      if (!byName.has(dependency) || selected.has(dependency)) continue;
+      selected.add(dependency); reasons.set(dependency, name); changed = true;
+    }
+  }
+  const desks = [...selected].sort((a, b) => a === 'base' ? -1 : b === 'base' ? 1 : a.localeCompare(b));
+  return {desks, reasons};
+}
+// Where a chosen desk takes its updates from: the host, or the ship the host's
+// own copy syncs from (its publisher). %base always tracks the host, and a desk
+// the host syncs from no one can only come from the host.
+export function deskPublisher(row, host) {
+  return row && row.desk !== 'base' && row.source && row.source.ship !== host ? row.source : null;
+}
+export function bootDesks(catalog, desks, from = {}, host) {
+  const byName = new Map(catalog.map(row => [row.desk, row]));
+  return desks.map(desk => ({desk, from: from[desk] === 'publisher' && deskPublisher(byName.get(desk), host) ? 'publisher' : 'host'}));
 }
 // Web gateway: moon origins come from the gateway's address template,
 // e.g. 'http://{moon}.localhost:8084' or 'https://{moon}.example.com'.

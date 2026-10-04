@@ -24,6 +24,29 @@ test('fleet, boot, snapshot pause, restore, and removal',async({page})=>{
   await page.getByRole('dialog').getByRole('button',{name:'Remove moon',exact:true}).click();
   await expect(page.getByRole('button',{name,exact:true})).toHaveCount(0);
 });
+test('boot picker lists every desk and adds Landscape for docket apps',async({page})=>{
+  await page.goto('/'); await page.getByRole('button',{name:'Boot moon',exact:true}).click();
+  const dialog=page.getByRole('dialog');
+  await expect(dialog.getByLabel('Include %base')).toBeChecked();
+  await expect(dialog.getByLabel('Include %base')).toBeDisabled();
+  await expect(dialog.getByLabel('Include %noltbook-data')).toBeVisible();
+  await dialog.getByLabel('Include %glurff').check();
+  await expect(dialog.getByLabel('Include %landscape')).toBeChecked();
+  await expect(dialog.getByLabel('Include %landscape')).toBeDisabled();
+  await expect(dialog).toContainText('Added %landscape because %glurff has a Landscape tile.');
+  // only desks the host syncs from someone else offer that ship as a source
+  await expect(dialog.getByLabel('Updates for %base')).toHaveCount(0);
+  await expect(dialog.getByLabel('Updates for %landscape')).toHaveCount(0);
+  await expect(dialog.getByLabel('Updates for %glurff')).toHaveValue('host');
+  await dialog.getByLabel('Updates for %glurff').selectOption('publisher');
+  await page.screenshot({path:'test-results/picker-desktop.png',fullPage:true});
+  const name=await dialog.getByLabel('Moon name',{exact:true}).inputValue();
+  await dialog.getByRole('button',{name:'Boot moon',exact:true}).click();
+  const row=page.locator('tbody tr').filter({hasText:name});
+  await expect(row).toContainText('%base'); await expect(row).toContainText('%glurff'); await expect(row).toContainText('%landscape');
+  await expect(row.locator('.desk-state',{hasText:'%glurff'}).first()).toHaveAttribute('title',/updates from ~nolset\/%glurff/);
+  await expect(row.locator('.desk-state',{hasText:'%landscape'}).first()).toHaveAttribute('title',/updates from ~siglup-narwet\/%landscape/);
+});
 test('dedicated Dojo receives output and keeps rejected command',async({page})=>{
   await page.goto('/');await page.getByRole('button',{name:`Open Dojo for ${moon}`}).click();
   const input=page.getByLabel(`Command for ${moon}`); await expect(input).toBeEnabled(); await expect(input).toBeFocused();
@@ -41,7 +64,7 @@ test('mobile layout and keyboard dialog cancellation',async({page})=>{
   await page.setViewportSize({width:390,height:844});await page.goto('/');await expect(page.getByRole('button',{name:moon,exact:true})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
   await page.screenshot({path:'test-results/fleet-mobile.png',fullPage:true});
-  await page.getByRole('button',{name:'Boot moon',exact:true}).click();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button',{name:'Boot moon',exact:true}).click();await expect(page.getByLabel('Include %noltbook-data')).toBeVisible();await page.screenshot({path:'test-results/picker-mobile.png',fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button',{name:moon,exact:true}).click();await page.screenshot({path:'test-results/dojo-mobile.png',fullPage:true});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
 });

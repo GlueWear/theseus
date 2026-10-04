@@ -1,5 +1,5 @@
 import Urbit from '@urbit/http-api';
-import { validateFleet } from './model.mjs';
+import { validateFleet, validateHostDesks } from './model.mjs';
 export const api = new Urbit('');
 let started = false;
 // http-api 3.0.0 registers an unbound `this.delete` on beforeunload, which
@@ -18,6 +18,11 @@ export async function fleet() {
     api.ship = data.host.slice(1);
     return data;
   } finally { clearTimeout(timer); }
+}
+export async function hostDesks() {
+  const res = await fetch('/~/scry/theseus/desks.json', {credentials: 'same-origin', cache: 'no-store'});
+  if (!res.ok) throw new Error(`Could not read host desks (HTTP ${res.status}).`);
+  return validateHostDesks(await res.json());
 }
 // Host-only: the moon's login code and whether %landscape is installed.
 export async function moonWeb(who) {

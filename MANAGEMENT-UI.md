@@ -25,10 +25,17 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
 ### API
 
 - `GET /~/scry/theseus/ui.json` →
-  `{version: 1, host, caches: [..], moons: [{ship, status, paused, queued, identity, vanes}], snapshots: [{path, created, compatible, ships}]}`.
+  `{version: 2, host, caches: [..], moons: [{ship, status, paused, queued, identity, vanes, desks}], snapshots: [{path, created, compatible, ships}]}`.
+  `desks` is the moon's install plan, `[{desk, stage, reason, source: {ship, desk}}]`,
+  with `stage` one of `installing`, `running`, `failed`. It is empty for
+  moons booted before the desk picker.
+- `GET /~/scry/theseus/desks.json` → `{version: 1, desks: [{desk, title, running, hash, source: {ship, desk} | null, dependencies}]}`:
+  every host desk except `%kids` and `%theseus`. `source` is where the host's
+  own copy syncs from.
 - Poke `%theseus` with mark `theseus-ui`, one key per command:
-  `boot {who, cache}`, `dojo {who, command}`, `pause|resume|kill {who}`,
-  `snapshot {name, ships}`, `restore|delete {path}`.
+  `boot {who, desks: [{desk, from: "host"|"publisher"}]}`, `dojo {who, command}`,
+  `pause|resume|kill {who}`, `snapshot {name, ships}`, `restore|delete {path}`.
+  See "Choosing a moon's desks" in ARCHITECTURE.md for what `boot` does.
 - `GET /~/scry/theseus/web/~<moon>.json` → `{ship, code, landscape}`: the moon's
   login code (no `~`) and whether `%landscape` is installed, read from inside the
   moon when asked.

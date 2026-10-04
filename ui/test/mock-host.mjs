@@ -3,12 +3,21 @@ import {createServer} from 'node:http';
 const host = '~siglup-narwet';
 const first = '~sampel-siglup-narwet';
 const vanes = ['ames','behn','clay','dill','eyre','gall','iris','jael','khan'];
-const moon = ship => ({ship,status:'healthy',paused:false,queued:0,identity:true,vanes});
+const deskRows = [
+  {desk:'base',title:null,running:true,hash:'0vbase',source:{ship:host,desk:'kids'},dependencies:[]},
+  {desk:'glurff',title:'Glurff',running:true,hash:'0vglurff',source:{ship:'~nolset',desk:'glurff'},dependencies:['landscape']},
+  {desk:'groups',title:null,running:true,hash:'0vgroups',source:{ship:'~zod',desk:'groups'},dependencies:[]},
+  {desk:'landscape',title:'Landscape',running:true,hash:'0vlandscape',source:{ship:host,desk:'landscape'},dependencies:[]},
+  {desk:'noltbook-data',title:null,running:false,hash:'0vdata',source:null,dependencies:[]},
+];
+// Mirrors %theseus: each desk tracks the host, or the host's own source.
+const sourceOf = (desk, from) => from === 'publisher' ? deskRows.find(r => r.desk === desk).source : {ship:host, desk: desk === 'base' ? 'kids' : desk};
+const moon = (ship, desks=[{desk:'base',from:'host'},{desk:'landscape',from:'host'}]) => ({ship,status:'healthy',paused:false,queued:0,identity:true,vanes,desks:desks.map(({desk,from}) => ({desk,stage:'running',reason:null,source:sourceOf(desk,from)}))});
 let data;
 let gw;
 let installed = new Set();
 const code = 'lidlut-tabwed-pillex-ridrup';
-const reset = () => {data={version:1,host,moons:[moon(first)],caches:['default'],snapshots:[{path:'/baseline',ships:[first],compatible:true,created:'~2026.10.2..12.00.00'}]}; installed=new Set([first]); gw={mode:'auto',port:null,template:null,live:{port:5174,upstream:8083,at:'~2026.10.2..12.00.00'}};}; reset();
+const reset = () => {data={version:2,host,moons:[moon(first)],caches:['default'],snapshots:[{path:'/baseline',ships:[first],compatible:true,created:'~2026.10.2..12.00.00'}]}; installed=new Set([first]); gw={mode:'auto',port:null,template:null,live:{port:5174,upstream:8083,at:'~2026.10.2..12.00.00'}};}; reset();
 // Mirrors %theseus-ui's /x/gateway status logic.
 const gatewayJson = () => {
   const url = gw.mode === 'hosting' ? gw.template : gw.mode === 'declared' ? `http://{moon}.localhost:${gw.port}` : gw.live ? `http://{moon}.localhost:${gw.live.port}` : null;
@@ -35,6 +44,7 @@ createServer(async (req,res) => {
   }
   if (req.url === '/~/name') return res.end(host);
   if (req.url === '/~/scry/theseus/ui.json') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(data));}
+  if (req.url === '/~/scry/theseus/desks.json') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({version:1,desks:deskRows}));}
   if (!req.url.startsWith('/~/channel/')) {res.statusCode=404; return res.end();}
   const channel = channels.get(req.url) || {pending:[],response:null,sub:0}; channels.set(req.url,channel);
   if (req.method === 'GET') {
@@ -55,7 +65,11 @@ createServer(async (req,res) => {
     }
     const [kind,value] = Object.entries(action.json)[0];
     if (value.command === 'fail') {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
-    if (kind === 'boot') data.moons.push(moon(value.who));
+    if (kind === 'boot') {
+      // Mirrors mar/theseus/ui: every desk names its source, host or publisher.
+      if (!Array.isArray(value.desks) || !value.desks.every(d => typeof d?.desk === 'string' && ['host','publisher'].includes(d.from))) {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
+      data.moons.push(moon(value.who,value.desks)); if (value.desks.some(d => d.desk === 'landscape')) installed.add(value.who);
+    }
     if (kind === 'pause' || kind === 'resume') data.moons.find(m=>m.ship===value.who).paused=kind==='pause';
     if (kind === 'kill') data.moons=data.moons.filter(m=>m.ship!==value.who);
     if (kind === 'snapshot') {data.snapshots.push({path:`/${value.name}`,ships:value.ships,compatible:true,created:'~2026.10.2..12.00.00'});data.moons.forEach(m=>{if(value.ships.includes(m.ship))m.paused=true;});}

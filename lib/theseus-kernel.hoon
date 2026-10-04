@@ -89,7 +89,13 @@
 ++  cache-desks
   |=  [our=ship now=@da cache=vase]
   ^-  (set desk)
-  =/  vane  (slam (clay-src our now) !>(*@p))
+  (raft-desks (clay-src our now) cache)
+::  +raft-desks: +cache-desks against an already-built clay source (clay.ker)
+::
+++  raft-desks
+  |=  [src=vase cache=vase]
+  ^-  (set desk)
+  =/  vane  (slam src !>(*@p))
   !<((set desk) (slam (slap vane !,(*hoon |=(r=_ruf ~(key by dos.rom.r)))) cache))
 ::  +snap-raft: a running virtual ship's Clay raft, as a vase, sliced straight
 ::  out of its %clay vane (+clay-vane-of gives a self-typed vane vase carrying the
@@ -123,16 +129,44 @@
   |=  [src=vase who=ship cache=vase]
   ^-  vase
   =/  clay  (slam src !>(who))
-  ::  Drop %kids from the cached raft with a gate whose RESULT is just a raft
-  ::  (cheap), then splice it into the vane's `ruf` by NOUN surgery at ruf's axis.
-  ::  A `=. ruf.clay` (i.e. `+>(ruf r)`) would type-substitute into the whole clay
-  ::  vane type on every boot -- minutes of runtime each -- so we never do a
-  ::  vane-typed mint.  The axis comes from ruf's read-nock; legs compile to
-  ::  `[0 ax]` or axis-composed `[7 [0 a] ...]`, which we fold into one axis.
-  =/  clean=vase
-    %+  slam
-      (slap clay !,(*hoon |=(r=_ruf r(dos.rom (~(del by dos.rom.r) %kids)))))
-    cache
+  %+  splice-ruf  clay
+  %+  slam
+    (slap clay !,(*hoon |=(r=_ruf r(dos.rom (~(del by dos.rom.r) %kids)))))
+  cache
+::  +seed-clay-keep: +seed-clay, but seed only the .keep desks
+::
+::    The cached raft keeps all its commits and files (.ran); only the other
+::    desks are left out.  Desks present at boot are revived by Kiln's
+::    +on-init during the boot cascade, before Eyre's %init, which resets
+::    Eyre's bindings and so drops any their agents made.  +inject-desks
+::    adds the rest after boot.
+::
+++  seed-clay-keep
+  |=  [src=vase who=ship cache=vase keep=(set desk)]
+  ^-  vase
+  =/  clay  (slam src !>(who))
+  %+  splice-ruf  clay
+  %+  slam
+    %+  slap  clay
+    !,  *hoon
+    |=  [r=_ruf keep=(set @tas)]
+    %=    r
+        dos.rom
+      %-  malt
+      %+  skim  ~(tap by dos.rom.r)
+      |=([d=@tas *] &(!=(%kids d) (~(has in keep) d)))
+    ==
+  (slop cache !>(keep))
+::  +splice-ruf: install raft .clean as .clay's `ruf`, by noun surgery
+::
+::    A `=. ruf.clay` (i.e. `+>(ruf r)`) would type-substitute into the whole
+::    clay vane type on every boot -- minutes of runtime each -- so we never do
+::    a vane-typed mint.  The axis comes from ruf's read-nock; legs compile to
+::    `[0 ax]` or axis-composed `[7 [0 a] ...]`, which we fold into one axis.
+::
+++  splice-ruf
+  |=  [clay=vase clean=vase]
+  ^-  vase
   =/  nk  q:(~(mint ut p.clay) %noun !,(*hoon ruf))
   =/  ax=@
     |-  ^-  @
@@ -201,6 +235,32 @@
       $(dz t.dz)
     out
   !>([rng dznz])
+::  +inject-desks: add .desks from .cache to a running virtual ship's Clay
+::
+::    The ship must have booted from .cache, so its .ran already holds every
+::    commit and file these desks reference: only their domes are added, with
+::    history intact, and the ship's own .ran (and any commits it has made
+::    since) is untouched.  Desks it already has are left alone.  Nothing is
+::    notified; the caller sets each desk's zest afterwards, which goads Gall.
+::
+++  inject-desks
+  |=  [snap=vase cache=vase desks=(set desk)]
+  ^-  vase
+  =/  mutator
+    %+  slap  (clay-vane-of snap)
+    !,  *hoon
+    |=  [src=_ruf dez=(list @tas)]
+    %=    +>
+        dos.rom.ruf
+      |-  ^+  dos.rom.ruf
+      ?~  dez  dos.rom.ruf
+      ?:  (~(has by dos.rom.ruf) i.dez)  $(dez t.dez)
+      =/  dj  *dojo
+      ~|  [%theseus-inject-desk-missing i.dez]
+      =.  dom.dj  dom:(~(got by dos.rom.src) i.dez)
+      $(dez t.dez, dos.rom.ruf (~(put by dos.rom.ruf) i.dez dj))
+    ==
+  (put-clay-vane snap (slam mutator (slop cache !>(~(tap in desks)))))
 ::  +pack-snap-raft: a running virtual ship's whole raft, packed as a cache vase
 ::  (== the raft vase +snap-raft already produces).  Used by %rebuild to re-make
 ::  the cache from the ship it rebuilt on.
