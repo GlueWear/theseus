@@ -31,8 +31,9 @@ Verified on `[%zuse 408]` (October 2026, host `~siglup-narwet`):
   Node sidecar. Moons have completed `|hi ~zod`, reached the host and its
   sponsor star, and installed `%landscape`.
 - The web console at `/apps/theseus` (also a Landscape tile): fleet health,
-  boot/pause/resume/remove, a Dojo per moon, snapshots and restore, each moon's
-  `+code`, and one-click Landscape per moon.
+  boot with a choice of host desks, pause/resume/remove, a terminal Dojo per
+  moon, per-moon snapshots and restore, each moon's `+code`, and one-click
+  Landscape per moon.
 - Moon web apps open on their own origin, `http://<moon>.localhost:<port>`,
   through a local Caddy gateway that `ops/theseus-gateway` runs under launchd.
 
@@ -62,11 +63,73 @@ Known limits (details in ARCHITECTURE.md):
 - `bin/`: the legacy Node transport sidecar (not needed with the patched
   runtime).
 
-## Install Desk
+## Install
 
-Mount or copy this repository as a desk named `%theseus` in a host pier.
+### What you need
 
-In Dojo:
+- **A host ship.** A planet or a star with a real Azimuth identity, because
+  moons are children of their host. A comet can't have moons, and a fake ship
+  only works offline.
+- **Kernel `[%zuse 408]`.** `+vats %base` shows it under `/sys/kelvin`. The desk
+  declares only 408, so a ship already on 409 or later can't install it yet.
+- **The patched runtime,** built from source (step 1). Stock Vere has no
+  UDP-Lick, so moons can't reach the network.
+- **Memory headroom.** Every moon lives inside the host's memory. Start the
+  host with a larger loom (step 2).
+
+### 1. Build the runtime
+
+You need Zig 0.15.2 (`brew install zig`, or see the fork's `INSTALL.md`). There
+are no prebuilt releases.
+
+```sh
+git clone https://github.com/GlueWear/vere.git
+cd vere
+zig build -Doptimize=ReleaseFast
+```
+
+The binary is `zig-out/<target>/urbit`, for example
+`zig-out/aarch64-macos-none/urbit`.
+
+### 2. Run the host on it
+
+Stop the host with `|exit`. Then start it with the new binary and a larger
+loom:
+
+```sh
+/path/to/vere/zig-out/aarch64-macos-none/urbit --loom 34 /path/to/pier
+```
+
+- **Later starts.** On boot, Vere copies itself into the pier as `.run`, so
+  after this you can start the host with `/path/to/pier/.run --loom 34`.
+- **Loom size.** `--loom 34` reserves 16 GB of address space, not memory. The
+  default (`--loom 31`, 2 GB) fills up after a few moons.
+- **Runtime version.** The fork is based on Vere 4.6. Don't use it on a pier
+  that has already run a newer runtime.
+- **Networking.** Nothing to set up and no port forwarding. Each moon gets its
+  own UDP port and keeps its NAT mapping open with STUN. To pin ports instead,
+  see `LICK_UDP` in [NO-SIDECAR.md](NO-SIDECAR.md).
+
+### 3. Install the desk
+
+This repository holds more than the desk (the console's source, ops scripts and
+docs). Clay rejects files it has no marks for, so copy only the desk itself.
+Don't copy `desk.ship`.
+
+In the host's Dojo:
+
+```hoon
+|new-desk %theseus
+|mount %theseus
+```
+
+From this repository, adjusting the pier path:
+
+```sh
+cp -R app gen lib mar sur ted web desk.bill desk.docket-0 sys.kelvin /path/to/pier/theseus/
+```
+
+Back in the Dojo:
 
 ```hoon
 |commit %theseus
@@ -74,18 +137,51 @@ In Dojo:
 +vats %theseus
 ```
 
-Expected bill:
+`+vats` should show `/desk/bill: ~[%theseus %theseus-pyre %theseus-ui]`.
 
-```text
-/desk/bill: ~[%theseus %theseus-pyre %theseus-ui]
-```
+The console is at `http://localhost:<port>/apps/theseus` (log in as the host).
+If the host runs `%landscape`, it also appears as a Theseus tile there.
 
-The host must run the patched runtime (see NO-SIDECAR.md). For moon web apps,
-also start the web gateway (see ARCHITECTURE.md, "Web gateway").
+### 4. Optional: open moon apps in a browser
+
+Opening Landscape (or any app) on a moon needs the web gateway. The gateway
+gives each moon its own address, `http://<moon>.localhost:<port>`.
+
+1. Install [Caddy](https://caddyserver.com/docs/install), e.g.
+   `brew install caddy`.
+2. Start the gateway:
+   - **macOS:** run `THESEUS_PIER=/path/to/pier ops/theseus-gateway install`.
+     It runs at login and restarts if it fails. If the pier is on an external
+     drive, macOS asks once for Full Disk Access for the gateway's helper; the
+     command prints the steps.
+   - **Linux:** no service setup is provided yet. Run
+     `THESEUS_PIER=/path/to/pier ops/theseus-gateway run` under your own
+     service manager.
+3. If the pier's folder isn't named after the ship, also set
+   `THESEUS_SHIP=~your-ship`. The gateway runs the pier's `.run` to talk to
+   the ship, so start the host with the patched runtime first.
+4. Check that the console's **Gateway** view shows it running. Details are in
+   [ARCHITECTURE.md](ARCHITECTURE.md), "Moon web apps and the web gateway".
+
+You don't need Node to run Theseus. The built console (`web/theseus.html`) is
+committed; Node is only needed to work on the console itself (`ui/`, see
+[MANAGEMENT-UI.md](MANAGEMENT-UI.md)).
 
 ## Boot A Virtual Moon
 
-From the console (**Boot moon**), or in Dojo:
+From the console, click **Boot moon**:
+
+- Choose any of the host's desks to put on the moon. Desks are copied from the
+  host, so nothing is downloaded.
+- For each desk, choose whether it takes updates from the host or from the
+  ship the host got it from.
+- A status bar shows the boot, then each desk installing, until the moon is
+  ready.
+
+The moon's Dojo opens as a terminal: click it and type. Its camera button holds
+the moon's snapshots: take one, or restore an earlier one.
+
+Or in Dojo:
 
 ```hoon
 :theseus|init-moon ~dostex-dolten-dilpun

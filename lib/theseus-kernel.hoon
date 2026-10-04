@@ -423,15 +423,122 @@
 ++  put-clay-vane
   |=  [snap=vase clay=vase]
   ^-  vase
-  ::  replace the %clay vane in the self-typed snap via a slap'd mutator gate, then
+  (put-vane snap %clay clay)
+::  +vane-of: a vane's vase inside a snapshot, e.g. %jael
+::
+++  vane-of
+  |=  [snap=vase name=term]
+  ^-  vase
+  =/  get  (slap snap !,(*hoon |=(n=term vase:(~(got by van.mod.sol) n))))
+  !<(vase (slam get !>(name)))
+::  +put-vane: replace a vane's vase inside a snapshot
+::
+++  put-vane
+  |=  [snap=vase name=term vane=vase]
+  ^-  vase
+  ::  replace the vane in the self-typed snap via a slap'd mutator gate, then
   ::  re-pair the modified Arvo noun with the incoming snap's type (p.snap) so the
   ::  result stays Arvo-typed, never opaque -- same guarantee as poke-arvo's store.
   =/  mut=vase
-    (slap snap !,(*hoon |=(cv=vase +>(van.mod.sol (~(put by van.mod.sol) %clay [cv *worm])))))
-  ::  slam unwraps one vase level, so pass !>(clay) -- the whole clay vane vase
-  ::  reaches the gate as cv (a vase), matching the make-arvo/peek-arvo slam
+    %+  slap  snap
+    !,  *hoon
+    |=  [n=term v=vase]
+    +>(van.mod.sol (~(put by van.mod.sol) n [v *worm]))
+  ::  slam unwraps one vase level, so pass !>([name vane]) -- the vane vase
+  ::  reaches the gate as v (a vase), matching the make-arvo/peek-arvo slam
   ::  convention (slam always takes !>(argument)).
-  [p.snap q:(slam mut !>(clay))]
+  [p.snap q:(slam mut !>([name vane]))]
+::  +set-own-point: the ship's own rift, life and public key in its Jael
+::
+::    For a moon whose keys and rift we have just changed in our Jael.  A
+::    moon learns those only through its own Jael state, which also tells
+::    Ames its rift (Ames rereads it on %stir %rift).
+::
+++  set-own-point
+  |=  [snap=vase who=ship =rift =life =pass]
+  ^-  vase
+  =/  mutator
+    %+  slap  (vane-of snap %jael)
+    !,  *hoon
+    |=  [who=@p r=@ud l=@ud pas=@]
+    ::  edit +> directly: anything pinned before it would shift the axis
+    ::
+    %=    +>
+        pos.zim.pki.lex
+      %+  ~(put by pos.zim.pki.lex)  who
+      =/  pon  (~(got by pos.zim.pki.lex) who)
+      pon(rift r, life l, keys (~(put by keys.pon) l [1 pas]))
+    ==
+  (put-vane snap %jael (slam mutator !>([who rift life pass])))
+::  +jael-trackers: who Jael tells about other ships' keys and breaches
+::
+::    .nel tracks every ship; .yen maps each tracking duct to its ships.
+::
+++  jael-trackers
+  |=  snap=vase
+  ^-  [nel=(set duct) yen=(jug duct ship)]
+  !<  [(set duct) (jug duct ship)]
+  (slap (vane-of snap %jael) !,(*hoon [nel yen]:zim.pki.lex))
+::  +set-jael-trackers: replace them, e.g. to aim Jael's %ruin at one duct
+::
+::    %ruin should tell every tracker that the given ships breached, but
+::    +exec:su in Jael folds its ducts into a list that keeps only the last
+::    one, so with more than one tracker only one vane hears.  With exactly
+::    one, every ship's breach reaches it.
+::
+++  set-jael-trackers
+  |=  [snap=vase nel=(set duct) yen=(jug duct ship)]
+  ^-  vase
+  =/  mutator
+    %+  slap  (vane-of snap %jael)
+    !,  *hoon
+    |=  [n=(set duct) y=(jug duct ship)]
+    +>(nel.zim.pki.lex n, yen.zim.pki.lex y)
+  (put-vane snap %jael (slam mutator !>([nel yen])))
+::  +snap-peers: every ship the snapshot's Ames holds state for
+::
+++  snap-peers
+  |=  [snap=vase who=ship when=@da]
+  ^-  (set ship)
+  =/  keys
+    |=  spur=path
+    ^-  (set ship)
+    =/  res  (mole |.((peek-arvo snap [[~ ~] / %ax [who %$ da+when] spur])))
+    ?.  ?=([~ ~ ~ *] res)  ~
+    =/  got  (mole |.(~(key by ;;((map ship *) q.q.u.u.u.res))))
+    ?~(got ~ u.got)
+  (~(del in (~(uni in (keys /peers)) (keys /chums/all))) who)
+::  +stale-flows: message flows a snapshot's Ames still holds with .peers
+::
+::    Counts send and receive flows with each known peer in .peers.  After a
+::    restore's Ames reset this must be zero, or the moon would carry on old
+::    flows that its peers, having processed its breach, no longer have.
+::
+++  stale-flows
+  |=  [snap=vase peers=(set ship)]
+  ^-  @ud
+  =/  counter
+    %+  slap  (vane-of snap %ames)
+    !,  *hoon
+    |=  s=(set @p)
+    ^-  @ud
+    %-  ~(rep by peers.ames-state)
+    |=  [[her=@p sat=ship-state] n=@ud]
+    ?.  &((~(has in s) her) ?=(%known -.sat))  n
+    :(add n ~(wyt by snd.+.sat) ~(wyt by rcv.+.sat))
+  !<(@ud (slam counter !>(peers)))
+::  +cache-base-let: how many %base revisions a boot cache seeds
+::
+::    Read with a snapshot's own Clay vane, whose subject has the raft mold.
+::
+++  cache-base-let
+  |=  [snap=vase cache=vase]
+  ^-  (unit @ud)
+  %-  mole  |.
+  %-  |=(v=vase !<(@ud v))
+  %+  slam
+    (slap (clay-vane-of snap) !,(*hoon |=(r=_ruf let.dom:(~(got by dos.rom.r) %base))))
+  cache
 ::  +wish-arvo: evaluate hoon text against a snapshot's Arvo (the %wish hook).
 ::
 ++  wish-arvo

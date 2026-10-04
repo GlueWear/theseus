@@ -25,16 +25,30 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
 ### API
 
 - `GET /~/scry/theseus/ui.json` →
-  `{version: 2, host, caches: [..], moons: [{ship, status, paused, queued, identity, vanes, desks}], snapshots: [{path, created, compatible, ships}]}`.
+  `{version: 2, host, caches: [..], moons: [{ship, status, paused, queued, identity, vanes, desks, booted, recovery}], snapshots: [{path, created, compatible, ships}]}`.
+  `booted` is the boot time in Unix ms. The console lists moons oldest first.
   `desks` is the moon's install plan, `[{desk, stage, reason, source: {ship, desk}}]`,
   with `stage` one of `installing`, `running`, `failed`. It is empty for
   moons booted before the desk picker.
+  `recovery` is null or `{stage, attempts, reason}`; its stages are
+  `registering`, `restarting`, and `failed`.
 - `GET /~/scry/theseus/desks.json` → `{version: 1, desks: [{desk, title, running, hash, source: {ship, desk} | null, dependencies}]}`:
   every host desk except `%kids` and `%theseus`. `source` is where the host's
   own copy syncs from.
 - Poke `%theseus` with mark `theseus-ui`, one key per command:
   `boot {who, desks: [{desk, from: "host"|"publisher"}]}`, `dojo {who, command}`,
-  `pause|resume|kill {who}`, `snapshot {name, ships}`, `restore|delete {path}`.
+  `term {who, act}`, `pause|resume|kill {who}`, `snapshot {name, ships, resume}`,
+  `restore|delete {path}`.
+  - `term` is the moon's terminal. `act` is one of:
+    - `{belts: [...]}`: keystrokes, each `{txt}`, `{ret}`, `{bac}`, `{del}`,
+      `{aro: "u"|"d"|"l"|"r"}`, `{ctl: letter}` or `{met: letter}`.
+    - `{size: {cols, rows}}`: the window size.
+    - `{hail: null}`: redraw the prompt.
+
+    The console sends these in order, one poke at a time. The moon's Dill
+    echoes them back on pyre's `/blit`.
+  - `snapshot` pauses its moons while it seals them. With `resume: true`,
+    moons that were running carry on afterwards.
   See "Choosing a moon's desks" in ARCHITECTURE.md for what `boot` does.
 - `GET /~/scry/theseus/web/~<moon>.json` → `{ship, code, landscape}`: the moon's
   login code (no `~`) and whether `%landscape` is installed, read from inside the
@@ -133,8 +147,9 @@ give each host's gateway its own Caddy admin address when several run on one
 machine.
 
 The UI reports success only after Gall acks the poke (`onSuccess`), not on HTTP
-acceptance. Taking a snapshot pauses the selected moons and leaves them paused;
-restoring resumes every moon in the snapshot.
+acceptance. Taking a snapshot pauses the selected moons and leaves them paused.
+Restoring freezes each moon, registers a fresh network era, resets its local
+continuity, and resumes it only after host Jael confirmation.
 
 ### Security
 

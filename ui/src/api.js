@@ -80,3 +80,11 @@ function poke(app, mark, json, rejected) {
 export function command(kind, value) {
   return poke('theseus', 'theseus-ui', {[kind]: value}, 'The host rejected this action. Check its Dojo for the error trace.');
 }
+// A moon's terminal: keystrokes, window size, prompt redraw. One poke at a
+// time, so keys reach Dill in the order they were typed.
+let termQueue = Promise.resolve();
+export function term(who, act) {
+  const next = termQueue.then(() => poke('theseus', 'theseus-ui', {term: {who, act}}, `${who} did not take that input.`));
+  termQueue = next.catch(() => {});
+  return next;
+}

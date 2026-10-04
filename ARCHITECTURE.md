@@ -120,13 +120,25 @@ login page.
 
 | View | What it does |
 | --- | --- |
-| Moons | Health (vanes, identity, queue), boot, pause/resume, remove, a Dojo per moon, the moon's `+code`, Landscape |
-| Snapshots | Take, restore, delete |
+| Moons | Health (vanes, identity, queue), oldest boot first; boot with a status bar; per moon: Dojo, Landscape, `+code`, pause/resume, snapshots, remove |
+| Snapshots | Every snapshot, newest first: restore, delete |
 | Gateway | Gateway status and settings (see below) |
 
-Under the hood the page reads `/~/scry/theseus/ui.json` every few seconds,
-sends commands as pokes that succeed only when the agent acknowledges them, and
-subscribes to pyre's `/blit` for Dojo output.
+Under the hood the page:
+
+- reads `/~/scry/theseus/ui.json` every few seconds;
+- sends commands as pokes that succeed only when the agent acknowledges them;
+- subscribes to pyre's `/blit` for Dojo output.
+
+- **Dojo.** Each moon's Dojo is a terminal. Keystrokes go to the moon's Dill as
+  belts (the `term` command). Dill echoes them and draws the prompt and cursor,
+  so there is no separate input box. The terminal also sends its size, and asks
+  for a redraw whenever it can type.
+- **Boot status.** A boot runs on the host for a few seconds before the host
+  acknowledges it. The status bar shows that phase, then each chosen desk
+  installing, until the moon is ready (or which desk failed and why).
+- **Snapshots.** A moon's camera button opens its snapshots: take a new one
+  (by default the moon keeps running), or restore one of its earlier ones.
 
 ## Choosing a moon's desks
 
@@ -177,6 +189,83 @@ Verified live on 2026-10-03:
   Eyre has docket's and glurff's bindings.
 
 Not yet tested live: the "publisher" source choice and the treaty allies.
+
+## Snapshots and restore
+
+A snapshot seals each chosen moon's whole Arvo state. Its moons pause while it
+is taken, and by default they then carry on running. Restoring puts that state
+back.
+
+**Restore starts a new network era.** A restore rolls back the moon's Ames
+message flows too, but every other ship keeps its own:
+
+- they drop the moon's new messages as duplicates of ones they already have;
+- they keep resending messages the moon no longer expects.
+
+The result is stalled subscriptions. In Glurff this showed as "trying to
+reconnect to world", with other users never appearing. It's the same reason a
+real ship must never boot an old copy of its pier.
+
+So when Theseus restores one of the host's moons, it runs a persisted recovery
+transaction (`state-10` in `app/theseus.hoon`) and treats the restore as a
+breach:
+
+1. **Freeze before replacement.** Theseus unions the peers known by the live
+   moon and the snapshot, shuts the moon's Pyre transport, restores it paused,
+   and clears its input queue. Transport and operator input remain blocked
+   while the recovery job is registering.
+2. **New identity on the host.** The host's Jael gets a new rift and new keys
+   for the moon, just as when a moon is re-initialized. Every ship tracking
+   the moon learns both together and wipes its flows and subscriptions with
+   it. Theseus reads Jael's life, rift and public key back before proceeding;
+   it retries for 30 seconds and otherwise leaves the moon paused with a
+   visible `%failed` recovery record.
+3. **The same identity inside the moon.** Its own Jael point gets the new
+   rift, life and key (state surgery, `+set-own-point`), then `%rekey`, and
+   Ames rereads its rift (`%stir %rift`).
+4. **The moon forgets its side.** It treats the captured peer union as
+   breached, first in
+   Ames (its flows are wiped) and then in Gall (its agents' subscriptions are
+   kicked, so they resubscribe on fresh flows).
+
+   This uses Jael's `%ruin`, aimed at one tracker at a time. In Jael's
+   `+exec:su`, the fold over trackers keeps only the last one
+   (`su(moz [[duct cad] moz])` reads the original `moz`, not the
+   accumulator's), so `%ruin` reaches only one vane. That is an upstream bug
+   worth reporting.
+
+5. **Restart last.** Only after the host confirmation and local reset does
+   Theseus send Pyre `%restart`. One more timer pass requires a healthy,
+   unpaused, empty-queue moon before the recovery lock is removed. A Gall
+   reload re-arms any persisted recovery timer.
+
+Before Gall's step, the restore checks that the moon's Ames holds no flows
+with those peers (`+stale-flows`); otherwise it fails and stops the moon, so
+it can't run on with stalled flows. An earlier version ran the Gall step from
+a copy of the moon taken before the Ames step, which threw the Ames wipe away.
+The moon kept its old flows, and peers, having wiped theirs, waited forever
+for message 1 (seen as Glurff's "reconnecting to world").
+
+Data other ships already received stays with them. Messages still in flight
+are lost. Snapshot recovery currently refuses planets and ships that are not
+moons owned by the host; silently restoring their stale network continuity
+would be unsafe.
+
+The original local breach surgery was verified on a copy of moon
+`~riltes-dinnub-siglup-narwet`, without storing the result:
+
+- Ames moved to rift 1, life 2.
+- Its 31 stale incoming flows with `~nolset` were wiped, and its agents
+  resubscribed on new flows.
+- Gall forgot every breached ship, then re-tracked the two it resubscribed to
+  at once.
+- Jael's trackers were restored.
+
+The console warns about the new era before restoring.
+
+The staged host-registration barrier still requires a live disposable-moon
+acceptance test before it is considered release-proven. Local health after
+restart is not a substitute for a real remote `|hi` and application reconnect.
 
 ## Moon web apps and the web gateway
 
@@ -329,6 +418,7 @@ launchctl kickstart -k gui/$(id -u)/io.theseus.gateway.siglup-narwet   # restart
 | A moon cannot `\|hi` a ship on the same network | No relay path to the moon | Confirm the runtime is the STUN build (hash in HARDENING.md) and the moon has sent traffic recently. |
 | A new moon reaches `~zod` but not the host or `~nolset`; `%ping` state names the wrong galaxy | The moon booted with a stale sponsor chain (Theseus before `+boot-chain`) | Commit the current desk and boot a new moon; an existing one recovers after its Azimuth snapshot loads, or `\|hi ~rus` from the moon. |
 | A moon's `/apps/landscape/` (or another app) returns 404 "Not Found" | It was booted by the first desk-picker build: chosen apps started during boot and lost their Eyre bindings | Remove it and boot a new one; the current build adds chosen desks after boot. |
+| After restoring a snapshot, a moon's apps can't reach other ships (e.g. Glurff "trying to reconnect to world") | The moon was restored by Theseus from before 2026-10-04, which didn't start a new network era | Restore it again with the current build, or remove it and boot a new moon. |
 | An app's in-app install button says "Docket refused the installation" (`peek bad result` in `/app/treaty`) | The moon has no treaty from that app's publisher | `:treaty\|ally ~<publisher>` in the moon's Dojo, wait a few seconds, try again; moons booted with the current build ally publishers automatically. |
 | A new moon reaches the host but `\|hi ~nolset` hangs for a few minutes after boot | The moon's Azimuth snapshot predates `~nolset`'s escape, so it routes through `~set` until `%azimuth` catches up | Wait for `l2-sig-failed` in the log; the pending `\|hi` then succeeds. |
 
@@ -372,5 +462,6 @@ launchctl kickstart -k gui/$(id -u)/io.theseus.gateway.siglup-narwet   # restart
   - new Theseus icon
   - moons boot with the host's current sponsor chain, including escapes
     (`~nolset` → `~rus`), instead of chains derived from @p
+- **2026-10-04:** restore starts a new network era (`+rebirth`), so restored moons reconnect; console redesign (terminal Dojo, boot status, per-moon snapshots, oldest-first, icon colours).
 - **2026-10-04:** desk picker: choose any host desks for a new moon, seeded
   from the host's Clay and installed from the host or the desk's publisher

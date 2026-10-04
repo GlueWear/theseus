@@ -16,19 +16,36 @@ export function newMoon(host, existing, random = crypto.getRandomValues(new Uint
   throw new Error('Could not allocate a new moon name.');
 }
 export function snapshotName(date = new Date()) { return `snapshot-${date.toISOString().replace(/[^0-9]/g, '').slice(0, 14)}`; }
-export function dateLabel(value) {
+// An Urbit date (~2026.10.2..12.00.00..) as Unix ms, or NaN.
+export function daMs(value) {
   const match = /^~(\d+)\.(\d+)\.(\d+)\.\.(\d+)\.(\d+)\.(\d+)/.exec(value);
-  if (!match) return value;
-  return new Date(Date.UTC(+match[1], +match[2]-1, +match[3], +match[4], +match[5], +match[6])).toLocaleString();
+  return match ? Date.UTC(+match[1], +match[2]-1, +match[3], +match[4], +match[5], +match[6]) : NaN;
+}
+export function dateLabel(value) {
+  const ms = daMs(value);
+  return Number.isNaN(ms) ? value : new Date(ms).toLocaleString();
 }
 // Dill content is untrusted. Strip control characters before writing to xterm;
 // only this renderer emits terminal control sequences, never guest text.
 const safe = value => String(value).replace(/[\x00-\x1f\x7f-\x9f]/g, '');
+// Dill styles (%klr) as SGR codes: bold and underline, named or RGB colours.
+// Only numbers reach the escape sequence.
+const tints = {k: 0, r: 1, g: 2, y: 3, b: 4, m: 5, c: 6, w: 7};
+function sgr(stye) {
+  const codes = [];
+  for (const deco of stye?.deco || []) {if (deco === 'br') codes.push(1); if (deco === 'un') codes.push(4);}
+  const tint = (value, base) => {
+    if (typeof value === 'string' && value in tints) codes.push(base + tints[value]);
+    else if (value && [value.r, value.g, value.b].every(n => Number.isInteger(n) && n >= 0 && n < 256)) codes.push(base + 8, 2, value.r, value.g, value.b);
+  };
+  tint(stye?.fore, 30); tint(stye?.back, 40);
+  return codes.length ? `\x1b[${codes.join(';')}m` : '';
+}
 export function blitsToAnsi(blits) {
   if (!Array.isArray(blits)) return '';
   return blits.map(blit => {
     if (blit.put) return blit.put.map(safe).join('');
-    if (blit.klr) return blit.klr.map(run => (run.text || []).map(safe).join('')).join('');
+    if (blit.klr) return blit.klr.map(run => {const text = (run.text || []).map(safe).join(''), open = sgr(run.stye); return open && text ? `${open}${text}\x1b[0m` : text;}).join('');
     if (blit.mor) return blitsToAnsi(blit.mor);
     if (blit.nel) return '\r\n';
     if (blit.clr) return '\x1b[2J\x1b[H';
@@ -41,9 +58,48 @@ export function blitsToAnsi(blits) {
     return '';
   }).join('');
 }
+// What xterm.js reports for a keypress or paste, as Dill belts. Printable runs
+// become one %txt; Enter, Backspace, Delete, arrows and Ctrl-letters become
+// their own belts; Tab is Ctrl-I and Option-letter is Meta, as Dill expects.
+// Other control characters and escape sequences are dropped.
+export function keysToBelts(data) {
+  const belts = [];
+  let text = '';
+  const flush = () => {if (text) {belts.push({txt: text}); text = '';}};
+  for (let i = 0; i < data.length; i++) {
+    const c = data[i], code = c.charCodeAt(0);
+    if (c === '\x1b') {
+      const seq = /^\x1b(\[[0-9;]*[A-Za-z~]|O[A-Za-z]|[\s\S])?/.exec(data.slice(i))[0];
+      i += seq.length - 1; flush();
+      const arrow = {'[A': 'u', '[B': 'd', '[C': 'r', '[D': 'l', 'OA': 'u', 'OB': 'd', 'OC': 'r', 'OD': 'l'}[seq.slice(1)];
+      if (arrow) belts.push({aro: arrow});
+      else if (seq === '\x1b[3~') belts.push({del: null});
+      else if (/^\x1b[a-z]$/.test(seq)) belts.push({met: seq[1]});
+      continue;
+    }
+    if (c === '\r' || c === '\n') {flush(); if (!(c === '\n' && data[i - 1] === '\r')) belts.push({ret: null}); continue;}
+    if (code === 0x7f || code === 0x08) {flush(); belts.push({bac: null}); continue;}
+    if (c === '\t') {flush(); belts.push({ctl: 'i'}); continue;}
+    if (code >= 1 && code <= 26) {flush(); belts.push({ctl: String.fromCharCode(code + 96)}); continue;}
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) continue;
+    text += c;
+  }
+  flush();
+  return belts;
+}
+// Oldest boot first; moons with no recorded boot time last, by name.
+export function byBoot(moons) {
+  return [...moons].sort((a, b) => (a.booted ?? Infinity) - (b.booted ?? Infinity) || a.ship.localeCompare(b.ship));
+}
+// A booting moon's desks: how many run, and why any failed.
+export function deskTally(desks = []) {
+  const running = desks.filter(d => d.stage === 'running').length;
+  const failed = desks.filter(d => d.stage === 'failed');
+  return {total: desks.length, running, failed, done: running + failed.length === desks.length};
+}
 export function validateFleet(data) {
   if (data?.version !== 2 || !Array.isArray(data.moons) || !Array.isArray(data.snapshots) || !Array.isArray(data.caches) || !ob.isValidPatp(data.host)) throw new Error('Theseus management API is unavailable or incompatible.');
-  if (data.moons.some(m => !Array.isArray(m.desks))) throw new Error('Theseus returned an invalid moon desk plan.');
+  if (data.moons.some(m => !Array.isArray(m.desks) || (m.recovery != null && (!['registering', 'restarting', 'failed'].includes(m.recovery.stage) || typeof m.recovery.attempts !== 'number')))) throw new Error('Theseus returned an invalid moon record.');
   return data;
 }
 export function validateHostDesks(data) {

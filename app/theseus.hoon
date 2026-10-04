@@ -204,7 +204,67 @@
           install-plans=(map ship install-plan)
           install-timer=(unit @da)
       ==
-    +$  versioned-state  $%(state-5 state-6 state-7)
+    ::  .booted: when each moon was booted here, for the console's order
+    ::
+    +$  state-8
+      $:  %8
+          piers=fleet
+          fleet-snaps=(map path fleet-snapshot)
+          files=(axal (cask))
+          park=vase
+          caches=(map @tas vase)
+          boot-caches=(map (set desk) boot-cache)
+          install-plans=(map ship install-plan)
+          install-timer=(unit @da)
+          booted=(map ship @da)
+      ==
+    ::  %9: as %8; fixes .booted for moons seeded from a boot cache, whose
+    ::  first %base commit is the host's, not theirs
+    ::
+    +$  state-9
+      $:  %9
+          piers=fleet
+          fleet-snaps=(map path fleet-snapshot)
+          files=(axal (cask))
+          park=vase
+          caches=(map @tas vase)
+          boot-caches=(map (set desk) boot-cache)
+          install-plans=(map ship install-plan)
+          install-timer=(unit @da)
+          booted=(map ship @da)
+      ==
+    ::  Snapshot restore is a network continuity transaction, not a plain
+    ::  state replacement.  Keep its progress in Gall state so a reload cannot
+    ::  reopen transport before the host and guest agree on the new era.
+    ::
+    +$  recovery-stage  ?(%registering %restarting %failed)
+    +$  recovery-job
+      $:  peers=(set ship)
+          rift=@ud
+          life=@ud
+          pub=pass
+          key=@
+          started=@da
+          updated=@da
+          attempts=@ud
+          stage=recovery-stage
+          reason=(unit @t)
+      ==
+    +$  state-10
+      $:  %10
+          piers=fleet
+          fleet-snaps=(map path fleet-snapshot)
+          files=(axal (cask))
+          park=vase
+          caches=(map @tas vase)
+          boot-caches=(map (set desk) boot-cache)
+          install-plans=(map ship install-plan)
+          install-timer=(unit @da)
+          booted=(map ship @da)
+          recoveries=(map ship recovery-job)
+          recovery-timer=(unit @da)
+      ==
+    +$  versioned-state  $%(state-5 state-6 state-7 state-8 state-9 state-10)
     ++  pack-park
       |=  pak=task:clay
       ^-  vase
@@ -267,7 +327,7 @@
     +$  card  $+(card card:agent:gall)
     --
 ::
-=|  state-7
+=|  state-10
 =*  state  -
 =<
   %-  agent:dbug
@@ -298,15 +358,31 @@
     ::  Never turn a failed state load into a successful empty on-init.  Gall
     ::  already preserves the previous agent when on-load bails; swallowing a
     ::  cast failure here used to erase every pier and every snapshot.
+    |^
     ?+    -.q.old-vase  ~|([%theseus-unknown-state -.q.old-vase] !!)
+        %10
+      =/  old  !<(state-10 old-vase)
+      ~&  [%theseus-state-load %10]
+      (load-state old)
+    ::
+        %9
+      =/  old  !<(state-9 old-vase)
+      ~&  [%theseus-state-migrate %9 %10]
+      (load-state (state-9-to-10 old))
+    ::
+        %8
+      =/  old  !<(state-8 old-vase)
+      ~&  [%theseus-state-migrate %8 %10]
+      (load-state (state-9-to-10 (state-8-to-9 old)))
+    ::
         %7
       =/  old  !<(state-7 old-vase)
-      ~&  [%theseus-state-load %7]
-      `this(state old)
+      ~&  [%theseus-state-migrate %7 %10]
+      (load-state (state-9-to-10 (state-7-to-9 old)))
     ::
         %6
       =/  old  !<(state-6 old-vase)
-      ~&  [%theseus-state-migrate %6 %7]
+      ~&  [%theseus-state-migrate %6 %10]
       ::  every plan so far installed from us
       ::
       =/  plans=(map ship install-plan)
@@ -321,22 +397,75 @@
             started.p
             updated.p
         ==
-      :-  ~
-      %=    this
-          state
-        :*  %7  piers.old  fleet-snaps.old  files.old  park.old  caches.old
-            boot-caches.old  plans  install-timer.old
-        ==
+      %-  load-state
+      %-  state-9-to-10
+      %-  state-7-to-9
+      :*  %7  piers.old  fleet-snaps.old  files.old  park.old  caches.old
+          boot-caches.old  plans  install-timer.old
       ==
     ::
         %5
       =/  old  !<(state-5 old-vase)
-      ~&  [%theseus-state-migrate %5 %7]
-      :-  ~
-      %=  this
-        state  [%7 piers.old fleet-snaps.old files.old park.old caches.old ~ ~ ~]
-      ==
+      ~&  [%theseus-state-migrate %5 %10]
+      %-  load-state
+      %-  state-9-to-10
+      (state-7-to-9 [%7 piers.old fleet-snaps.old files.old park.old caches.old ~ ~ ~])
     ==
+    ::  Gall reloads do not replay outstanding Behn waits.  Clear the saved
+    ::  timer and re-arm it from persisted jobs before accepting traffic.
+    ::
+    ++  load-state
+      |=  new=state-10
+      ^-  (quip card _this)
+      =.  this  this(state new(recovery-timer ~))
+      =^  cards  state  arm-recovery-timer:hc
+      [cards this]
+    ::  moons from before %8 get the time of their boot commit
+    ::
+    ++  state-7-to-9
+      |=  old=state-7
+      ^-  state-9
+      =/  dflt  (~(get by caches.old) %default)
+      :*  %9  piers.old  fleet-snaps.old  files.old  park.old  caches.old
+          boot-caches.old  install-plans.old  install-timer.old
+          %-  ~(urn by piers.old)
+          |=([who=ship saved=saved-pier] (moon-born:hc who saved install-plans.old dflt))
+      ==
+    ::  %8 gave seeded moons their host's first %base commit time; redo those
+    ::
+    ++  state-8-to-9
+      |=  old=state-8
+      ^-  state-9
+      =/  dflt  (~(get by caches.old) %default)
+      =/  fixed=(map ship @da)
+        %-  ~(urn by piers.old)
+        |=  [who=ship saved=saved-pier]
+        =/  had  (~(get by booted.old) who)
+        ?:  ?&  ?=(^ had)
+                !=(had (base-commit-date:hc who saved 1))
+            ==
+          u.had
+        (moon-born:hc who saved install-plans.old dflt)
+      [%9 +.old(booted fixed)]
+    ::  %10 adds only persisted restore coordination; old states begin idle.
+    ::
+    ++  state-9-to-10
+      |=  old=state-9
+      ^-  state-10
+      :*  %10
+          piers.old
+          fleet-snaps.old
+          files.old
+          park.old
+          caches.old
+          boot-caches.old
+          install-plans.old
+          install-timer.old
+          booted.old
+          *(map ship recovery-job)
+          *(unit @da)
+      ==
+    --
   ::
   ++  on-poke
     |=  [=mark =vase]
@@ -354,13 +483,48 @@
               (poke-action:hc [%init-moon-desks who.cmd desks.cmd pub.kp priv.kp])
             %dojo
               ?>  (lte (met 3 command.cmd) 16.384)
+              ?>  !(recovery-blocked:hc who.cmd)
               (poke-theseus-events:hc (dojo-events:theseus who.cmd (trip command.cmd)))
+            %term
+              ?>  (~(has by piers) who.cmd)
+              ?>  !(recovery-blocked:hc who.cmd)
+              %-  poke-theseus-events:hc
+              %+  turn
+                ^-  (list unix-event)
+                ?-    -.act.cmd
+                    %hail  [/d/term/1 %hail ~]~
+                    %size
+                  ?>  &((gth p.p.act.cmd 0) (lte p.p.act.cmd 1.000))
+                  ?>  &((gth q.p.act.cmd 0) (lte q.p.act.cmd 1.000))
+                  [/d/term/1 %blew p.act.cmd]~
+                ::
+                    %belts
+                  ?>  (lte (lent p.act.cmd) 256)
+                  %+  turn  p.act.cmd
+                  |=  b=belt:dill
+                  ?>  ?|(!?=([%txt *] b) (lte (lent p.b) 4.096))
+                  [/d/term/1 %belt b]
+                ==
+              |=(ue=unix-event [who.cmd ue])
             %pause   (poke-action:hc [%pause-ships ~[who.cmd]])
             %resume  (poke-action:hc [%unpause-ships ~[who.cmd]])
             %kill    (poke-action:hc [%kill-ships ~[who.cmd]])
             %snapshot
               ?>  ?&((gth (lent ships.cmd) 0) (lte (lent ships.cmd) 64))
-              (poke-action:hc [%snap-ships /[name.cmd] ships.cmd])
+              ::  a snapshot pauses its moons; with .resume, those that were
+              ::  running carry on once it is sealed
+              ::
+              =/  running=(list ship)
+                %+  skip  ships.cmd
+                |=  her=ship
+                ?~  pier=(~(get by piers) her)  &
+                paused.u.pier
+              =^  snap-cards  state
+                (poke-action:hc [%snap-ships /[name.cmd] ships.cmd])
+              ?:  |(!resume.cmd =(~ running))  [snap-cards state]
+              =^  resume-cards  state
+                (poke-action:hc [%unpause-ships running])
+              [(weld snap-cards resume-cards) state]
             %restore  (poke-action:hc [%restore-snap path.cmd])
             %delete   (poke-action:hc [%delete-snap path.cmd])
           ==
@@ -465,11 +629,17 @@
   ++  on-arvo
     |=  [=wire =sign-arvo]
     ^-  (quip card _this)
-    ?.  ?=([%install-plans @ ~] wire)
-      (on-arvo:def wire sign-arvo)
-    ?>  ?=([%behn %wake *] sign-arvo)
-    =^  cards  state  (wake-install-plans:hc (slav %da i.t.wire))
-    [cards this]
+    ?+    wire  (on-arvo:def wire sign-arvo)
+        [%install-plans @ ~]
+      ?>  ?=([%behn %wake *] sign-arvo)
+      =^  cards  state  (wake-install-plans:hc (slav %da i.t.wire))
+      [cards this]
+    ::
+        [%recoveries @ ~]
+      ?>  ?=([%behn %wake *] sign-arvo)
+      =^  cards  state  (wake-recoveries:hc (slav %da i.t.wire))
+      [cards this]
+    ==
   ++  on-fail   on-fail:def
   --
 ::
@@ -500,6 +670,7 @@
   |=  [who=ship saved=saved-pier]
   ^-  json
   =/  h  (health-of who saved)
+  =/  recovery  (~(get by recoveries) who)
   =,  enjs:format
   %-  pairs
   :~  [%ship s+(scot %p who)]
@@ -509,7 +680,41 @@
       [%identity b+identity-ok.h]
       [%vanes a+(turn ~(tap in vanes.h) |=(v=@tas s+v))]
       [%desks a+(ui-plan who)]
+      :-  %recovery
+      ?~  recovery  ~
+      %-  pairs
+      :~  [%stage s+stage.u.recovery]
+          [%attempts (numb attempts.u.recovery)]
+          [%reason ?~(reason.u.recovery ~ s+u.reason.u.recovery)]
+      ==
+      :-  %booted
+      ?~(b=(~(get by booted) who) ~ (numb (unm:chrono:userlib u.b)))
   ==
+::  +moon-born: when a moon booted before boot times were kept was booted
+::
+::    Its install plan's start, if it has one.  Otherwise its boot commit:
+::    the first %base commit after the history seeded from the boot cache
+::    (.dflt), which is the host's.  Now if neither can be read.
+::
+++  moon-born
+  |=  [who=ship saved=saved-pier plans=(map ship install-plan) dflt=(unit vase)]
+  ^-  @da
+  =/  plan  (~(get by plans) who)
+  ?^  plan  started.u.plan
+  =/  seeded=@ud
+    ?~  dflt  0
+    (fall (cache-base-let:theseus-kernel snap.saved u.dflt) 0)
+  (fall (base-commit-date who saved +(seeded)) now.bowl)
+::
+++  base-commit-date
+  |=  [who=ship saved=saved-pier aeon=@ud]
+  ^-  (unit @da)
+  =/  res
+    %-  mole  |.
+    (peek-arvo:theseus-kernel snap.saved [[~ ~] / %cw [who %base ud+aeon] /])
+  ?.  ?=([~ ~ ~ *] res)  ~
+  =/  got  (mole |.(;;(cass:clay q.q.u.u.u.res)))
+  ?~(got ~ `da.u.got)
 ::
 ++  ui-plan
   |=  who=ship
@@ -780,7 +985,9 @@
   =/  known=(list theseus-event)
     %+  skim  events
     |=  pev=theseus-event
-    (~(has by piers) who.pev)
+    ?&  (~(has by piers) who.pev)
+        !(recovery-blocked who.pev)
+    ==
   ::  Thread the parent Theseus core explicitly.  The generic +turn-events
   ::  callback returned a nested +pe core; after state %4 moved the Arvo noun
   ::  into a vase, that polymorphic callback could lose the parent fleet
@@ -989,6 +1196,99 @@
   =.  install-timer  ~
   =.  install-plans  refresh-install-plans
   arm-install-timer
+::  +arm-recovery-timer: advance persisted restore transactions.
+::
+++  recovery-poll  ~s1
+++  recovery-timeout  ~s30
+++  recovery-max-attempts  30
+::
+++  recovery-pending
+  |=  job=recovery-job
+  ^-  ?
+  ?=(?(%registering %restarting) stage.job)
+::
+++  arm-recovery-timer
+  ^-  (quip card _state)
+  ?^  recovery-timer  `state
+  ?.  (lien ~(val by recoveries) recovery-pending)  `state
+  =/  when  (add now.bowl recovery-poll)
+  :_  state(recovery-timer `when)
+  [%pass /recoveries/(scot %da when) %arvo %b %wait when]~
+::
+++  fail-recovery
+  |=  [who=ship job=recovery-job reason=@t]
+  ^-  (quip card _state)
+  =/  saved  (~(get by piers) who)
+  =?  piers  ?=(^ saved)
+    (~(put by piers) who u.saved(paused &))
+  =.  recoveries
+    (~(put by recoveries) who job(stage %failed, updated now.bowl, reason `reason))
+  ~&  [%theseus-recovery-failed who reason]
+  :_  state
+  :_  ~
+  :^  %pass  /theseus-pyre  %agent
+  :+  [our.bowl %theseus-pyre]  %poke
+  theseus-effect+!>(`theseus-effect`[who [/ %kill ~]])
+::
+++  poll-recovery
+  |=  [who=ship job=recovery-job]
+  ^-  (quip card _state)
+  ?-    stage.job
+      %registering
+    =/  confirmed=(unit ?)
+      (mole |.((recovery-confirmed who job)))
+    ?:  ?&(?=(^ confirmed) u.confirmed)
+      =/  result=(each (quip card _state) tang)
+        (mule |.((finish-recovery who job)))
+      ?:  ?=(%| -.result)
+        ~&  [%theseus-recovery-reset-crash who p.result]
+        (fail-recovery who job 'The restored moon failed its local continuity reset.')
+      p.result
+    ?:  ?|  (gte attempts.job recovery-max-attempts)
+            (gth now.bowl (add started.job recovery-timeout))
+        ==
+      (fail-recovery who job 'Host Jael did not confirm the new continuity era.')
+    =/  next  job(attempts +(attempts.job), updated now.bowl)
+    =.  recoveries  (~(put by recoveries) who next)
+    [(recovery-register-cards who next) state]
+  ::
+      %restarting
+    =/  saved  (~(get by piers) who)
+    ?~  saved
+      (fail-recovery who job 'The restored moon disappeared during restart.')
+    =/  hel  (health-of who u.saved)
+    ?:  ?&  =(%healthy status.hel)
+            !paused.hel
+            =(0 queued.hel)
+        ==
+      ~&  [%theseus-recovery-complete who rift=rift.job life=life.job]
+      `state(recoveries (~(del by recoveries) who))
+    ?:  ?|  (gte attempts.job recovery-max-attempts)
+            (gth now.bowl (add updated.job recovery-timeout))
+        ==
+      (fail-recovery who job 'The restored moon did not become healthy after its runtime restart.')
+    =.  recoveries
+      (~(put by recoveries) who job(attempts +(attempts.job)))
+    `state
+  ::
+      %failed  `state
+  ==
+::
+++  wake-recoveries
+  |=  when=@da
+  ^-  (quip card _state)
+  ?.  =(`when recovery-timer)  `state
+  =.  recovery-timer  ~
+  =/  jobs  ~(tap by recoveries)
+  =/  out  *(list card)
+  |-
+  ?~  jobs
+    =^  timer-cards  state  arm-recovery-timer
+    [(weld out timer-cards) state]
+  =/  current  (~(get by recoveries) p.i.jobs)
+  ?~  current  $(jobs t.jobs)
+  =^  more  state  (poll-recovery p.i.jobs u.current)
+  $(jobs t.jobs, out (weld out more))
 ::  +prune-boot-caches: keep the newest few still matching our desks
 ::
 ::    Each boot cache holds a copy of our Clay data, so drop any whose desk
@@ -1101,6 +1401,7 @@
     ==
     (pe who.act)
   =/  boot-cards  (weld reg-cards cards)
+  =.  booted  (~(put by booted) who.act now.bowl)
   =?  install-plans  !=(~ installs)
     (~(put by install-plans) who.act (plan-for installs %installing))
   ?:  =(~ later)  [boot-cards state]
@@ -1126,6 +1427,139 @@
   =^  timer-cards  state  arm-install-timer
   [:(weld boot-cards event-cards timer-cards) state]
 ::
+++  is-our-moon
+  |=  who=ship
+  ^-  ?
+  ?&  ?=(%earl (clan:title who))
+      =(our.bowl (^sein:title who))
+  ==
+::  Snapshot recovery is a staged breach.  Host Jael registration happens
+::  while the restored moon is paused and its Pyre transport is shut.  Only
+::  after the registered life, rift and key can be read back do we reset the
+::  moon's own continuity state and restart its outer runtime.
+::
+++  recovery-register-cards
+  |=  [who=ship job=recovery-job]
+  ^-  (list card)
+  :~  :*  %pass  /theseus/recovery/rift/(scot %p who)  %arvo  %j
+          %moon  who  [*id:block:jael %rift rift.job %.n]
+      ==
+      :*  %pass  /theseus/recovery/keys/(scot %p who)  %arvo  %j
+          %moon  who  [*id:block:jael %keys [life.job 1 pub.job] %.n]
+      ==
+  ==
+::
+++  recovery-confirmed
+  |=  [who=ship job=recovery-job]
+  ^-  ?
+  =/  got-life=(unit @ud)
+    .^((unit @ud) %j /(scot %p our.bowl)/lyfe/(scot %da now.bowl)/(scot %p who))
+  =/  got-rift=(unit @ud)
+    .^((unit @ud) %j /(scot %p our.bowl)/ryft/(scot %da now.bowl)/(scot %p who))
+  ?:  |(?=(~ got-life) ?=(~ got-rift))  |
+  =/  got-key=(unit [suite=@ud =pass])
+    .^  (unit [@ud pass])  %j
+      /(scot %p our.bowl)/puby/(scot %da now.bowl)/(scot %p who)/(scot %ud life.job)
+    ==
+  ?~  got-key  |
+  ?&  =(life.job u.got-life)
+      =(rift.job u.got-rift)
+      =(1 suite.u.got-key)
+      =(pub.job pass.u.got-key)
+  ==
+::
+++  recovery-blocked
+  |=  who=ship
+  ^-  ?
+  =/  job  (~(get by recoveries) who)
+  ?~  job  |
+  !?=(%restarting stage.u.job)
+::
+::  +ruin-peers: tell one of a moon's Jael trackers that .peers breached
+::
+::    Jael's %ruin, aimed at .tracker alone (see +set-jael-trackers).  An
+::    arm, not a gate pinned in the caller: a pinned gate keeps the state it
+::    was made with, so a second call would start from before the first and
+::    throw its work away.
+::
+++  ruin-peers
+  |=  [who=ship peers=(set ship) tracker=(unit duct)]
+  ^-  (quip card _state)
+  ?~  tracker  `state
+  =/  run=pier  (unpack-pier (~(got by piers) who))
+  =.  piers
+    %+  ~(put by piers)  who
+    %-  pack-pier
+    run(snap (set-jael-trackers:theseus-kernel snap.run (sy u.tracker ~) ~))
+  (poke-theseus-events [who /j/theseus/recovery %ruin peers]~)
+::
+::  +finish-recovery: apply the confirmed era inside the offline moon.
+::
+++  finish-recovery
+  |=  [who=ship job=recovery-job]
+  ^-  (quip card _state)
+  =/  pier=pier  (unpack-pier (~(got by piers) who))
+  =/  trackers  (jael-trackers:theseus-kernel snap.pier)
+  =/  find-tracker
+    |=  pre=path
+    ^-  (unit duct)
+    =/  ducts  ~(tap in ~(key by yen.trackers))
+    |-
+    ?~  ducts  ~
+    ?:  &(?=(^ i.ducts) =(pre i.i.ducts))  `i.ducts
+    $(ducts t.ducts)
+  ~&  [%theseus-recovery-reset who rift=rift.job life=life.job peers=~(wyt in peers.job)]
+  ::  Remove the lock only within this Gall event so the internal reset
+  ::  events can run.  No external event can interleave before it is restored.
+  ::
+  =.  recoveries  (~(del by recoveries) who)
+  =.  piers
+    %+  ~(put by piers)  who
+    %-  pack-pier
+    %_    pier
+        paused       |
+        next-events  *(qeu unix-event)
+        snap         (set-own-point:theseus-kernel snap.pier who rift.job life.job pub.job)
+    ==
+  =^  own-cards  state
+    %-  poke-theseus-events
+    :~  [who /j/theseus/recovery %rekey life.job key.job]
+        [who /a/theseus/recovery %stir 'rift']
+    ==
+  ::  every peer breached, in Ames and then in Gall.  The Ames reset must
+  ::  have wiped every flow with them before Gall reopens any: a flow left
+  ::  over would carry on at old message numbers, which peers that processed
+  ::  the breach never acknowledge, and stall.
+  ::
+  =^  ames-cards  state
+    (ruin-peers who peers.job (find-tracker /ames/public-keys))
+  =/  left=@ud
+    (stale-flows:theseus-kernel snap:(unpack-pier (~(got by piers) who)) peers.job)
+  ?.  =(0 left)
+    ~|([%theseus-recovery-ames-not-reset who flows=left] !!)
+  =^  gall-cards  state
+    (ruin-peers who peers.job (find-tracker /gall/sys/era))
+  ::  restore the trackers, less what Gall untracked on breach
+  ::
+  =/  gall  (find-tracker /gall/sys/era)
+  =/  yen=(jug duct ship)
+    ?~  gall  yen.trackers
+    %-  ~(rep in peers.job)
+    |=  [her=ship y=_yen.trackers]
+    (~(del ju y) u.gall her)
+  =/  fin=^pier  (unpack-pier (~(got by piers) who))
+  =.  piers
+    %+  ~(put by piers)  who
+    (pack-pier fin(snap (set-jael-trackers:theseus-kernel snap.fin nel.trackers yen)))
+  =/  next  job(stage %restarting, updated now.bowl, attempts 0, reason ~)
+  =.  recoveries  (~(put by recoveries) who next)
+  =/  restart=(list card)
+    :_  ~
+    :^  %pass  /theseus-pyre  %agent
+    :+  [our.bowl %theseus-pyre]  %poke
+    theseus-effect+!>(`theseus-effect`[who [/ %restart ~]])
+  [:(weld restart own-cards ames-cards gall-cards) state]
+::
 ++  poke-action
   |=  act=action
   ^-  (quip card _state)
@@ -1144,6 +1578,7 @@
     =/  new=pier  *pier
     =.  snap.new  (make-arvo:theseus-kernel who.act ker files clay-vase)
     =.  piers  (~(put by piers) who.act (pack-pier new))
+    =.  booted  (~(put by booted) who.act now.bowl)
     =.  this
       =<  abet-pe:plow
       %-  push-events:(pe who.act)
@@ -1263,6 +1698,7 @@
     =/  new=pier  *pier
     =.  new  new(snap (make-arvo:theseus-kernel who.act ker files clay-vase), paused |)
     =.  piers  (~(put by piers) who.act (pack-pier new))
+    =.  booted  (~(put by booted) who.act now.bowl)
     =.  this
       =<  abet-pe:plow
       %-  push-events:(pe who.act)
@@ -1302,10 +1738,19 @@
       %-  ~(dif by install-plans)
       %-  ~(gas by *(map ship install-plan))
       (turn hers.act |=(=ship [ship *install-plan]))
+    =.  booted
+      %-  ~(dif by booted)
+      (~(gas by *(map ship @da)) (turn hers.act |=(=ship [ship *@da])))
+    =.  recoveries
+      %-  ~(dif by recoveries)
+      (~(gas by *(map ship recovery-job)) (turn hers.act |=(=ship [ship *recovery-job])))
     ~&  [%theseus-killed hers.act]
     [kill-cards state]
   ::
       %snap-ships
+    =/  recovering  (skim hers.act |=(who=ship (~(has by recoveries) who)))
+    ?^  recovering
+      ~|([%theseus-recovery-still-active recovering] !!)
     =.  this  apex-theseus  =<  abet-theseus
     ?:  =(~ hers.act)
       ~|([%theseus-snapshot-empty path.act] !!)
@@ -1367,29 +1812,87 @@
       $(pending t.pending, failed ?:(ready failed [her failed]))
     ?^  bad
       ~|([%theseus-snapshot-invalid path.act bad] !!)
-    ::  Snapshots are sealed while paused.  Restore their internal state as
-    ::  running, then ask pyre to atomically reset its per-moon shims and send
-    ::  the restored vanes their normal runtime %born/%live sequence.
+    =/  not-ours  (skip hers is-our-moon)
+    ?^  not-ours
+      ~|([%theseus-restore-not-owned-moons path.act not-ours] !!)
+    =/  busy=(list ship)
+      %+  skim  hers
+      |=  who=ship
+      =/  job  (~(get by recoveries) who)
+      ?~  job  |
+      !?=(%failed stage.u.job)
+    ?^  busy
+      ~|([%theseus-restore-already-recovering path.act busy] !!)
+    ::  Capture the union of the live and snapshotted peer sets before the
+    ::  live pier is replaced.  A post-snapshot peer must also be told about
+    ::  the breach or it can retain stale Ames and Gall continuity.
+    ::
+    =/  jobs=(map ship recovery-job)
+      %-  malt
+      %+  turn  ~(tap by ships.shot)
+      |=  [who=ship saved=saved-pier]
+      =/  old-life=(unit @ud)
+        .^((unit @ud) %j /(scot %p our.bowl)/lyfe/(scot %da now.bowl)/(scot %p who))
+      =/  old-rift=(unit @ud)
+        .^((unit @ud) %j /(scot %p our.bowl)/ryft/(scot %da now.bowl)/(scot %p who))
+      ?~  old-life  ~|([%theseus-restore-missing-life who] !!)
+      ?~  old-rift  ~|([%theseus-restore-missing-rift who] !!)
+      =/  life  +(u.old-life)
+      =/  rift  +(u.old-rift)
+      =/  kp  (gen-keypair:dingy (key-seed:dingy who life eny.bowl))
+      =/  snap-run  (unpack-pier saved)
+      =/  snap-set  (snap-peers:theseus-kernel snap.snap-run who scry-time.snap-run)
+      =/  live-set=(set ship)
+        =/  live  (~(get by piers) who)
+        ?~  live  ~
+        =/  run  (unpack-pier u.live)
+        =/  got  (mole |.((snap-peers:theseus-kernel snap.run who scry-time.run)))
+        (fall got ~)
+      =/  peers  (~(uni in snap-set) live-set)
+      [who peers rift life pub.kp priv.kp now.bowl now.bowl 0 %registering ~]
+    ::  The restored noun stays paused with an empty input queue until Jael
+    ::  confirms registration.  Pyre is shut before any restart is possible.
+    ::
     =/  restored=fleet
       %-  malt
       %+  turn  ~(tap by ships.shot)
       |=  [who=ship saved=saved-pier]
-      [who saved(paused |)]
+      =/  reset=saved-pier
+        %_    saved
+            paused       &
+            next-events  *(qeu unix-event)
+        ==
+      [who reset]
     =.  piers  (~(uni by piers) restored)
-    =/  restart-cards=(list card)
+    =.  recoveries  (~(uni by recoveries) jobs)
+    =.  booted
+      =/  dflt  (~(get by caches) %default)
+      %-  ~(uni by booted)
+      %-  ~(urn by (~(dif by restored) booted))
+      |=([who=ship saved=saved-pier] (moon-born who saved install-plans dflt))
+    =/  kill-cards=(list card)
       %+  turn  hers
       |=  who=ship
       :^  %pass  /theseus-pyre  %agent
       :+  [our.bowl %theseus-pyre]  %poke
-      theseus-effect+!>(`theseus-effect`[who [/ %restart ~]])
+      theseus-effect+!>(`theseus-effect`[who [/ %kill ~]])
+    =/  register-cards=(list card)
+      %-  zing
+      %+  turn  ~(tap by jobs)
+      |=  [who=ship job=recovery-job]
+      (recovery-register-cards who job)
+    =^  timer-cards  state  arm-recovery-timer
     ~&  theseus+restore-snap+path.act
-    [restart-cards state]
+    [:(weld kill-cards register-cards timer-cards) state]
   ::
       %delete-snap
     ~&  deleted+path.act
     `state(fleet-snaps (~(del by fleet-snaps) path.act))
   ::
       %unpause-ships
+    =/  blocked  (skim hers.act |=(who=ship (~(has by recoveries) who)))
+    ?^  blocked
+      ~|([%theseus-recovery-still-active blocked] !!)
     =.  this  apex-theseus  =<  abet-theseus
     ::  Thread the parent Theseus core explicitly.  +turn-ships returns a
     ::  nested +pe core through a polymorphic callback; with saved-pier vases
@@ -1417,6 +1920,9 @@
     $
   ::
       %pause-ships
+    =/  blocked  (skim hers.act |=(who=ship (~(has by recoveries) who)))
+    ?^  blocked
+      ~|([%theseus-recovery-still-active blocked] !!)
     =.  this  apex-theseus  =<  abet-theseus
     ::  Pausing is only a fleet-state update.  Do not invoke +plow and do not
     ::  pass nested +pe cores through the generic +turn-ships callback.
@@ -1434,6 +1940,8 @@
     `state
   ::
       %slap-gall
+    ?:  (~(has by recoveries) her.act)
+      ~|([%theseus-recovery-still-active her.act] !!)
     =.  this  abet-pe:(slap-gall:(pe her.act) [dap.act vase.act])
     ~&  theseus+slap-gall+her.act
     `state
@@ -1441,6 +1949,7 @@
       %ames-inbound
     ?.  (~(has by piers) who.act)
       `state
+    ?:  (recovery-blocked who.act)  `state
     ::  A %fine request is normally answered by vere before Arvo sees it.
     ::  Virtual moons have no vere, so ask the moon's own /x/fine/hunk
     ::  responder to scry and sign the requested data, then carry each signed
@@ -1479,6 +1988,7 @@
       %mesa-inbound
     ?.  (~(has by piers) who.act)
       `state
+    ?:  (recovery-blocked who.act)  `state
     =.  this  apex-theseus  =<  abet-theseus
     =.  this
       =<  abet-pe:plow
@@ -1489,6 +1999,7 @@
       %ames-stun
     ?.  (~(has by piers) who.act)
       `state
+    ?:  (recovery-blocked who.act)  `state
     =/  stun=stun:ames
       ?-  mode.act
         %once  [%once galaxy.act lane.act]
@@ -1522,6 +2033,8 @@
     `state
   ::
       %rebuild
+    ?.  =(~ recoveries)
+      ~|([%theseus-rebuild-recovery-active ~(tap in ~(key by recoveries))] !!)
     =/  desks
       ~|  "{<name.act>} cache doesn't exist"
       (cache-desks:theseus-kernel our.bowl now.bowl (~(got by caches) name.act))

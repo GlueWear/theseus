@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {newMoon, validateMoon, blitsToAnsi, validateFleet, validateHostDesks, resolveDeskSelection, bootDesks, deskPublisher, snapshotName} from '../src/model.mjs';
+import {newMoon, validateMoon, blitsToAnsi, validateFleet, validateHostDesks, resolveDeskSelection, bootDesks, deskPublisher, keysToBelts, byBoot, deskTally, snapshotName} from '../src/model.mjs';
 test('generated moon belongs to host and avoids existing identities', () => {
   const a = newMoon('~siglup-narwet', [], 123);
   assert.equal(validateMoon(a, '~siglup-narwet'), '');
@@ -18,6 +18,9 @@ test('API contract refuses unknown or missing data', () => {
   assert.throws(() => validateFleet({}));
   assert.throws(() => validateFleet({version: 1, host:'~zod', moons:[], snapshots:[], caches:[]}));
   assert.equal(validateFleet({version:2, host:'~zod', moons:[], snapshots:[], caches:[]}).host, '~zod');
+  const recovering = {ship:'~sampel-zod',desks:[],recovery:{stage:'registering',attempts:1,reason:null}};
+  assert.equal(validateFleet({version:2, host:'~zod', moons:[recovering], snapshots:[], caches:[]}).moons[0].recovery.stage, 'registering');
+  assert.throws(() => validateFleet({version:2, host:'~zod', moons:[{...recovering,recovery:{stage:'ready',attempts:0}}], snapshots:[], caches:[]}));
   assert.match(snapshotName(), /^[a-z][a-z0-9-]+$/);
 });
 test('desk selection locks base and resolves docket dependencies', () => {
@@ -49,4 +52,23 @@ test('desks update from the host unless a publisher is chosen and exists', () =>
     bootDesks(rows, ['base','glurff','landscape','local'], {base:'publisher', glurff:'publisher', landscape:'publisher', local:'publisher'}, host),
     [{desk:'base',from:'host'},{desk:'glurff',from:'publisher'},{desk:'landscape',from:'host'},{desk:'local',from:'host'}]);
   assert.deepEqual(bootDesks(rows, ['base','glurff'], {}, host), [{desk:'base',from:'host'},{desk:'glurff',from:'host'}]);
+});
+test('keystrokes become Dill belts', () => {
+  assert.deepEqual(keysToBelts('(add 2 2)\r'), [{txt:'(add 2 2)'},{ret:null}]);
+  assert.deepEqual(keysToBelts('\x1b[A\x1b[D\x7f\x03\t\x1b[3~\x1bb'), [{aro:'u'},{aro:'l'},{bac:null},{ctl:'c'},{ctl:'i'},{del:null},{met:'b'}]);
+  assert.deepEqual(keysToBelts('a\r\nb'), [{txt:'a'},{ret:null},{txt:'b'}]);
+  assert.deepEqual(keysToBelts('\x1b[15~\x00'), []);
+});
+test('moons sort oldest boot first, unknown boots last', () => {
+  assert.deepEqual(byBoot([{ship:'~b',booted:5},{ship:'~a'},{ship:'~c',booted:1}]).map(m => m.ship), ['~c','~b','~a']);
+});
+test('a boot is done when every desk runs or failed', () => {
+  assert.equal(deskTally([{stage:'running'},{stage:'installing'}]).done, false);
+  const done = deskTally([{stage:'running'},{stage:'failed',desk:'x'}]);
+  assert.equal(done.done, true); assert.equal(done.failed.length, 1);
+  assert.equal(deskTally([]).done, true);
+});
+test('styled Dill text keeps bold, underline and colours', () => {
+  const ansi = blitsToAnsi([{klr:[{text:['h','i'],stye:{deco:['br'],fore:'r',back:null}},{text:['x'],stye:{deco:['un'],fore:{r:1,g:2,b:3},back:'b'}},{text:['p'],stye:{deco:[null],fore:null,back:null}}]}]);
+  assert.equal(ansi, '\x1b[1;31mhi\x1b[0m\x1b[4;38;2;1;2;3;44mx\x1b[0mp');
 });

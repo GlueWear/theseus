@@ -2,12 +2,21 @@
 +$  command
   $%  [%boot who=ship desks=(list [=desk from=?(%host %publisher)])]
       [%dojo who=ship command=@t]
+      [%term who=ship act=term-act]
       [%pause who=ship]
       [%resume who=ship]
       [%kill who=ship]
-      [%snapshot name=@tas ships=(list ship)]
+      [%snapshot name=@tas ships=(list ship) resume=?]
       [%restore =path]
       [%delete =path]
+  ==
+::  A moon's terminal from the console, as a terminal client drives Dill:
+::  keystrokes, the window size, and a redraw of the prompt line.
+::
++$  term-act
+  $%  [%belts p=(list belt:dill)]
+      [%size p=blew:dill]
+      [%hail ~]
   ==
 ::  Web gateway: the reverse proxy that gives each moon its own origin,
 ::  <moon>.<domain>, mapped onto /theseus/~<moon> on this host's Eyre.

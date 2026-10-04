@@ -1,25 +1,49 @@
 import {test,expect} from '@playwright/test';
 const moon = '~sampel-siglup-narwet';
 test.beforeEach(async ({request,page})=>{await request.get('http://127.0.0.1:8085/reset');page.on('pageerror',e=>console.log('PAGE ERROR',e.message));});
-test('fleet, boot, snapshot pause, restore, and removal',async({page})=>{
+test('fleet lists moons oldest first; boot shows progress; snapshots return to a point',async({page})=>{
   await page.goto('/'); await expect(page.getByRole('button',{name:moon,exact:true})).toBeVisible();
+  // ~dozlet was booted first, though the host lists ~sampel first
+  await expect(page.locator('tbody tr .ship-link strong')).toHaveText(['~dozlet-siglup-narwet',moon]);
   await page.screenshot({path:'test-results/fleet-desktop.png',fullPage:true});
   await page.getByRole('button',{name:'Boot moon',exact:true}).click();
   const name=await page.getByLabel('Moon name',{exact:true}).inputValue();
   await page.getByRole('dialog').getByRole('button',{name:'Boot moon',exact:true}).click();
-  await expect(page.getByRole('button',{name,exact:true})).toBeVisible();
-  await page.getByRole('button',{name:`Snapshot ${moon}`,exact:true}).click();
-  await page.getByLabel('Snapshot name').fill('test-checkpoint');
-  await page.getByRole('button',{name:'Snapshot & pause'}).click();
-  await expect(page.getByRole('button',{name:`Resume ${moon}`,exact:true})).toBeVisible();
-  await page.getByRole('button',{name:/^Snapshots/}).click();
-  const row=page.locator('article').filter({hasText:'/test-checkpoint'});
-  await row.getByRole('button',{name:'Restore',exact:true}).click();
+  const status=page.getByRole('status',{name:'Boot status'});
+  await expect(status).toContainText(`Booting ${name}`);
+  await expect(page.locator('.booting-row')).toContainText(name);
+  await page.screenshot({path:'test-results/boot-status.png',fullPage:true});
+  await expect(status).toContainText(`${name} is ready`,{timeout:10000});
+  await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow','100');
+  await expect(page.locator('tbody tr .ship-link strong').last()).toHaveText(name);
+  // the moon's snapshot tool lists its snapshots and takes new ones
+  await page.getByRole('button',{name:`Snapshots of ${moon}`,exact:true}).click();
+  const dialog=page.getByRole('dialog');
+  await expect(dialog.getByRole('heading',{name:`Snapshots of ${moon}`})).toBeVisible();
+  await expect(dialog.locator('.snap-list')).toContainText('baseline');
+  await dialog.getByLabel('Snapshot name').fill('test-checkpoint');
+  await expect(dialog.getByLabel(`Keep ${moon} running after saving`)).toBeChecked();
+  await dialog.getByRole('button',{name:'Take snapshot'}).click();
+  await expect(dialog.locator('.snap-list li').first()).toContainText('test-checkpoint');
+  await page.screenshot({path:'test-results/moon-snapshots.png',fullPage:true});
+  await dialog.getByRole('button',{name:'Close',exact:true}).click();
+  await expect(page.getByRole('button',{name:`Pause ${moon}`,exact:true})).toBeVisible();
+  // without "keep running" the moon stays paused, as before
+  await page.getByRole('button',{name:`Snapshots of ${moon}`,exact:true}).click();
+  await dialog.getByLabel('Snapshot name').fill('paused-checkpoint');
+  await dialog.getByLabel(`Keep ${moon} running after saving`).uncheck();
+  await dialog.getByRole('button',{name:'Take snapshot'}).click();
+  await expect(dialog.locator('.snap-list')).toContainText('paused-checkpoint');
+  // restore straight from the moon's tool
+  await dialog.locator('.snap-list li').filter({hasText:'test-checkpoint'}).getByRole('button',{name:'Restore',exact:true}).click();
   await expect(page.getByRole('dialog')).toContainText(moon);
+  await expect(page.getByRole('dialog')).toContainText('new network era');
   await page.getByRole('button',{name:'Restore & resume'}).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.getByRole('button',{name:/^Moons/}).click();
   await expect(page.getByRole('button',{name:`Pause ${moon}`,exact:true})).toBeVisible();
+  await page.getByRole('button',{name:/^Snapshots \d/}).click();
+  await expect(page.locator('article').first()).toContainText('/paused-checkpoint');
+  await page.getByRole('button',{name:/^Moons/}).click();
   await page.getByRole('button',{name:`Remove ${name}`,exact:true}).click();
   await page.getByRole('dialog').getByRole('button',{name:'Remove moon',exact:true}).click();
   await expect(page.getByRole('button',{name,exact:true})).toHaveCount(0);
@@ -47,18 +71,25 @@ test('boot picker lists every desk and adds Landscape for docket apps',async({pa
   await expect(row.locator('.desk-state',{hasText:'%glurff'}).first()).toHaveAttribute('title',/updates from ~nolset\/%glurff/);
   await expect(row.locator('.desk-state',{hasText:'%landscape'}).first()).toHaveAttribute('title',/updates from ~siglup-narwet\/%landscape/);
 });
-test('dedicated Dojo receives output and keeps rejected command',async({page})=>{
+test('the Dojo is a terminal: typing goes straight to the moon',async({page,request})=>{
   await page.goto('/');await page.getByRole('button',{name:`Open Dojo for ${moon}`}).click();
-  const input=page.getByLabel(`Command for ${moon}`); await expect(input).toBeEnabled(); await expect(input).toBeFocused();
-  await input.fill('(add 2 2)');await page.getByRole('button',{name:'Send command'}).click();await expect(input).toHaveValue('');
-  await expect(input).toBeFocused();
-  await page.waitForTimeout(250); await page.screenshot({path:'test-results/dojo-desktop.png',fullPage:true});
-  await expect(page.locator('.xterm-rows')).toContainText('4');
-  await page.getByRole('button',{name:'Download transcript'}).focus();await expect(input).not.toBeFocused();
-  await page.getByTestId('terminal').click();await expect(input).toBeFocused();
-  await input.press('ArrowUp');await expect(input).toHaveValue('(add 2 2)');
-  await input.fill('fail');await page.getByRole('button',{name:'Send command'}).click();
-  await expect(page.getByRole('alert')).toContainText('rejected'); await expect(input).toHaveValue('fail'); await expect(input).toBeFocused();
+  const rows=page.locator('.xterm-rows');
+  await expect(rows).toContainText('sampel-siglup-narwet:dojo>');
+  await expect(page.getByLabel(`Command for ${moon}`)).toHaveCount(0);
+  await page.getByTestId('terminal').click();
+  await page.keyboard.type('(add 2 2x');await page.keyboard.press('Backspace');await page.keyboard.type(')');
+  await expect(rows).toContainText('dojo> (add 2 2)');
+  await page.keyboard.press('Enter');
+  await expect(rows).toContainText('4');
+  await page.waitForTimeout(150); await page.screenshot({path:'test-results/dojo-desktop.png',fullPage:true});
+  const log=await (await request.get('http://127.0.0.1:8085/term-log')).json();
+  const acts=log.filter(e=>e.who===moon).map(e=>e.act);
+  expect(acts.some(a=>a.size&&a.size.cols>20&&a.size.rows>5)).toBeTruthy();
+  expect(acts.some(a=>'hail' in a)).toBeTruthy();
+  const belts=acts.flatMap(a=>a.belts||[]);
+  expect(belts.map(b=>b.txt).filter(Boolean).join('')).toBe('(add 2 2x)');
+  expect(belts.some(b=>'bac' in b)).toBeTruthy(); expect(belts.some(b=>'ret' in b)).toBeTruthy();
+  await expect(page.getByRole('button',{name:'Download transcript'})).toBeVisible();
 });
 test('mobile layout and keyboard dialog cancellation',async({page})=>{
   await page.setViewportSize({width:390,height:844});await page.goto('/');await expect(page.getByRole('button',{name:moon,exact:true})).toBeVisible();
@@ -75,7 +106,7 @@ test('offline is explicit and disables actions',async({page})=>{
 test('workspace is top-aligned and closing the page deletes the channel',async({page,request})=>{
   await page.setViewportSize({width:1280,height:1600});await page.goto('/');await expect(page.getByRole('button',{name:moon,exact:true})).toBeVisible();
   expect(await page.locator('main').evaluate(el=>el.getBoundingClientRect().top)).toBeLessThan(5);
-  await page.getByRole('button',{name:`Open Dojo for ${moon}`}).click();await expect(page.getByLabel(`Command for ${moon}`)).toBeEnabled();
+  await page.getByRole('button',{name:`Open Dojo for ${moon}`}).click();await expect(page.locator('.xterm-rows')).toContainText('dojo>');
   await page.goto('about:blank');
   await expect.poll(async()=>Number(await (await request.get('http://127.0.0.1:8085/deletes')).text())).toBeGreaterThan(0);
 });
@@ -96,7 +127,7 @@ test('a moon without Landscape offers to install it, then opens',async({page,con
   await expect(page.getByRole('dialog')).toContainText('does not have Landscape');
   await expect(page.getByRole('dialog')).toContainText('|install ~siglup-narwet %landscape');
   await page.getByRole('button',{name:'Install Landscape'}).last().click();
-  await expect(page.getByLabel(`Command for ${name}`)).toBeVisible();
+  await expect(page.getByTestId('terminal')).toBeVisible();
   const login=context.waitForEvent('request',r=>r.method()==='POST'&&r.url().endsWith('/~/login'));
   await page.getByRole('button',{name:'Landscape',exact:true}).click();
   expect((await login).url()).toBe(`http://${name.slice(1)}.localhost:5174/~/login`);
