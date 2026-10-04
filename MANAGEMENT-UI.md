@@ -25,18 +25,22 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
 ### API
 
 - `GET /~/scry/theseus/ui.json` →
-  `{version: 2, host, caches: [..], moons: [{ship, status, paused, queued, identity, vanes, desks, booted, recovery}], snapshots: [{path, created, compatible, ships}]}`.
+  `{version: 3, host, caches: [..], moons: [{ship, status, paused, queued, identity, vanes, desks, booted, recovery}], fleets: [{name, ships, desks, created}], snapshots: [{path, created, compatible, ships}]}`.
   `booted` is the boot time in Unix ms. The console lists moons oldest first.
   `desks` is the moon's install plan, `[{desk, stage, reason, source: {ship, desk}}]`,
   with `stage` one of `installing`, `running`, `failed`. It is empty for
   moons booted before the desk picker.
   `recovery` is null or `{stage, attempts, reason}`; its stages are
   `registering`, `restarting`, and `failed`.
+  A fleet record is durable even while some members are not booted. Membership
+  is exclusive, and `desks` is the shared boot recipe for every member.
 - `GET /~/scry/theseus/desks.json` → `{version: 1, desks: [{desk, title, running, hash, source: {ship, desk} | null, dependencies}]}`:
   every host desk except `%kids` and `%theseus`. `source` is where the host's
   own copy syncs from.
 - Poke `%theseus` with mark `theseus-ui`, one key per command:
-  `boot {who, desks: [{desk, from: "host"|"publisher"}]}`, `dojo {who, command}`,
+  `boot {who, desks: [{desk, from: "host"|"publisher"}]}`,
+  `fleet-new {name, count, desks}`, `fleet-pause|fleet-resume|fleet-kill {name}`,
+  `dojo {who, command}`,
   `term {who, act}`, `pause|resume|kill {who}`, `snapshot {name, ships, resume}`,
   `restore|delete {path}`.
   - `term` is the moon's terminal. `act` is one of:
@@ -166,8 +170,9 @@ continuity, and resumes it only after host Jael confirmation.
   forged request, gets the login redirect.
 - The moon's code is only readable through `/~/scry` (owner only) and only
   posted to that moon's own origin.
-- Boot only accepts moons of the host (`child-of`). Dojo commands are capped at
-  16 KiB. Snapshots take 1-64 ships.
+- Boot only accepts moons of the host (`child-of`). Fleet creation generates
+  1-64 unused child identities on the host and rejects duplicate names. Dojo
+  commands are capped at 16 KiB. Snapshots take 1-64 ships.
 - Dill text is stripped of control characters before reaching xterm; only the
   renderer emits terminal escapes.
 - `@urbit/http-api` 3.0.0 registers an unbound `beforeunload` delete that throws,

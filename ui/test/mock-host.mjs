@@ -1,5 +1,6 @@
 // Test-only Eyre simulator. Never imported by the application bundle.
 import {createServer} from 'node:http';
+import {newMoon} from '../src/model.mjs';
 const host = '~siglup-narwet';
 const first = '~sampel-siglup-narwet';
 // Booted before .first but listed after it, so the console must sort by boot.
@@ -27,7 +28,7 @@ let data;
 let gw;
 let installed = new Set();
 const code = 'lidlut-tabwed-pillex-ridrup';
-const reset = () => {installing = new Map(); termLog = []; lines.clear(); data={version:2,host,moons:[moon(first, undefined, {booted: Date.UTC(2026,9,2,12)}), moon(older, undefined, {booted: Date.UTC(2026,9,1,9)})],caches:['default'],snapshots:[{path:'/baseline',ships:[first],compatible:true,created:'~2026.10.2..12.00.00'}]}; installed=new Set([first]); gw={mode:'auto',port:null,template:null,live:{port:5174,upstream:8083,at:'~2026.10.2..12.00.00'}};}; reset();
+const reset = () => {installing = new Map(); termLog = []; lines.clear(); data={version:3,host,moons:[moon(first, undefined, {booted: Date.UTC(2026,9,2,12)}), moon(older, undefined, {booted: Date.UTC(2026,9,1,9)})],fleets:[],caches:['default'],snapshots:[{path:'/baseline',ships:[first],compatible:true,created:'~2026.10.2..12.00.00'}]}; installed=new Set([first]); gw={mode:'auto',port:null,template:null,live:{port:5174,upstream:8083,at:'~2026.10.2..12.00.00'}};}; reset();
 // Mirrors %theseus-ui's /x/gateway status logic.
 const gatewayJson = () => {
   const url = gw.mode === 'hosting' ? gw.template : gw.mode === 'declared' ? `http://{moon}.localhost:${gw.port}` : gw.live ? `http://{moon}.localhost:${gw.live.port}` : null;
@@ -76,6 +77,12 @@ createServer(async (req,res) => {
     }
     const [kind,value] = Object.entries(action.json)[0];
     if (value.command === 'fail') {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
+    if (kind === 'fleet-new') {
+      if (!/^[a-z][a-z0-9-]{0,63}$/.test(value.name) || !Number.isInteger(value.count) || value.count < 1 || value.count > 64 || data.fleets.some(group => group.name === value.name)) {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
+      const existing = [...data.moons.map(m => m.ship),...data.fleets.flatMap(group => group.ships)], ships=[];
+      for (let i=0;i<value.count;i++) {const ship=newMoon(host,[...existing,...ships],1000+i);ships.push(ship);}
+      data.fleets.push({name:value.name,ships,desks:value.desks,created:Date.now()});
+    }
     if (kind === 'boot') {
       // Mirrors mar/theseus/ui: every desk names its source, host or publisher.
       if (!Array.isArray(value.desks) || !value.desks.every(d => typeof d?.desk === 'string' && ['host','publisher'].includes(d.from))) {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
@@ -85,7 +92,9 @@ createServer(async (req,res) => {
       if (value.desks.some(d => d.desk === 'landscape')) installed.add(value.who);
     }
     if (kind === 'pause' || kind === 'resume') data.moons.find(m=>m.ship===value.who).paused=kind==='pause';
-    if (kind === 'kill') data.moons=data.moons.filter(m=>m.ship!==value.who);
+    if (kind === 'fleet-pause' || kind === 'fleet-resume') {const group=data.fleets.find(g=>g.name===value.name);for(const ship of group?.ships||[]){const m=data.moons.find(row=>row.ship===ship);if(m)m.paused=kind==='fleet-pause';}}
+    if (kind === 'kill') {data.moons=data.moons.filter(m=>m.ship!==value.who);data.fleets=data.fleets.map(group=>({...group,ships:group.ships.filter(ship=>ship!==value.who)})).filter(group=>group.ships.length);}
+    if (kind === 'fleet-kill') {const group=data.fleets.find(g=>g.name===value.name);const ships=new Set(group?.ships||[]);data.moons=data.moons.filter(m=>!ships.has(m.ship));data.fleets=data.fleets.filter(g=>g.name!==value.name);}
     if (kind === 'snapshot') {
       // Mirrors mar/theseus/ui: resume is required.
       if (typeof value.resume !== 'boolean') {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}

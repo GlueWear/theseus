@@ -1,6 +1,10 @@
 |%
 +$  command
   $%  [%boot who=ship desks=(list [=desk from=?(%host %publisher)])]
+      [%fleet-new name=@tas count=@ud desks=(list [=desk from=?(%host %publisher)])]
+      [%fleet-pause name=@tas]
+      [%fleet-resume name=@tas]
+      [%fleet-kill name=@tas]
       [%dojo who=ship command=@t]
       [%term who=ship act=term-act]
       [%pause who=ship]
