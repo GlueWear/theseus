@@ -49,6 +49,15 @@
         :~  [%who (se %p)]
             [%desks (ar (ot ~[[%desk (se %tas)] [%from (su (perk %host %publisher ~))]]))]
         ==
+        :-  %fleet-new
+        %-  ot
+        :~  [%name (se %tas)]
+            [%count ni]
+            [%desks (ar (ot ~[[%desk (se %tas)] [%from (su (perk %host %publisher ~))]]))]
+        ==
+        [%fleet-pause (ot ~[[%name (se %tas)]])]
+        [%fleet-resume (ot ~[[%name (se %tas)]])]
+        [%fleet-kill (ot ~[[%name (se %tas)]])]
         [%dojo (ot ~[[%who (se %p)] [%command so]])]
         [%term (ot ~[[%who (se %p)] [%act term-act]])]
         [%pause (ot ~[[%who (se %p)]])]

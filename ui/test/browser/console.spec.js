@@ -72,6 +72,38 @@ test('boot picker lists every desk and adds Landscape for docket apps',async({pa
   await expect(row.locator('.desk-state',{hasText:'%glurff'}).first()).toHaveAttribute('title',/updates from ~nolset\/%glurff/);
   await expect(row.locator('.desk-state',{hasText:'%landscape'}).first()).toHaveAttribute('title',/updates from ~siglup-narwet\/%landscape/);
 });
+test('a fleet generates moons and applies folder actions to every member',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:'Boot Fleet',exact:true}).click();
+  const dialog=page.getByRole('dialog');
+  await dialog.getByLabel('Fleet name').fill('workers');
+  await dialog.getByLabel('Number of moons').fill('2');
+  await dialog.getByLabel('Include %glurff').check();
+  await dialog.getByRole('button',{name:'Boot Fleet',exact:true}).click();
+
+  const status=page.getByRole('status',{name:'Fleet boot status'});
+  await expect(status).toContainText('workers is ready',{timeout:15000});
+  const group=page.locator('tr.fleet-row').filter({hasText:'workers'});
+  await expect(group).toContainText('2 of 2 moons booted');
+  await expect(page.locator('tr.fleet-child')).toHaveCount(2);
+  await expect(page.locator('tr.fleet-child').first().getByRole('button',{name:/Open Dojo/})).toBeVisible();
+  await page.screenshot({path:'test-results/fleet-folder.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await page.screenshot({path:'test-results/fleet-folder-mobile.png',fullPage:true});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+
+  await page.getByRole('button',{name:'Pause fleet workers'}).click();
+  await expect(page.getByRole('button',{name:'Resume fleet workers'})).toBeVisible();
+  await page.getByRole('button',{name:'Snapshot fleet workers'}).click();
+  await expect(page.getByRole('dialog').locator('.affected li')).toHaveCount(2);
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+
+  await page.getByRole('button',{name:'Remove fleet workers'}).click();
+  await expect(page.getByRole('dialog')).toContainText('all of its booted moons');
+  await page.getByRole('button',{name:'Remove fleet',exact:true}).click();
+  await expect(group).toHaveCount(0);
+  await expect(page.locator('tr.fleet-child')).toHaveCount(0);
+});
 test('the Dojo is a terminal: typing goes straight to the moon',async({page,request})=>{
   await page.goto('/');await page.getByRole('button',{name:`Open Dojo for ${moon}`}).click();
   const rows=page.locator('.xterm-rows');
