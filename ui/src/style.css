@@ -251,6 +251,7 @@ dialog .form-error { margin-top: 12px; color: var(--bad); }
 .desk-choice strong { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
 .desk-choice small { font-size: 10px; color: var(--ink-3); overflow-wrap: anywhere; }
 .dependency-note { margin-top: 10px; padding: 8px 10px; border-left: 3px solid var(--sea); background: var(--sea-tint); color: var(--sea-deep); font-size: 11px; line-height: 1.5; }
+.desk-action-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; font: 700 16px/1 ui-monospace, Menlo, monospace; letter-spacing: 0; }
 
 /* Gateway */
 .gateway { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 24px; padding-top: 26px; }

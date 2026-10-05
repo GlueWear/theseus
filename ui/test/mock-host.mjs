@@ -13,12 +13,15 @@ const deskRows = [
   {desk:'landscape',title:'Landscape',running:true,hash:'0vlandscape',source:{ship:host,desk:'landscape'},dependencies:[]},
   {desk:'noltbook-data',title:null,running:false,hash:'0vdata',source:null,dependencies:[]},
 ];
+// The host crashes adding this desk, so the poke is nacked and nothing
+// changes: the console must keep the dialog open and show the rejection.
+const rejectedDesk = 'noltbook-data';
 // Mirrors %theseus: each desk tracks the host, or the host's own source.
 const sourceOf = (desk, from) => from === 'publisher' ? deskRows.find(r => r.desk === desk).source : {ship:host, desk: desk === 'base' ? 'kids' : desk};
 const moon = (ship, desks=[{desk:'base',from:'host'},{desk:'landscape',from:'host'}], {booted=Date.now(), stage='running'}={}) => ({ship,status:'healthy',paused:false,queued:0,identity:true,vanes,booted,desks:desks.map(({desk,from}) => ({desk,stage:desk === 'base' ? 'running' : stage,reason:null,source:sourceOf(desk,from)}))});
 // Desks of a fresh boot install for a moment, as Kiln does on the host.
 let installing = new Map();
-const settle = () => {for (const [ship, at] of installing) if (Date.now() >= at) {installing.delete(ship); data.moons.find(m => m.ship === ship)?.desks.forEach(d => {d.stage = 'running';});}};
+const settle = () => {for (const [ship, at] of installing) {const moon=data.moons.find(m => m.ship === ship);if (Date.now() >= at && moon && !moon.paused) {installing.delete(ship); moon.desks.forEach(d => {d.stage = 'running';});}}};
 // Terminal input the console sent, and each moon's current input line.
 let termLog = [];
 const lines = new Map();
@@ -82,6 +85,31 @@ createServer(async (req,res) => {
       const existing = [...data.moons.map(m => m.ship),...data.fleets.flatMap(group => group.ships)], ships=[];
       for (let i=0;i<value.count;i++) {const ship=newMoon(host,[...existing,...ships],1000+i);ships.push(ship);}
       data.fleets.push({name:value.name,ships,desks:value.desks,created:Date.now()});
+    }
+    if (kind === 'fleet-add-desks') {
+      const group=data.fleets.find(row=>row.name===value.name);
+      if (!group || !Array.isArray(value.desks) || !value.desks.every(d=>typeof d?.desk==='string'&&['host','publisher'].includes(d.from))) {send(channel,{id:action.id,response:'poke',err:'rejected'});continue;}
+      const existing=new Set(group.desks.map(row=>row.desk));
+      const fresh=value.desks.filter(row=>!existing.has(row.desk));
+      if (!fresh.length || fresh.some(row=>row.desk===rejectedDesk)) {send(channel,{id:action.id,response:'poke',err:'rejected'});continue;}
+      group.desks.push(...fresh);
+      for (const ship of group.ships) {
+        const member=data.moons.find(row=>row.ship===ship);if(!member)continue;
+        const have=new Set(member.desks.map(row=>row.desk));
+        member.desks.push(...fresh.filter(row=>!have.has(row.desk)).map(({desk,from})=>({desk,stage:desk==='base'?'running':'installing',reason:null,source:sourceOf(desk,from)})));
+        installing.set(ship,Date.now()+1500);
+        if(fresh.some(row=>row.desk==='landscape'))installed.add(ship);
+      }
+    }
+    if (kind === 'moon-add-desks') {
+      const member=data.moons.find(row=>row.ship===value.who);
+      if (!member || !Array.isArray(value.desks) || !value.desks.every(d=>typeof d?.desk==='string'&&['host','publisher'].includes(d.from))) {send(channel,{id:action.id,response:'poke',err:'rejected'});continue;}
+      const existing=new Set(member.desks.map(row=>row.desk));
+      const fresh=value.desks.filter(row=>!existing.has(row.desk));
+      if (!fresh.length || fresh.some(row=>row.desk===rejectedDesk)) {send(channel,{id:action.id,response:'poke',err:'rejected'});continue;}
+      member.desks.push(...fresh.map(({desk,from})=>({desk,stage:desk==='base'?'running':'installing',reason:null,source:sourceOf(desk,from)})));
+      installing.set(member.ship,Date.now()+1500);
+      if(fresh.some(row=>row.desk==='landscape'))installed.add(member.ship);
     }
     if (kind === 'boot') {
       // Mirrors mar/theseus/ui: every desk names its source, host or publisher.

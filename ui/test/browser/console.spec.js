@@ -72,6 +72,32 @@ test('boot picker lists every desk and adds Landscape for docket apps',async({pa
   await expect(row.locator('.desk-state',{hasText:'%glurff'}).first()).toHaveAttribute('title',/updates from ~nolset\/%glurff/);
   await expect(row.locator('.desk-state',{hasText:'%landscape'}).first()).toHaveAttribute('title',/updates from ~siglup-narwet\/%landscape/);
 });
+test('an existing moon can add host desks without replacing its current desks',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:`Add desks to ${moon}`}).click();
+  const dialog=page.getByRole('dialog');
+  await expect(dialog.getByRole('heading',{name:`Add desks to ${moon}`})).toBeVisible();
+  await expect(dialog.getByLabel('Include %base')).toHaveCount(0);
+  await expect(dialog.getByLabel('Include %landscape')).toHaveCount(0);
+  await dialog.getByLabel('Include %groups').check();
+  await dialog.getByRole('button',{name:'Add desks',exact:true}).click();
+  const row=page.locator('tbody tr').filter({hasText:moon});
+  await expect(row.locator('.desk-column .desk-state.running',{hasText:'%base'})).toHaveCount(1);
+  await expect(row.locator('.desk-column .desk-state.running',{hasText:'%landscape'})).toHaveCount(1);
+  await expect(row.locator('.desk-column .desk-state.running',{hasText:'%groups'})).toHaveCount(1,{timeout:10000});
+});
+test('a rejected desk addition stays open with the host error and changes nothing',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:`Add desks to ${moon}`}).click();
+  const dialog=page.getByRole('dialog');
+  await dialog.getByLabel('Include %noltbook-data').check();
+  await dialog.getByRole('button',{name:'Add desks',exact:true}).click();
+  await expect(dialog.getByRole('alert')).toContainText('The host rejected this action');
+  await expect(dialog.getByRole('heading',{name:`Add desks to ${moon}`})).toBeVisible();
+  await expect(dialog.getByRole('button',{name:'Add desks',exact:true})).toBeEnabled();
+  await expect(page.locator('tbody tr').filter({hasText:moon}).locator('.desk-state',{hasText:'%noltbook-data'})).toHaveCount(0);
+  await expect(page.locator('.banner.success')).toHaveCount(0);
+});
 test('a fleet generates moons and applies folder actions to every member',async({page})=>{
   await page.goto('/');
   await page.getByRole('button',{name:'Boot Fleet',exact:true}).click();
@@ -94,6 +120,17 @@ test('a fleet generates moons and applies folder actions to every member',async(
 
   await page.getByRole('button',{name:'Pause fleet workers'}).click();
   await expect(page.getByRole('button',{name:'Resume fleet workers'})).toBeVisible();
+  await page.getByRole('button',{name:'Add desks to fleet workers'}).click();
+  const add=page.getByRole('dialog');
+  await expect(add.getByLabel('Include %base')).toHaveCount(0);
+  await expect(add.getByLabel('Include %glurff')).toHaveCount(0);
+  await expect(add.getByLabel('Include %landscape')).toHaveCount(0);
+  await add.getByLabel('Include %groups').check();
+  await add.getByRole('button',{name:'Add desks',exact:true}).click();
+  await expect(group.locator('.desk-state',{hasText:'%groups'}).first()).toBeVisible();
+  await expect(page.locator('tr.fleet-child .desk-column .desk-state.installing',{hasText:'%groups'})).toHaveCount(2);
+  await page.getByRole('button',{name:'Resume fleet workers'}).click();
+  await expect(page.locator('tr.fleet-child .desk-column .desk-state.running',{hasText:'%groups'})).toHaveCount(2,{timeout:10000});
   await page.getByRole('button',{name:'Snapshot fleet workers'}).click();
   await expect(page.getByRole('dialog').locator('.affected li')).toHaveCount(2);
   await page.getByRole('button',{name:'Cancel',exact:true}).click();

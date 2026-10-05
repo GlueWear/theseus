@@ -55,6 +55,16 @@
             [%count ni]
             [%desks (ar (ot ~[[%desk (se %tas)] [%from (su (perk %host %publisher ~))]]))]
         ==
+        :-  %fleet-add-desks
+        %-  ot
+        :~  [%name (se %tas)]
+            [%desks (ar (ot ~[[%desk (se %tas)] [%from (su (perk %host %publisher ~))]]))]
+        ==
+        :-  %moon-add-desks
+        %-  ot
+        :~  [%who (se %p)]
+            [%desks (ar (ot ~[[%desk (se %tas)] [%from (su (perk %host %publisher ~))]]))]
+        ==
         [%fleet-pause (ot ~[[%name (se %tas)]])]
         [%fleet-resume (ot ~[[%name (se %tas)]])]
         [%fleet-kill (ot ~[[%name (se %tas)]])]

@@ -39,7 +39,9 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
   own copy syncs from.
 - Poke `%theseus` with mark `theseus-ui`, one key per command:
   `boot {who, desks: [{desk, from: "host"|"publisher"}]}`,
-  `fleet-new {name, count, desks}`, `fleet-pause|fleet-resume|fleet-kill {name}`,
+  `fleet-new {name, count, desks}`, `fleet-add-desks {name, desks}`,
+  `moon-add-desks {who, desks}`,
+  `fleet-pause|fleet-resume|fleet-kill {name}`,
   `dojo {who, command}`,
   `term {who, act}`, `pause|resume|kill {who}`, `snapshot {name, ships, resume}`,
   `restore|delete {path}`.
@@ -53,6 +55,12 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
     echoes them back on pyre's `/blit`.
   - `snapshot` pauses its moons while it seals them. With `resume: true`,
     moons that were running carry on afterwards.
+  - `fleet-add-desks` merges the selected host Clay material into every live
+    member without replacing moon-local desks, starts Kiln installs, and
+    expands the recipe used by members booted later. Paused members retain
+    pending installs without consuming their timeout.
+  - `moon-add-desks` performs the same preserving merge and tracked Kiln
+    install for one existing moon without changing a managed fleet recipe.
   See "Choosing a moon's desks" in ARCHITECTURE.md for what `boot` does.
 - `GET /~/scry/theseus/web/~<moon>.json` → `{ship, code, landscape}`: the moon's
   login code (no `~`) and whether `%landscape` is installed, read from inside the

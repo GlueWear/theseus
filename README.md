@@ -192,7 +192,11 @@ the moon's snapshots: take one, or restore an earlier one.
 same desk plan. The folder persists before its members boot, so an interrupted
 boot can resume with **Boot missing moons**. Expand the folder for each moon's
 normal controls; the folder itself pauses, resumes, snapshots, or removes all
-of its booted members together.
+of its booted members together. The folder's **%** action adds selected host
+desks to every booted member and to the durable fleet recipe. Missing members
+receive those desks when they boot; paused members continue installation when
+they resume. The same **%** action on an individual moon adds host desks only
+to that moon.
 
 Or in Dojo:
 

@@ -261,6 +261,35 @@
       $(dez t.dez, dos.rom.ruf (~(put by dos.rom.ruf) i.dez dj))
     ==
   (put-clay-vane snap (slam mutator (slop cache !>(~(tap in desks)))))
+::  +add-desks: merge host Clay material and add missing desks to a running ship
+::
+::    Unlike +inject-raft, this preserves the target's rang and existing desk
+::    domes.  Clay pages are content-addressed, so unioning the source rang adds
+::    the selected desks' history without replacing moon-local commits or data.
+::    A rang is two maps, commits (.hut) and pages (.lat); each is unioned.
+::
+++  add-desks
+  |=  [snap=vase cache=vase desks=(set desk)]
+  ^-  vase
+  =/  mutator
+    %+  slap  (clay-vane-of snap)
+    !,  *hoon
+    |=  [src=_ruf dez=(list @tas)]
+    %=    +>
+        ran.ruf
+      ^+  ran.ruf
+      :-  (~(uni by hut.ran.src) hut.ran.ruf)
+      (~(uni by lat.ran.src) lat.ran.ruf)
+        dos.rom.ruf
+      |-  ^+  dos.rom.ruf
+      ?~  dez  dos.rom.ruf
+      ?:  (~(has by dos.rom.ruf) i.dez)  $(dez t.dez)
+      =/  dj  *dojo
+      ~|  [%theseus-add-desk-missing i.dez]
+      =.  dom.dj  dom:(~(got by dos.rom.src) i.dez)
+      $(dez t.dez, dos.rom.ruf (~(put by dos.rom.ruf) i.dez dj))
+    ==
+  (put-clay-vane snap (slam mutator (slop cache !>(~(tap in desks)))))
 ::  +pack-snap-raft: a running virtual ship's whole raft, packed as a cache vase
 ::  (== the raft vase +snap-raft already produces).  Used by %rebuild to re-make
 ::  the cache from the ship it rebuilt on.

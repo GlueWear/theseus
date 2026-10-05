@@ -545,6 +545,12 @@
                 (~(put by fleets) name.cmd [ships desks.cmd now.bowl])
               ~&  [%theseus-fleet-created name.cmd ~(wyt in ships)]
               `state
+            %fleet-add-desks
+              ?>  ?&((gth (lent desks.cmd) 0) (lte (lent desks.cmd) 64))
+              (poke-action:hc [%add-fleet-desks name.cmd desks.cmd])
+            %moon-add-desks
+              ?>  ?&((gth (lent desks.cmd) 0) (lte (lent desks.cmd) 64))
+              (poke-action:hc [%add-ship-desks who.cmd desks.cmd])
             %fleet-pause
               =/  group  (~(get by fleets) name.cmd)
               ?~  group  ~|([%theseus-fleet-missing name.cmd] !!)
@@ -1227,6 +1233,20 @@
       now.bowl
       now.bowl
   ==
+::  +extend-plan: retain completed progress and track newly added desks
+::
+++  extend-plan
+  |=  [who=ship sources=(map desk [=ship =desk])]
+  ^-  install-plan
+  =/  out  (plan-for sources %installing)
+  =/  prior  (~(get by install-plans) who)
+  ?~  prior  out
+  =.  desks.out  (~(uni in desks.out) desks.u.prior)
+  =.  sources.out
+    (~(gas by sources.out) ~(tap by sources.u.prior))
+  =.  progress.out
+    (~(gas by progress.out) ~(tap by progress.u.prior))
+  out(started now.bowl, updated now.bowl)
 ::  +kiln-install-event: |install .des from .src, inside the moon
 ::
 ::    Same as typing |install in the moon's dojo, without the parsing.  The
@@ -1277,6 +1297,15 @@
   ^-  ?
   %+  lien  ~(val by progress.plan)
   |=(pro=desk-progress ?=(?(%seeded %installing) stage.pro))
+::  +plan-runnable: paused moons retain pending installs without timing out
+::
+++  plan-runnable
+  |=  [who=ship plan=install-plan]
+  ^-  ?
+  ?.  (plan-pending plan)  |
+  =/  saved  (~(get by piers) who)
+  ?~  saved  |
+  !paused.u.saved
 ::  +next-progress: one chosen desk's stage, from the moon's Kiln
 ::
 ::    Kiln may not have handled the install yet, and keeps a seeded desk
@@ -1303,7 +1332,7 @@
   ^-  (map ship install-plan)
   %-  ~(urn by install-plans)
   |=  [who=ship plan=install-plan]
-  ?.  (plan-pending plan)  plan
+  ?.  (plan-runnable who plan)  plan
   =/  pks  (moon-pikes who)
   =/  late=?  (gth now.bowl (add started.plan install-timeout))
   ?:  &(?=(~ pks) !late)  plan
@@ -1321,7 +1350,11 @@
 ++  arm-install-timer
   ^-  (quip card _state)
   ?^  install-timer  `state
-  ?.  (lien ~(val by install-plans) plan-pending)  `state
+  =/  pending=?
+    %+  lien  ~(tap by install-plans)
+    |=  [who=ship plan=install-plan]
+    (plan-runnable who plan)
+  ?.  pending  `state
   =/  when  (add now.bowl install-poll)
   :_  state(install-timer `when)
   [%pass /install-plans/(scot %da when) %arvo %b %wait when]~
@@ -1754,6 +1787,124 @@
       sources
     (desk-publishers selected)
   ::
+      %add-ship-desks
+    =/  old
+      ~|  [%theseus-add-desks-missing who.act]
+      (~(got by piers) who.act)
+    ?:  (~(has by recoveries) who.act)
+      ~|([%theseus-add-desks-recovery-active who.act] !!)
+    =/  hel  (health-of who.act old)
+    ?:  =(%empty status.hel)
+      ~|([%theseus-add-desks-empty who.act] !!)
+    =/  run=pier  (unpack-pier old)
+    =/  current=(set desk)
+      (snap-raft-desks:theseus-kernel snap.run)
+    =/  fresh=(list [=desk from=desk-from])
+      %+  skim  desks.act
+      |=  [d=desk *]
+      !(~(has in current) d)
+    ?:  =(~ fresh)
+      ~|([%theseus-add-desks-no-new-desks who.act] !!)
+    =/  sources  (resolve-host-desks fresh)
+    =/  selected=(set desk)  ~(key by sources)
+    =/  added=(set desk)  (~(dif in selected) current)
+    ?:  =(~ added)
+      ~|([%theseus-add-desks-no-new-desks who.act] !!)
+    =/  cache
+      (cache-from-host:theseus-kernel our.bowl now.bowl ~(tap in added))
+    =.  piers
+      %+  ~(put by piers)  who.act
+      %-  pack-pier
+      run(snap (add-desks:theseus-kernel snap.run cache added))
+    =.  install-plans
+      (~(put by install-plans) who.act (extend-plan who.act sources))
+    =/  allies  (desk-publishers added)
+    =/  events=(list theseus-event)
+      ;:  weld
+        %+  turn  ~(tap in added)
+        |=(d=desk `theseus-event`[who.act /c/zest/[d] %zest d %live])
+      ::
+        %+  turn  (skip ~(tap in added) |=(d=desk =(d %base)))
+        |=(d=desk (kiln-install-event who.act d (~(got by sources) d)))
+      ::
+        ?.  (~(has in (~(uni in current) added)) %landscape)  ~
+        (turn ~(tap in allies) |=(her=ship (treaty-ally-event who.act her)))
+      ==
+    =^  event-cards  state  (poke-theseus-events events)
+    =^  timer-cards  state  arm-install-timer
+    ~&  [%theseus-add-desks who.act ~(tap in added)]
+    [(weld event-cards timer-cards) state]
+  ::
+      %add-fleet-desks
+    =/  group  (~(get by fleets) name.act)
+    ?~  group  ~|([%theseus-fleet-missing name.act] !!)
+    =/  current=(set desk)  ~(key by (malt desks.u.group))
+    =/  fresh=(list [=desk from=desk-from])
+      %+  skim  desks.act
+      |=  [d=desk *]
+      !(~(has in current) d)
+    ?:  =(~ fresh)
+      ~|([%theseus-fleet-no-new-desks name.act] !!)
+    =/  sources  (resolve-host-desks (weld desks.u.group fresh))
+    =/  selected=(set desk)  ~(key by sources)
+    =/  added=(set desk)  (~(dif in selected) current)
+    ?:  =(~ added)
+      ~|([%theseus-fleet-no-new-desks name.act] !!)
+    =/  hers=(list ship)
+      %+  skim  ~(tap in ships.u.group)
+      |=  who=ship
+      (~(has by piers) who)
+    =/  blocked
+      %+  skim  hers
+      |=  who=ship
+      ?:  (~(has by recoveries) who)  &
+      =/  saved  (~(got by piers) who)
+      =/  hel  (health-of who saved)
+      =(%empty status.hel)
+    ?^  blocked
+      ~|([%theseus-fleet-recovery-active name.act blocked] !!)
+    =/  cache
+      (cache-from-host:theseus-kernel our.bowl now.bowl ~(tap in added))
+    =.  piers
+      %-  ~(gas by piers)
+      %+  turn  hers
+      |=  who=ship
+      ^-  [ship saved-pier]
+      =/  old  (~(got by piers) who)
+      =/  run=pier  (unpack-pier old)
+      :-  who
+      ^-  saved-pier
+      (pack-pier run(snap (add-desks:theseus-kernel snap.run cache added)))
+    =.  install-plans
+      %-  ~(gas by install-plans)
+      %+  turn  hers
+      |=(who=ship [who (extend-plan who sources)])
+    =/  recipe=(list [=desk from=desk-from])
+      %+  turn  ~(tap by sources)
+      |=  [d=desk src=[=ship =desk]]
+      [d ?:(=(our.bowl ship.src) %host %publisher)]
+    =.  fleets
+      (~(put by fleets) name.act u.group(desks recipe))
+    =/  allies  (desk-publishers added)
+    =/  all-events=(list theseus-event)
+      %-  zing
+      %+  turn  hers
+      |=  who=ship
+      ;:  weld
+        %+  turn  ~(tap in added)
+        |=(d=desk `theseus-event`[who /c/zest/[d] %zest d %live])
+      ::
+        %+  turn  (skip ~(tap in added) |=(d=desk =(d %base)))
+        |=(d=desk (kiln-install-event who d (~(got by sources) d)))
+      ::
+        ?.  (~(has in selected) %landscape)  ~
+        (turn ~(tap in allies) |=(her=ship (treaty-ally-event who her)))
+      ==
+    =^  event-cards  state  (poke-theseus-events all-events)
+    =^  timer-cards  state  arm-install-timer
+    ~&  [%theseus-fleet-add-desks name.act ~(tap in added) hers]
+    [(weld event-cards timer-cards) state]
+  ::
       %init-planet
     ?:  (~(has by piers) who.act)
       ~|([%theseus-init-existing who.act] !!)
@@ -2050,17 +2201,38 @@
       $(pending t.pending, this this)
     ::  Preserve the old +turn-ships behavior: once every target is unpaused,
     ::  drain all runnable queues across the fleet.
-    |-
-    =/  active=(unit ship)
-      =/  pers  ~(tap by piers)
+    =.  this
       |-
-      ?~  pers  ~
-      ?:  &(?=(^ next-events.q.i.pers) !paused.q.i.pers)
-        `p.i.pers
-      $(pers t.pers)
-    ?~  active  this
-    =.  this  abet-pe:plow:(pe u.active)
-    $
+      =/  active=(unit ship)
+        =/  pers  ~(tap by piers)
+        |-
+        ?~  pers  ~
+        ?:  &(?=(^ next-events.q.i.pers) !paused.q.i.pers)
+          `p.i.pers
+        $(pers t.pers)
+      ?~  active  this
+      =.  this  abet-pe:plow:(pe u.active)
+      $
+    ::  Paused time does not count against a desk installation timeout.
+    =/  resumed=(set ship)  (~(gas in *(set ship)) hers.act)
+    =.  install-plans
+      %-  ~(urn by install-plans)
+      |=  [who=ship plan=install-plan]
+      ?:  &((~(has in resumed) who) (plan-pending plan))
+        plan(started now.bowl, updated now.bowl)
+      plan
+    ::  Stay in the parent Theseus core so the surrounding +abet-theseus can
+    ::  collect this wait card along with the effects emitted while resuming.
+    =/  timer=(unit @da)  install-timer
+    ?^  timer  this
+    =/  runnable=?
+      %+  lien  ~(tap by install-plans)
+      |=  [who=ship plan=install-plan]
+      (plan-runnable who plan)
+    ?.  runnable  this
+    =/  when  (add now.bowl install-poll)
+    =.  this  this(install-timer `when)
+    (emit-cards [%pass /install-plans/(scot %da when) %arvo %b %wait when]~)
   ::
       %pause-ships
     =/  blocked  (skim hers.act |=(who=ship (~(has by recoveries) who)))

@@ -109,6 +109,11 @@
       ::  each from us, or from the ship we installed it from (%publisher).
       ::  %base is always included, and always tracks our %kids.
       [%init-moon-desks who=ship desks=(list [=desk from=desk-from]) pub=pass key=@]
+      ::  add host desks to every existing member of a managed fleet and
+      ::  persist the expanded recipe for members booted later
+      [%add-fleet-desks name=@tas desks=(list [=desk from=desk-from])]
+      ::  add host desks to one existing virtual ship
+      [%add-ship-desks who=ship desks=(list [=desk from=desk-from])]
       ::  boot a real Azimuth planet with a supplied keyfile feed.
       ::  continuity and public-key data come from host Jael; no Jael mutation.
       [%init-planet who=ship cache=@tas =feed:jael]
