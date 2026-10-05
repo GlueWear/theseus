@@ -6,7 +6,7 @@ import {Terminal} from '@xterm/xterm';
 import {FitAddon} from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import {fleet, hostDesks as fetchHostDesks, watchDojo, command, term as sendTerm, moonWeb, gateway, setGateway, reachable} from './api';
-import {blitsToAnsi, keysToBelts, byBoot, deskTally, daMs, newMoon, validateMoon, snapshotName, dateLabel, moonOrigin, validPort, validTemplate, gatewayProblem, resolveDeskSelection, deskPublisher, bootDesks} from './model.mjs';
+import {blitsToAnsi, keysToBelts, byBoot, deskTally, daMs, newMoon, validateMoon, snapshotName, dateLabel, moonOrigin, validPort, validTemplate, gatewayProblem, resolveDeskSelection, deskPublisher, bootDesks, shipNumber} from './model.mjs';
 import icon from './icon.png';
 import './style.css';
 
@@ -189,6 +189,57 @@ function GatewayPanel({gw, host, canAct, save}) {
     </form>
   </section>;
 }
+function downloadText(name, text, type = 'application/json') {
+  const url = URL.createObjectURL(new Blob([text], {type}));
+  const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+}
+function shellArg(value) { return `'${String(value).replaceAll("'", "'\\''")}'`; }
+function SidecarPanel({host, moons}) {
+  const [pier, setPier] = useState('/path/to/pier');
+  const [amesPort, setAmesPort] = useState('');
+  const [copied, setCopied] = useState(false);
+  const configured = Boolean(host && moons.length);
+  const map = Object.fromEntries(moons.map(moon => [moon.ship, shipNumber(moon.ship)]));
+  const mapText = `${JSON.stringify(map, null, 2)}\n`;
+  const hostName = host?.replace(/^~/, '') || 'host-ship';
+  const hostNumber = host ? shipNumber(host) : 'HOST_NUMBER';
+  const socket = `${pier.replace(/\/$/, '')}/.urb/dev/theseus-pyre/ames`;
+  const port = validPort(amesPort) ? amesPort : 'HOST_AMES_PORT';
+  const command = `node theseus-sidecar.mjs \\\n  --lick-socket ${shellArg(socket)} \\\n  --moons-map ./theseus-moons.json \\\n  --gateway ${hostName}=127.0.0.1:${port} \\\n  --gateway-num ${hostNumber} \\\n  --bind 0.0.0.0:40000`;
+  async function copyCommand() {
+    try {await navigator.clipboard.writeText(command); setCopied(true); setTimeout(() => setCopied(false), 2000);}
+    catch {setCopied(false);}
+  }
+  return <section className="sidecar">
+    <div className="sidecar-card sidecar-intro">
+      <span className="section-label">STOCK VERE FALLBACK</span>
+      <h2>One-file transport sidecar</h2>
+      <p>Use this only when the host runtime does not provide native Theseus UDP-Lick. The download contains the sidecar and its JavaScript dependency in one file; Node.js 20 or newer is the only software it needs.</p>
+      <div className="sidecar-actions">
+        <a className="sidecar-download primary" href="/apps/theseus/sidecar.mjs" download="theseus-sidecar.mjs"><Download size={17}/>Download sidecar</a>
+        <button disabled={!configured} onClick={() => downloadText('theseus-moons.json', mapText)}><Download size={17}/>Download moon list</button>
+      </div>
+      {!moons.length && <div className="banner error" role="alert"><AlertCircle size={18}/><span>Boot at least one moon before downloading its moon list.</span></div>}
+      <p className="hint">The moon list contains public ship identities only. Download it again and restart the sidecar after adding or removing moons.</p>
+    </div>
+    <div className="sidecar-card">
+      <span className="section-label">RUN IT</span>
+      <ol className="sidecar-steps">
+        <li>Put both downloaded files in the same folder on the machine running the host ship.</li>
+        <li>Enter the host pier path and Ames UDP port below. The port is printed in the host's startup log.</li>
+        <li>Copy the command into a terminal and leave it running. Press Ctrl-C to stop it.</li>
+      </ol>
+      <div className="sidecar-fields">
+        <label>Host pier path<input aria-label="Host pier path" value={pier} onChange={e => setPier(e.target.value || '/path/to/pier')} spellCheck="false"/></label>
+        <label>Host Ames UDP port<input aria-label="Host Ames UDP port" inputMode="numeric" placeholder="e.g. 55056" value={amesPort} onChange={e => setAmesPort(e.target.value)} /></label>
+      </div>
+      <pre className="sidecar-command"><code>{command}</code></pre>
+      <div className="sidecar-actions"><button onClick={copyCommand} disabled={!configured}><Check size={17}/>{copied ? 'Copied' : 'Copy command'}</button></div>
+      <p className="hint">Success prints one bound UDP socket per moon and <code>lick connected</code>. Packet logging is off by default; add <code>--packet-log</code> temporarily when diagnosing traffic.</p>
+    </div>
+  </section>;
+}
 function App() {
   const [data, setData] = useState(null);
   const [view, setView] = useState('moons');
@@ -363,8 +414,9 @@ function App() {
       <button className={view === 'moons' ? 'active' : ''} onClick={() => {setView('moons'); setDojo(null);}}><LayoutList size={18}/>Moons<span>{moons.length}</span></button>
       <button className={view === 'snapshots' ? 'active' : ''} onClick={() => {setView('snapshots'); setDojo(null);}}><Camera size={18}/>Snapshots<span>{snapshots.length}</span></button>
       <button className={view === 'gateway' ? 'active' : ''} onClick={() => {setView('gateway'); setDojo(null);}}><Globe size={18}/>Gateway<span>{gw?.status === 'ok' || gw?.status === 'external' ? 'on' : gw === undefined ? '' : 'off'}</span></button>
+      <button className={view === 'sidecar' ? 'active' : ''} onClick={() => {setView('sidecar'); setDojo(null);}}><Download size={18}/>Sidecar<span>optional</span></button>
     </nav><div className="host"><span className="section-label">HOST SHIP</span><div>{data && <ShipIcon ship={data.host}/>}<strong>{data?.host || 'Not connected'}</strong></div><span className={`connection ${online ? 'live' : ''}`}><i/>{online ? 'Connected' : loading ? 'Connecting' : 'Offline'}</span></div></aside>
-    <main><header className="page-header"><div><span className="section-label">THESEUS / {view.toUpperCase()}</span><h1>{activeMoon ? 'Dojo' : view === 'moons' ? 'Moons' : view === 'gateway' ? 'Gateway' : 'Snapshots'}</h1></div><div className="tools"><IconButton label="Refresh fleet" onClick={() => {setError(''); refresh();}} disabled={loading}><RefreshCw size={18}/></IconButton>{view === 'moons' && <button className="primary" disabled={!canAct} onClick={() => open('boot')}><Plus size={17}/>Boot moon</button>}</div></header>
+    <main><header className="page-header"><div><span className="section-label">THESEUS / {view.toUpperCase()}</span><h1>{activeMoon ? 'Dojo' : view === 'moons' ? 'Moons' : view === 'gateway' ? 'Gateway' : view === 'sidecar' ? 'Sidecar' : 'Snapshots'}</h1></div><div className="tools"><IconButton label="Refresh fleet" onClick={() => {setError(''); refresh();}} disabled={loading}><RefreshCw size={18}/></IconButton>{view === 'moons' && <button className="primary" disabled={!canAct} onClick={() => open('boot')}><Plus size={17}/>Boot moon</button>}</div></header>
       {boot && <BootStatus boot={boot} moon={bootRow} dismiss={() => setBoot(null)}/>}
       {error && <div role="alert" className="banner error"><AlertCircle size={18}/><span>{error}</span>{!online && <a href="/~/login?redirect=/apps/theseus">Sign in <ArrowUpRight size={14}/></a>}<IconButton label="Dismiss error" onClick={() => setError('')}><X size={16}/></IconButton></div>}
       {notice && <div role="status" className="banner success"><Check size={17}/><span>{notice}</span><IconButton label="Dismiss notification" onClick={() => setNotice('')}><X size={16}/></IconButton></div>}
@@ -379,7 +431,7 @@ function App() {
         </div></div>
         {activeMoon.recovery && <div className={`banner ${activeMoon.recovery.stage === 'failed' ? 'error' : 'success'}`} role="status"><AlertCircle size={18}/><span>{activeMoon.recovery.stage === 'failed' ? activeMoon.recovery.reason || 'Snapshot recovery failed. The moon remains paused and its transport is closed.' : activeMoon.recovery.stage === 'registering' ? 'Registering the restored moon\'s new keys and network era with the host.' : 'Restarting the restored moon and checking local health.'}</span></div>}
         <TerminalWindow moon={activeMoon} connected={online && channel === 'connected'} close={() => setDojo(null)} onError={setError}/>
-      </> : view === 'gateway' ? <GatewayPanel key={`${gw?.mode}|${gw?.port}|${gw?.template}`} gw={gw} host={data?.host} canAct={canAct} save={saveGateway}/> : <>
+      </> : view === 'gateway' ? <GatewayPanel key={`${gw?.mode}|${gw?.port}|${gw?.template}`} gw={gw} host={data?.host} canAct={canAct} save={saveGateway}/> : view === 'sidecar' ? <SidecarPanel host={data?.host} moons={moons}/> : <>
       <div className="overview"><div><span className="metric">{moons.filter(m => m.status === 'healthy' && !m.paused && !m.recovery).length}</span><span>Running</span></div><div><span className="metric">{moons.filter(m => m.paused && !m.recovery).length}</span><span>Paused</span></div><div><span className="metric">{moons.filter(m => m.status !== 'healthy' || m.recovery).length}</span><span>Need attention</span></div><div><span className="metric">{snapshots.length}</span><span>Snapshots</span></div></div>
       {view === 'moons' ? <>
         <div className="list-toolbar"><div className="search"><Search size={16}/><input aria-label="Search moons" placeholder="Search moons" value={filter} onChange={e => setFilter(e.target.value)}/></div><button disabled={!canAct || !healthySelected} onClick={() => open('snapshot', selected)}><Camera size={16}/>Snapshot{selected.length ? ` (${selected.length})` : ''}</button></div>

@@ -16,14 +16,16 @@ record see [MANAGEMENT-UI.md](MANAGEMENT-UI.md); for runtime builds see
  Web gateway: Caddy (ops/Caddyfile.local), run by ops/theseus-gateway
    │  moon hostnames → /theseus/~<moon>/<path>; everything else unchanged
    ▼
- Host ship: patched Vere runtime + Arvo
+ Host ship: Arvo on patched Vere, or stock Vere with the optional sidecar
    ├─ Eyre ─────────────┬─ %theseus-ui    console page, icon, gateway settings
    │                    └─ %theseus-pyre  /theseus/~<moon> web route, /blit
    ├─ %theseus           fleet: each moon's Arvo kernel, event queue, snapshots
    ├─ %theseus-pyre      the moons' "runtime": Ames transport, timers, Dill,
    │                     HTTP in and out
-   └─ Lick ports /theseus-pyre/utp/~<moon>
-          │  one UDP socket per moon, with STUN, in the runtime
+   └─ transport selector, per moon
+          ├─ native /theseus-pyre/utp/~<moon> (patched Vere, preferred)
+          └─ /theseus-pyre/ames → Node sidecar (stock Vere fallback)
+             one UDP socket per moon
           ▼
        Internet (galaxies, other ships, the host itself)
 ```
@@ -35,7 +37,8 @@ record see [MANAGEMENT-UI.md](MANAGEMENT-UI.md); for runtime builds see
 | `%theseus-ui` | `app/theseus-ui.hoon`, `web/` | Serves the console and its icon to the host's owner; stores the web gateway settings and the gateway's last report. |
 | Console | `ui/` → `web/theseus.html` | React single-page app at `/apps/theseus` and a Landscape tile. |
 | Web gateway | `ops/` | Caddy plus a launcher and launchd helper; gives each moon its own browser origin. |
-| Patched Vere | GlueWear/vere `main` | UDP-backed Lick ports with automatic ports and per-guest STUN. |
+| Patched Vere | GlueWear/vere `main` | Preferred transport: UDP-backed Lick ports with automatic ports and per-guest STUN. |
+| Node sidecar | `bin/transport-sidecar.mjs` | Optional stock-Vere fallback; one UDP endpoint per moon, connected to pyre over noun Lick or Eyre. |
 
 ## How a moon runs
 
@@ -61,8 +64,14 @@ runtime, timers through Behn, terminal output to the console's Dojo view.
 ## How a moon reaches the network
 
 Ames, Urbit's network protocol, normally lives in the runtime's UDP socket.
-Arvo cannot send raw packets, so Theseus relies on a small runtime patch
-(GlueWear/vere, see [NO-SIDECAR.md](NO-SIDECAR.md)):
+Arvo cannot send raw packets, so Theseus selects one of two transports per
+moon. It probes the patched runtime first and uses native traffic when that path
+answers. If stock Vere reports no `/utp/<ship>` client, or the probe expires
+while the sidecar is connected, pyre sends that moon through the sidecar. A
+sidecar that connects later triggers a fresh probe. See
+[NO-SIDECAR.md](NO-SIDECAR.md).
+
+On the preferred native path:
 
 1. When a moon first sends a packet, pyre opens a Lick port named
    `/theseus-pyre/utp/~<moon>`. The runtime gives that port its own UDP socket on
@@ -76,6 +85,12 @@ Arvo cannot send raw packets, so Theseus relies on a small runtime patch
    to that galaxy every 25 seconds and reports the result back to the moon's
    Ames as a stock `%stun` event. This keeps the moon's NAT mapping open, so a
    galaxy can relay packets to it.
+
+On the fallback path, pyre sends Ames and Mesa nouns over its `/ames` Lick
+socket (or, for compatibility, JSON over an Eyre subscription). The sidecar
+owns one real UDP socket per moon and injects replies back through pyre. Packet
+logging is opt-in, DNS work is cached/coalesced, and Eyre ingress is bounded so
+a network or channel failure cannot grow retained work without limit.
 
 Why step 3 matters: on 2026-10-02 moons could answer `~zod` (a galaxy they
 contacted directly) but never heard from the host or `~nolset`, which sit on

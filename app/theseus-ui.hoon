@@ -135,6 +135,18 @@
           .^(@ %cx /(scot %p our.bowl)/[q.byk.bowl]/(scot %da now.bowl)/web/icon/png)
         :_  `[(met 3 png) png]
         [200 ['content-type'^'image/png' 'cache-control'^'max-age=3600' ~]]
+      ::  A single-file Node executable with @urbit/nockjs bundled into it.
+      ::  Keep it authenticated like the console: it is operational tooling,
+      ::  not a public asset, and its URL is deliberately stable.
+      ?:  =('/apps/theseus/sidecar.mjs' url.request.req.req)
+        =/  sidecar=@t
+          .^(@t %cx /(scot %p our.bowl)/[q.byk.bowl]/(scot %da now.bowl)/web/theseus-sidecar/mjs)
+        :_  `(as-octs:mimes:html sidecar)
+        :-  200
+        :~  ['content-type' 'text/javascript; charset=utf-8']
+            ['content-disposition' 'attachment; filename="theseus-sidecar.mjs"']
+            ['cache-control' 'no-store']
+        ==
       =/  page=@t
         .^(@t %cx /(scot %p our.bowl)/[q.byk.bowl]/(scot %da now.bowl)/web/theseus/html)
       ::  The URL never changes across desk updates; do not let browsers keep

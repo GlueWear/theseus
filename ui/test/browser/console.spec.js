@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {readFile} from 'node:fs/promises';
 const moon = '~sampel-siglup-narwet';
 test.beforeEach(async ({request,page})=>{await request.get('http://127.0.0.1:8085/reset');page.on('pageerror',e=>console.log('PAGE ERROR',e.message));});
 test('fleet lists moons oldest first; boot shows progress; snapshots return to a point',async({page})=>{
@@ -177,5 +178,26 @@ test('gateway view fits a phone',async({page})=>{
   await page.setViewportSize({width:390,height:844});await page.goto('/');
   await page.getByRole('button',{name:/^Gateway/}).click();await expect(page.locator('.gateway-status')).toContainText('Running');
   await page.screenshot({path:'test-results/gateway-mobile.png',fullPage:true});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+});
+test('sidecar view downloads a fleet map and builds the run command',async({page})=>{
+  await page.goto('/');await page.getByRole('button',{name:/^Sidecar/}).click();
+  await expect(page.getByRole('heading',{name:'Sidecar',exact:true})).toBeVisible();
+  const bundle=page.getByRole('link',{name:'Download sidecar'});
+  await expect(bundle).toHaveAttribute('href','/apps/theseus/sidecar.mjs');
+  const download=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Download moon list'}).click();
+  const fleet=await download;
+  expect(fleet.suggestedFilename()).toBe('theseus-moons.json');
+  const map=JSON.parse(await readFile(await fleet.path(),'utf8'));
+  expect(Object.keys(map)).toEqual([moon,'~dozlet-siglup-narwet']);
+  expect(Object.values(map).every(value=>/^\d+$/.test(value))).toBeTruthy();
+  await page.getByLabel('Host pier path').fill('/srv/pier');
+  await page.getByLabel('Host Ames UDP port').fill('55056');
+  await expect(page.locator('.sidecar-command')).toContainText("/srv/pier/.urb/dev/theseus-pyre/ames");
+  await expect(page.locator('.sidecar-command')).toContainText('--gateway siglup-narwet=127.0.0.1:55056');
+  await page.screenshot({path:'test-results/sidecar-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await page.screenshot({path:'test-results/sidecar-mobile.png',fullPage:true});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
 });
