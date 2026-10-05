@@ -45,6 +45,30 @@ import net from 'node:net';
 import { Atom, Cell, jam, cue_bytes, isCell } from '@urbit/nockjs';
 
 const args = parseArgs(process.argv.slice(2));
+if (args.help) {
+  console.log(`Theseus transport sidecar
+
+Usage:
+  node theseus-sidecar.mjs --lick-socket <path> --moons-map <json> \\
+    --gateway <host>=127.0.0.1:<ames-port> --gateway-num <host-@p> \\
+    --bind 0.0.0.0:<base-port>
+
+Required for the recommended noun-Lick mode:
+  --lick-socket <path>  <pier>/.urb/dev/theseus-pyre/ames
+  --moons-map <json>    map of "~moon-name" to decimal @p
+  --gateway <route>     host ship and its local Ames UDP address
+  --gateway-num <@p>    host ship as a decimal @p
+  --bind <address:port> first UDP address; one consecutive port per moon
+
+Optional:
+  --packet-log          log every inbound and outbound packet
+  --galaxy-via-gateway  route galaxy packets through the host
+  --turf <domain>       galaxy DNS suffix (default: urbit.org)
+  --czar-base <port>    galaxy UDP base (default: 13337)
+  --help                show this text
+`);
+  process.exit(0);
+}
 const ship = stripSig(args.ship || process.env.URBIT_SHIP || 'zod');
 const url = trimSlash(args.url || process.env.URBIT_URL || 'http://localhost:8082');
 const pier = args.pier || process.env.URBIT_PIER || '/Users/chris/Enviorment/urbit-dev/ships/zod';

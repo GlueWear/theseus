@@ -1,4 +1,5 @@
 import ob from 'urbit-ob';
+export function shipNumber(value) { return ob.patp2dec(value); }
 export function validateMoon(value, host) {
   if (!ob.isValidPatp(value)) return 'Enter a valid moon name.';
   const moon = BigInt(ob.patp2dec(value));

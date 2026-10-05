@@ -223,6 +223,11 @@ each moon, uses native when the runtime answers, and falls back to the connected
 sidecar otherwise. Starting a sidecar later clears the cached choices so the
 next packets are probed again.
 
+The simplest setup is the console's **Sidecar** view. It downloads a standalone
+`theseus-sidecar.mjs` with its JavaScript dependency already bundled, generates
+the current fleet's `theseus-moons.json`, and builds the run command after you
+enter the local pier path and host Ames port. It requires Node.js 20 or newer.
+
 The preferred sidecar IPC is the noun Lick socket at
 `<pier>/.urb/dev/theseus-pyre/ames`. Eyre remains available as a compatibility
 fallback. The sidecar still uses the `--moon` option name for any single virtual

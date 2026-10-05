@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {newMoon, validateMoon, blitsToAnsi, validateFleet, validateHostDesks, resolveDeskSelection, bootDesks, deskPublisher, keysToBelts, byBoot, deskTally, snapshotName} from '../src/model.mjs';
+import {newMoon, validateMoon, blitsToAnsi, validateFleet, validateHostDesks, resolveDeskSelection, bootDesks, deskPublisher, keysToBelts, byBoot, deskTally, snapshotName, shipNumber} from '../src/model.mjs';
 test('generated moon belongs to host and avoids existing identities', () => {
   const a = newMoon('~siglup-narwet', [], 123);
   assert.equal(validateMoon(a, '~siglup-narwet'), '');
@@ -8,6 +8,11 @@ test('generated moon belongs to host and avoids existing identities', () => {
   assert.ok(validateMoon(a, '~baltel-bidlys'));
   assert.ok(validateMoon('~siglup-narwet', '~siglup-narwet'));
   assert.ok(validateMoon('invalid', '~siglup-narwet'));
+});
+test('sidecar configuration uses decimal ship identities', () => {
+  const host = BigInt(shipNumber('~siglup-narwet'));
+  const moon = BigInt(shipNumber('~sampel-siglup-narwet'));
+  assert.equal(moon & 0xffffffffn, host);
 });
 test('Dill output preserves Unicode and generated controls, strips guest escapes', () => {
   assert.equal(blitsToAnsi([{put:['h','i']},{nel:true},{hop:3},{klr:[{text:['4']}]}]), 'hi\r\n\x1b[4G4');
