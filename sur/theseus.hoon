@@ -12,6 +12,24 @@
                    [%is p=@isH q=@udE]
                ==
 ::
+::  Runtime transport selection is deliberately ephemeral.  Each guest probes
+::  the patched Vere UDP-Lick path after a Pyre reload and falls back to the
+::  external sidecar when stock Lick reports that no /utp client exists.
+::
++$  transport-state
+  $%  [%probe deadline=@da]
+      [%native ~]
+      [%sidecar ~]
+  ==
++$  ames-send-data  [lane=lane:ames blob=@]
++$  mesa-push-data  [lanes=(list mesa-lane) blob=@]
++$  ames-task
+  $%  [%saxo sponsors=(list ship)]
+      [%send data=ames-send-data]
+      [%push data=mesa-push-data]
+  ==
++$  ames-effect  [who=ship uf=[p=wire q=ames-task]]
+::
 ::  Structural copies of arvo-private runtime molds, kept local so this sur --
 ::  and every agent built from it -- compiles against the host's AMBIENT kernel
 ::  with no vendored /sys.  +vere/+wynn/+weft live in /sys/arvo, which is NOT
@@ -174,5 +192,8 @@
       ::  Emitted by %theseus-pyre when a virtual ship's Ames produces a raw
       ::  packet send. This is the first bridge seam for an external sidecar.
       [%ames-outbound who=ship lane=lane:ames blob=@]
+      ::  Mesa equivalent. Keep every candidate lane so an Eyre-connected
+      ::  sidecar can preserve the native runtime's multi-lane behavior.
+      [%mesa-outbound who=ship lanes=(list mesa-lane) blob=@]
   ==
 --

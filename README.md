@@ -2,7 +2,9 @@
 
 `%theseus` runs virtual Urbit ships inside a host ship. The current product target
 is virtual moons that boot, run Dojo, talk on live Ames through their own UDP
-transport in a patched Vere runtime, and are managed from a web console.
+transport, and are managed from a web console. A patched Vere provides the
+preferred native transport; the Node sidecar is an optional fallback for stock
+Vere.
 
 This repository is the canonical Theseus product repo. The older exploratory
 history lives in `GlueWear/theseus-prototype`.
@@ -13,7 +15,7 @@ history lives in `GlueWear/theseus-prototype`.
 | --- | --- |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the pieces fit: agents, runtime transport, web gateway, console; operations and troubleshooting. Start here. |
 | [MANAGEMENT-UI.md](MANAGEMENT-UI.md) | The console and web gateway in detail: API, security, build, deploy, verification. |
-| [NO-SIDECAR.md](NO-SIDECAR.md) | The UDP-Lick transport and the runtime it needs. |
+| [NO-SIDECAR.md](NO-SIDECAR.md) | Native UDP-Lick and automatic sidecar fallback. |
 | [HARDENING.md](HARDENING.md) | Runtime builds and fingerprints, memory notes, remaining gates. |
 | [THESEUS-REFERENCE.md](THESEUS-REFERENCE.md) | `%theseus` generators, scries and threads. |
 | [408-OPERATIONS-NOTES.md](408-OPERATIONS-NOTES.md) | Earlier sidecar-era operations notes (historical). |
@@ -26,10 +28,12 @@ Verified on `[%zuse 408]` (October 2026, host `~siglup-narwet`):
   `%theseus` desk; the desk uses the host kernel (no vendored `/sys`).
 - Virtual moons boot with real generated keys (`:theseus|init-moon` or the
   console) and run Dojo.
-- Each moon talks on live Ames from its own UDP socket, run by the patched Vere
-  (`GlueWear/vere`, branch `main`): automatic ports, per-moon STUN keepalive. No
+- Each moon talks on live Ames from its own UDP socket. Patched Vere
+  (`GlueWear/vere`, branch `main`) is preferred and supplies automatic ports
+  and per-moon STUN. On stock Vere, pyre falls back per moon to the optional
   Node sidecar. Moons have completed `|hi ~zod`, reached the host and its
-  sponsor star, and installed `%landscape`.
+  sponsor star, and installed `%landscape`; the fallback has also carried
+  bidirectional live Ames traffic for a multi-moon fleet.
 - The web console at `/apps/theseus` (also a Landscape tile): fleet health,
   boot with a choice of host desks, pause/resume/remove, a terminal Dojo per
   moon, per-moon snapshots and restore, each moon's `+code`, and one-click
@@ -39,7 +43,7 @@ Verified on `[%zuse 408]` (October 2026, host `~siglup-narwet`):
 
 Known limits (details in ARCHITECTURE.md):
 
-- Requires the patched runtime; stock Vere has no UDP-Lick.
+- Stock Vere needs the optional Node sidecar for live networking.
 - The web gateway is loopback-only; public hosting needs an operator-managed
   proxy (the console's Hosting mode).
 - Landscape speed and long-running channel health inside a moon are not yet
@@ -60,8 +64,7 @@ Known limits (details in ARCHITECTURE.md):
   restore, and commands.
 - `sur/theseus.hoon`, `sur/theseus-ui.hoon`: shared types.
 - `lib/theseus-kernel.hoon`: kernel-building helpers against the host kernel.
-- `bin/`: the legacy Node transport sidecar (not needed with the patched
-  runtime).
+- `bin/`: the optional Node transport sidecar and its isolated runner.
 
 ## Install
 
@@ -72,15 +75,17 @@ Known limits (details in ARCHITECTURE.md):
   only works offline.
 - **Kernel `[%zuse 408]`.** `+vats %base` shows it under `/sys/kelvin`. The desk
   declares only 408, so a ship already on 409 or later can't install it yet.
-- **The patched runtime,** built from source (step 1). Stock Vere has no
-  UDP-Lick, so moons can't reach the network.
+- **A network transport.** Use the patched runtime (recommended), or run the
+  Node sidecar after installing the desk. Stock Vere has no native UDP-Lick.
 - **Memory headroom.** Every moon lives inside the host's memory. Start the
   host with a larger loom (step 2).
 
-### 1. Build the runtime
+### 1. Optional: build the native-transport runtime
 
-You need Zig 0.15.2 (`brew install zig`, or see the fork's `INSTALL.md`). There
-are no prebuilt releases.
+This is the recommended transport. If you keep stock Vere, skip to step 3 and
+start the sidecar after the desk is installed. Building the fork needs Zig
+0.15.2 (`brew install zig`, or see the fork's `INSTALL.md`). There are no
+prebuilt releases.
 
 ```sh
 git clone https://github.com/GlueWear/vere.git
@@ -91,10 +96,10 @@ zig build -Doptimize=ReleaseFast
 The binary is `zig-out/<target>/urbit`, for example
 `zig-out/aarch64-macos-none/urbit`.
 
-### 2. Run the host on it
+### 2. Run the host on the patched runtime
 
-Stop the host with `|exit`. Then start it with the new binary and a larger
-loom:
+Skip this step when using stock Vere with the sidecar. Otherwise stop the host
+with `|exit`, then start it with the new binary and a larger loom:
 
 ```sh
 /path/to/vere/zig-out/aarch64-macos-none/urbit --loom 34 /path/to/pier
@@ -159,12 +164,13 @@ gives each moon its own address, `http://<moon>.localhost:<port>`.
      service manager.
 3. If the pier's folder isn't named after the ship, also set
    `THESEUS_SHIP=~your-ship`. The gateway runs the pier's `.run` to talk to
-   the ship, so start the host with the patched runtime first.
+   the ship.
 4. Check that the console's **Gateway** view shows it running. Details are in
    [ARCHITECTURE.md](ARCHITECTURE.md), "Moon web apps and the web gateway".
 
-You don't need Node to run Theseus. The built console (`web/theseus.html`) is
-committed; Node is only needed to work on the console itself (`ui/`, see
+You don't need Node when using native UDP-Lick. The built console
+(`web/theseus.html`) is committed; Node is otherwise needed only for the
+fallback sidecar or console development (`ui/`, see
 [MANAGEMENT-UI.md](MANAGEMENT-UI.md)).
 
 ## Boot A Virtual Moon
@@ -209,27 +215,58 @@ boots the virtual planet with `%dawn`.
 :theseus|dojo ~sampel-palnet "+vats"
 ```
 
-## Legacy: Node Transport Sidecar
+## Optional Node Transport Sidecar
 
-Before the patched runtime, a Node sidecar carried virtual ships' Ames traffic
-over Eyre. It is kept for reference and experiments; it is not needed with the
-UDP-Lick runtime, and should not run alongside it. It uses the `--moon` option
-name for any virtual ship.
+The sidecar gives virtual ships live networking on a host running stock Vere.
+It may also run alongside the patched runtime: pyre probes native UDP-Lick for
+each moon, uses native when the runtime answers, and falls back to the connected
+sidecar otherwise. Starting a sidecar later clears the cached choices so the
+next packets are probed again.
+
+The preferred sidecar IPC is the noun Lick socket at
+`<pier>/.urb/dev/theseus-pyre/ames`. Eyre remains available as a compatibility
+fallback. The sidecar still uses the `--moon` option name for any single virtual
+ship; use `--moons-map` for a fleet.
 
 ### Sidecar Setup
 
 Do not run `npm ci` inside a mounted desk: Clay will try to commit
 `node_modules/`. Use the runner, which installs dependencies under the system temp directory and launches a copied sidecar from there.
 
-Find the host HTTP port, Ames/Mesa UDP port, and host `+code`. In the proven run:
+For a fleet, create a JSON map from each virtual ship name to its decimal `@p`,
+then find the host Ames/Mesa UDP port. The sidecar binds one consecutive UDP
+port per ship, beginning at `--bind`:
+
+```json
+{
+  "~dostex-dolten-dilpun": "123456789"
+}
+```
+
+Start the sidecar after `%theseus-pyre` is running, adjusting paths, ships and
+ports. `--gateway-num` is the host's decimal `@p`; it keeps host-bound traffic
+on the configured loopback route even after a moon learns a direct lane.
+
+```bash
+node bin/transport-sidecar-runner.mjs \
+  --lick-socket /path/to/pier/.urb/dev/theseus-pyre/ames \
+  --moons-map /path/to/moons.json \
+  --gateway dolten-dilpun=127.0.0.1:55430 \
+  --gateway-num 1234567890 \
+  --bind 0.0.0.0:41237
+```
+
+Packet-by-packet logs are off by default. Add `--packet-log` temporarily when
+diagnosing traffic.
+
+For older setups without noun Lick IPC, use the Eyre channel instead. Find the
+host HTTP port and `+code`, omit `--lick-socket`, and pass the login options:
 
 - host: `~dolten-dilpun`
 - HTTP: `http://localhost:8081`
 - Ames/Mesa UDP: `55430`
 - virtual moon: `~dostex-dolten-dilpun`
 - sidecar UDP bind: `0.0.0.0:41237`
-
-Start the known-good direct live-net sidecar from the mounted desk or repo. Use a real numeric Ames port, never a placeholder such as `REAL_AMES_PORT`:
 
 ```bash
 node bin/transport-sidecar-runner.mjs \
@@ -240,6 +277,8 @@ node bin/transport-sidecar-runner.mjs \
   --gateway dolten-dilpun=127.0.0.1:55430 \
   --bind 0.0.0.0:41237
 ```
+
+Use a real numeric Ames port, never a placeholder such as `REAL_AMES_PORT`.
 
 Then test from Dojo:
 

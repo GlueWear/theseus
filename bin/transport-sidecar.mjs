@@ -32,6 +32,8 @@
  *   --czar-base <port>   galaxy port base (live 13337, fake 31337)
  *   --fake               fakenet: base 31337 + seed ~zod=127.0.0.1:31337
  *   --peer ~s=ip:port    extra static route (non-galaxy)
+ *   --gateway-num <@ud>  gateway ship number; overrides a learned direct lane
+ *   --packet-log         log every inbound/outbound packet (off by default)
  *   --galaxy-via-gateway  send galaxy routes through --gateway instead of DNS
  */
 
@@ -49,6 +51,7 @@ const pier = args.pier || process.env.URBIT_PIER || '/Users/chris/Enviorment/urb
 const code = args.code || process.env.URBIT_CODE || readCode(pier);
 const uid = `theseus-transport-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 const galaxyViaGateway = args['galaxy-via-gateway'] === 'true';
+const packetLogEnabled = args['packet-log'] === 'true';
 const bindSpec = args.bind || '0.0.0.0:39999';
 
 // ship -> {addr, port} routing table for non-galaxy peers (gateway, moons).
@@ -70,6 +73,13 @@ if (args.gateway) {
   const [who, hostport] = parsePeerSpec(args.gateway, '--gateway');
   addPeer(who, hostport, '--gateway');
   gatewayShip = who.startsWith('~') ? who : `~${who}`;
+}
+let gatewayNum = null;
+if (args['gateway-num'] != null) {
+  const text = String(args['gateway-num']);
+  if (!/^\d+$/.test(text)) fail(`--gateway-num must be an unsigned decimal @p: ${text}`);
+  gatewayNum = BigInt(text);
+  if (!gatewayShip) fail('--gateway-num requires --gateway');
 }
 // reverse map "addr:port" -> ~ship, for inbound sender identification
 const peersByAddr = new Map();
@@ -110,7 +120,23 @@ let lastSeenId = 0;      // highest channel event id received
 let lastAckedId = 0;     // highest we've acked back to Eyre
 let pendingAckId = 0;    // highest event id queued for ack
 let ackInFlight = false;
+let ackRetryTimer = null;
+let ackErrorLogAt = 0;
 let cookie = args.cookie || process.env.URBIT_COOKIE || '';
+
+// Eyre ingress must be bounded. A UDP burst can otherwise create one pending
+// fetch (and retain one packet/JSON body) per datagram while the channel is
+// slow or unavailable. Ames is retrying transport, so dropping at a fixed
+// ceiling is preferable to unbounded process growth.
+const EYRE_INGRESS_BATCH = 32;
+const EYRE_INGRESS_MAX = 512;
+const EYRE_RETRY_MS = 250;
+const EYRE_ERROR_LOG_MS = 30_000;
+const eyreIngressQueue = [];
+let eyreIngressActive = false;
+let eyreIngressRetryTimer = null;
+let eyreIngressErrorLogAt = 0;
+let eyreIngressDropLogAt = 0;
 
 if (!lickSocket) {
   if (!code && !cookie) fail('No Urbit code or cookie. Pass --code / --cookie.');
@@ -143,24 +169,45 @@ const GALAXIES = (
 // galaxy @p name -> number (0-255), or -1 if the name isn't a galaxy.
 function galaxyNum(name) { return GALAXIES.indexOf(stripSig(name)); }
 
-const dnsCache = new Map(); // host -> { addr, exp }
+const DNS_OK_TTL_MS = 60_000;
+const DNS_FAIL_TTL_MS = 10_000;
+const DNS_FAIL_LOG_MS = 30_000;
+const dnsCache = new Map(); // host -> { addr, exp, pending? }
+const dnsFailureLogAt = new Map();
 async function resolveHost(host) {
   const now = Date.now();
   const hit = dnsCache.get(host);
+  if (hit?.pending) return hit.pending;
   if (hit && hit.exp > now) return hit.addr;
-  try {
-    const { address } = await dns.lookup(host, { family: 4 });
-    dnsCache.set(host, { addr: address, exp: now + 60_000 });
-    return address;
-  } catch { return null; }
+  const pending = dns.lookup(host, { family: 4 })
+    .then(({ address }) => {
+      dnsCache.set(host, { addr: address, exp: Date.now() + DNS_OK_TTL_MS });
+      return address;
+    })
+    .catch(() => {
+      // A missing galaxy DNS record can attract many retry packets at once.
+      // Cache NXDOMAIN briefly and coalesce concurrent lookups so retries do
+      // not create an unbounded queue of resolver work and log writes.
+      dnsCache.set(host, { addr: null, exp: Date.now() + DNS_FAIL_TTL_MS });
+      return null;
+    });
+  dnsCache.set(host, { addr: null, exp: 0, pending });
+  return pending;
+}
+function logDnsFailure(host) {
+  const now = Date.now();
+  const last = dnsFailureLogAt.get(host) || 0;
+  if (now - last < DNS_FAIL_LOG_MS) return;
+  dnsFailureLogAt.set(host, now);
+  console.log(`[transport] DNS fail ${host}, drop (suppressed for ${DNS_FAIL_LOG_MS / 1_000}s)`);
 }
 async function sendToGalaxy(udp, name, gnum, bytes, from) {
   const host = `${name}.${turf}`;
   const port = czarBase + gnum;
   const addr = await resolveHost(host);
-  if (!addr) { console.log(`[transport] DNS fail ${host}, drop`); return; }
+  if (!addr) { logDnsFailure(host); return; }
   udp.send(bytes, port, addr, (e) => { if (e) console.error('[transport] galaxy send err:', e); });
-  console.log(`[transport] OUT ~${from} -> ~${name} galaxy ${host}:${port} (${addr}) ${bytes.length}B ${packetSummary(bytes)}`);
+  if (packetLogEnabled) console.log(`[transport] OUT ~${from} -> ~${name} galaxy ${host}:${port} (${addr}) ${bytes.length}B ${packetSummary(bytes)}`);
 }
 
 // --- UDP sockets: one transport endpoint per virtual moon -----------------
@@ -204,7 +251,9 @@ console.log(galaxyViaGateway
   ? `[transport] galaxies via gateway: ${gatewayShip || '(missing --gateway)'}`
   : `[transport] galaxies via DNS: *.${turf} port ${czarBase}+n${args.fake ? ' (fakenet)' : ''}`);
 console.log(`[transport] peers: ${[...peers].map(([w, a]) => `${w}->${a.addr}:${a.port}`).join(', ') || '(none)'}`);
+if (gatewayNum != null) console.log(`[transport] gateway direct-lane override: @p:${gatewayNum}`);
 console.log(`[transport] moons: ${[...moons].map((m) => `~${m}`).join(', ') || '(none)'}`);
+console.log(`[transport] packet log: ${packetLogEnabled ? 'enabled' : 'disabled (pass --packet-log to enable)'}`);
 
 // --- health heartbeat (both transports) ----------------------------------
 // Touch a file when we prove we're alive AND our transport works, so the
@@ -263,22 +312,34 @@ function onChannel(raw) {
     }
     const fact = extractFact(msg);
     if (!fact) continue;
-    const out = fact.ship && fact.blob ? fact : fact['ames-outbound'];
+    const out = fact.ship && fact.blob
+      ? fact
+      : (fact['ames-outbound'] || fact['mesa-outbound']);
     if (!out || !out.blob) continue;
 
     const from = stripSig(out.ship);           // the virtual moon sending
     const rec = udpByName.get(from) || (udpRecords.length === 1 ? udpRecords[0] : null);
     if (!rec) { console.log(`[transport] no UDP endpoint for ~${from}, drop`); continue; }
     const bytes = atomHexToBufferLE(out.blob, Number(out['blob-len'] ?? 0));
+    if (Array.isArray(out['lane-jams'])) {
+      for (const laneJam of out['lane-jams']) {
+        let lane;
+        try { lane = cueAtomHex(laneJam); }
+        catch (e) { console.error('[transport] malformed mesa lane jam:', e.message); continue; }
+        sendMesaLane(rec, from, lane, bytes);
+      }
+      continue;
+    }
     const target = out['lane-ship'] ? stripSig(out['lane-ship']) : null;
     if (!target) {
       // direct-address lane [%.n p]: the moon learned a peer's real transport
       // address (from the origin disden stamps on forwarded replies) and wants
       // to send straight there, like a NAT-punched ship. Decode p -> ip:port.
+      if (sendConfiguredGatewayOverride(rec, from, bytes)) continue;
       const la = decodeLane(out['lane-addr']);
       if (la) {
         rec.udp.send(bytes, la.port, la.addr, (e) => { if (e) console.error('[transport] direct send err:', e); });
-        console.log(`[transport] OUT ~${from} -> direct ${la.addr}:${la.port} ${bytes.length}B ${packetSummary(bytes)}`);
+        if (packetLogEnabled) console.log(`[transport] OUT ~${from} -> direct ${la.addr}:${la.port} ${bytes.length}B ${packetSummary(bytes)}`);
         continue;
       }
       console.log(`[transport] skip non-ship lane from ${from} (addr=${out['lane-addr'] ?? 'none'})`);
@@ -290,7 +351,7 @@ function onChannel(raw) {
       rec.udp.send(bytes, dest.port, '127.0.0.1', (e) => {
         if (e) console.error('[transport] local moon send err:', e);
       });
-      console.log(`[transport] LOCAL ~${from} -> ~${target} ${bytes.length}B ${packetSummary(bytes)}`);
+      if (packetLogEnabled) console.log(`[transport] LOCAL ~${from} -> ~${target} ${bytes.length}B ${packetSummary(bytes)}`);
       continue;
     }
     // galaxy destination: dial <name>.<turf>:(czarBase+num) directly over DNS,
@@ -312,7 +373,7 @@ function onChannel(raw) {
     rec.udp.send(bytes, peer.port, peer.addr, (e) => {
       if (e) console.error('[transport] send err:', e);
     });
-    console.log(`[transport] OUT ~${from} -> ~${target} (${peer.addr}:${peer.port}) ${bytes.length}B ${packetSummary(bytes)}`);
+    if (packetLogEnabled) console.log(`[transport] OUT ~${from} -> ~${target} (${peer.addr}:${peer.port}) ${bytes.length}B ${packetSummary(bytes)}`);
   }
 }
 
@@ -325,14 +386,16 @@ function onUdpForMoon(rec, buf, rinfo) {
 function onUdp(rec, buf, rinfo) {
   const isMesa = isMesaPact(buf);
   if (isMesa) {
-    console.log(`[transport] inbound mesa for ~${rec.name} requires lick mode; drop`);
+    const hex = bufferLEToAtomHex(buf);
+    if (packetLogEnabled) console.log(`[transport] IN mesa -> ~${rec.name} ${buf.length}B udp=:${rec.port} lane=${rinfo.address}:${rinfo.port} ${packetSummary(buf)}`);
+    pokeMesaInbound(rec.name, rinfo.address, rinfo.port, hex);
     return;
   }
   if (!legacyTargets(rec, buf)) return;
   const from = peersByAddr.get(`${rinfo.address}:${rinfo.port}`) || firstPeerShip();
   const hex = bufferLEToAtomHex(buf);
-  console.log(`[transport] IN  ${from} -> ~${rec.name} ${buf.length}B udp=:${rec.port} ${packetSummary(buf)}`);
-  pokeInbound(rec.name, stripSig(from), hex).catch((e) => console.error('[transport] inbound poke fail:', e));
+  if (packetLogEnabled) console.log(`[transport] IN  ${from} -> ~${rec.name} ${buf.length}B udp=:${rec.port} ${packetSummary(buf)}`);
+  pokeInbound(rec.name, stripSig(from), hex);
 }
 
 // Legacy Ames shots carry a receiver @p, so retain the parser as a defensive
@@ -421,16 +484,74 @@ function loadMoonsMap(a) {
   return out;
 }
 
-async function pokeInbound(who, from, blobHex) {
-  await channelPut([
-    {
-      id: nextId(), action: 'poke', ship, app: 'theseus', mark: 'theseus-ames-in',
-      // addr required by the ames-inbound dejs. 0x0 -> moon uses ship-lane
-      // [%.y from], correct for sponsor-routed returns (reply via disden).
-      // A raw galaxy/peer addr here would teach the moon a bogus direct lane.
-      json: { 'ames-inbound': { who: `~${who}`, from: `~${from}`, addr: '0x0', blob: blobHex } },
+function pokeInbound(who, from, blobHex) {
+  enqueueEyreIngress({
+    id: nextId(), action: 'poke', ship, app: 'theseus', mark: 'theseus-ames-in',
+    // addr required by the ames-inbound dejs. 0x0 -> moon uses ship-lane
+    // [%.y from], correct for sponsor-routed returns (reply via disden).
+    // A raw galaxy/peer addr here would teach the moon a bogus direct lane.
+    json: { 'ames-inbound': { who: `~${who}`, from: `~${from}`, addr: '0x0', blob: blobHex } },
+  });
+}
+
+function pokeMesaInbound(who, addr, port, blobHex) {
+  enqueueEyreIngress({
+    id: nextId(), action: 'poke', ship, app: 'theseus', mark: 'theseus-ames-in',
+    json: {
+      'mesa-inbound': {
+        who: `~${who}`,
+        ip: bigToAtomHex(ipv4Big(addr)),
+        port: bigToAtomHex(BigInt(port)),
+        blob: blobHex,
+      },
     },
-  ]);
+  });
+}
+
+function enqueueEyreIngress(command) {
+  if (eyreIngressQueue.length >= EYRE_INGRESS_MAX) {
+    const now = Date.now();
+    if (now - eyreIngressDropLogAt >= EYRE_ERROR_LOG_MS) {
+      eyreIngressDropLogAt = now;
+      console.error(`[transport] Eyre ingress queue full (${EYRE_INGRESS_MAX}); dropping UDP packets until it drains`);
+    }
+    return false;
+  }
+  eyreIngressQueue.push(command);
+  if (!eyreIngressActive && eyreIngressRetryTimer == null) void drainEyreIngress();
+  return true;
+}
+
+async function drainEyreIngress() {
+  if (eyreIngressActive || eyreIngressRetryTimer != null) return;
+  eyreIngressActive = true;
+  let failed = false;
+  try {
+    while (eyreIngressQueue.length) {
+      // Keep the batch in the queue until PUT succeeds. It therefore counts
+      // toward EYRE_INGRESS_MAX while in flight and cannot overfill on retry.
+      const batch = eyreIngressQueue.slice(0, EYRE_INGRESS_BATCH);
+      try {
+        await channelPut(batch);
+        eyreIngressQueue.splice(0, batch.length);
+      } catch (e) {
+        failed = true;
+        const now = Date.now();
+        if (now - eyreIngressErrorLogAt >= EYRE_ERROR_LOG_MS) {
+          eyreIngressErrorLogAt = now;
+          console.error('[transport] Eyre ingress PUT failed; retrying:', e.message || e);
+        }
+        eyreIngressRetryTimer = setTimeout(() => {
+          eyreIngressRetryTimer = null;
+          void drainEyreIngress();
+        }, EYRE_RETRY_MS);
+        break;
+      }
+    }
+  } finally {
+    eyreIngressActive = false;
+    if (!failed && eyreIngressQueue.length) void drainEyreIngress();
+  }
 }
 
 // decode a direct-address lane atom p (from `scot %ux`, dot-grouped) into
@@ -458,9 +579,16 @@ function atomHexToBufferLE(scotHex, len) {
   for (let i = 0; i < size; i += 1) { buf[i] = Number(n & 0xffn); n >>= 8n; }
   return buf;
 }
+function cueAtomHex(scotHex) {
+  const bytes = atomHexToBufferLE(scotHex, 0);
+  return cue_bytes(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+}
 function bufferLEToAtomHex(buf) {
   let n = 0n;
   for (let i = buf.length - 1; i >= 0; i -= 1) n = (n << 8n) | BigInt(buf[i]);
+  return bigToAtomHex(n);
+}
+function bigToAtomHex(n) {
   // match `scot %ux`: dot-group hex into 4-digit chunks from the right
   let h = n.toString(16);
   if (h === '0') return '0x0';
@@ -483,8 +611,21 @@ function sendViaGateway(rec, from, bytes, reason = 'gateway') {
   rec.udp.send(bytes, peer.port, peer.addr, (e) => {
     if (e) console.error('[transport] gateway send err:', e);
   });
-  console.log(`[transport] OUT ~${from} -> ~${stripSig(gatewayShip)} gateway ${reason} ${bytes.length}B ${packetSummary(bytes)}`);
+  if (packetLogEnabled) console.log(`[transport] OUT ~${from} -> ~${stripSig(gatewayShip)} gateway ${reason} ${bytes.length}B ${packetSummary(bytes)}`);
   return true;
+}
+
+// A virtual moon can learn the host ship's public/NAT lane from an earlier
+// network exchange.  Reusing that lane from the same machine may fail when the
+// router has no NAT hairpin support, even though --gateway points at a working
+// loopback endpoint.  Only override the direct lane when the legacy packet's
+// encoded receiver is the explicitly configured gateway @p; all other learned
+// peer lanes remain direct.
+function sendConfiguredGatewayOverride(rec, from, bytes) {
+  if (gatewayNum == null) return false;
+  const shot = parseShot(bytes);
+  if (!shot || shot.rcvr !== gatewayNum) return false;
+  return sendViaGateway(rec, from, bytes, 'configured direct-lane override');
 }
 
 // ---- lick transport (P2): native IPC over the /ames unix socket ---------
@@ -535,10 +676,11 @@ function onLickOut(payload) {
   const tag = atomBig(lane.head);              // 0 = %.y ship, 1 = %.n addr
   const val = atomBig(lane.tail);
   if (tag === 1n) {                            // direct-address lane
+    if (sendConfiguredGatewayOverride(rec, from, bytes)) return;
     const la = decodeLaneBig(val);
     if (!la) return;
     rec.udp.send(bytes, la.port, la.addr, (e) => { if (e) console.error('[transport] direct send err:', e); });
-    console.log(`[transport] OUT ~${from} -> direct ${la.addr}:${la.port} ${bytes.length}B ${packetSummary(bytes)}`);
+    if (packetLogEnabled) console.log(`[transport] OUT ~${from} -> direct ${la.addr}:${la.port} ${bytes.length}B ${packetSummary(bytes)}`);
     return;
   }
   if (moonByNum.has(val)) {
@@ -547,7 +689,7 @@ function onLickOut(payload) {
     rec.udp.send(bytes, dest.port, '127.0.0.1', (e) => {
       if (e) console.error('[transport] local moon send err:', e);
     });
-    console.log(`[transport] LOCAL ~${from} -> ~${dest.name} ${bytes.length}B ${packetSummary(bytes)}`);
+    if (packetLogEnabled) console.log(`[transport] LOCAL ~${from} -> ~${dest.name} ${bytes.length}B ${packetSummary(bytes)}`);
     return;
   }
   const N = Number(val);
@@ -559,7 +701,7 @@ function onLickOut(payload) {
   const p = gatewayPeer();   // non-galaxy ship -> gateway
   if (!p) { console.log(`[transport] OUT ~${from} no route (ship ${N}), drop`); return; }
   rec.udp.send(bytes, p.port, p.addr, (e) => { if (e) console.error('[transport] gw send err:', e); });
-  console.log(`[transport] OUT ~${from} -> ~${stripSig(gatewayShip)} gateway ${bytes.length}B ${packetSummary(bytes)}`);
+  if (packetLogEnabled) console.log(`[transport] OUT ~${from} -> ~${stripSig(gatewayShip)} gateway ${bytes.length}B ${packetSummary(bytes)}`);
 }
 
 function onLickMesaOut(noun) {
@@ -588,7 +730,7 @@ function sendMesaLane(rec, from, lane, bytes) {
       rec.udp.send(bytes, dest.port, '127.0.0.1', (e) => {
         if (e) console.error('[transport] local mesa send err:', e);
       });
-      console.log(`[transport] OUT mesa ~${from} -> local ~${dest.name} ${bytes.length}B ${packetSummary(bytes)}`);
+      if (packetLogEnabled) console.log(`[transport] OUT mesa ~${from} -> local ~${dest.name} ${bytes.length}B ${packetSummary(bytes)}`);
       return;
     }
     const n = Number(val);
@@ -602,7 +744,7 @@ function sendMesaLane(rec, from, lane, bytes) {
     rec.udp.send(bytes, peer.port, peer.addr, (e) => {
       if (e) console.error('[transport] mesa gateway send err:', e);
     });
-    console.log(`[transport] OUT mesa ~${from} -> ~${stripSig(gatewayShip)} gateway ${bytes.length}B ${packetSummary(bytes)}`);
+    if (packetLogEnabled) console.log(`[transport] OUT mesa ~${from} -> ~${stripSig(gatewayShip)} gateway ${bytes.length}B ${packetSummary(bytes)}`);
     return;
   }
 
@@ -616,7 +758,7 @@ function sendMesaLane(rec, from, lane, bytes) {
     rec.udp.send(bytes, port, addr, (e) => {
       if (e) console.error('[transport] mesa IPv4 send err:', e);
     });
-    console.log(`[transport] OUT mesa ~${from} -> ${addr}:${port} ${bytes.length}B ${packetSummary(bytes)}`);
+    if (packetLogEnabled) console.log(`[transport] OUT mesa ~${from} -> ${addr}:${port} ${bytes.length}B ${packetSummary(bytes)}`);
     return;
   }
   // Existing Theseus UDP endpoints are IPv4. Preserve and identify an IPv6
@@ -673,8 +815,8 @@ function onUdpLick(rec, buf, rinfo) {
   jb.copy(frame, 5);
   lickConn.write(frame);
   if (isMesa) {
-    console.log(`[transport] IN mesa -> ~${rec.name} ${buf.length}B udp=:${rec.port} lane=${rinfo.address}:${rinfo.port} ${packetSummary(buf)}`);
-  } else {
+    if (packetLogEnabled) console.log(`[transport] IN mesa -> ~${rec.name} ${buf.length}B udp=:${rec.port} lane=${rinfo.address}:${rinfo.port} ${packetSummary(buf)}`);
+  } else if (packetLogEnabled) {
     const fine = legacy.finePath == null ? '' : ` fine=${legacy.fineNum}:${legacy.finePath}`;
     console.log(`[transport] IN ames ${legacy.sndr}->${legacy.rcvr} req=${Number(legacy.req)} sam=${Number(legacy.sam)} relayed=${Number(legacy.relayed)} ticks=${legacy.sndrTick}/${legacy.rcvrTick} hdr=${legacy.headerHex}${fine} ${buf.length}B udp=:${rec.port} lane=${rinfo.address}:${rinfo.port} ${packetSummary(buf)}`);
   }
@@ -793,10 +935,12 @@ function extractFact(msg) {
 function requestAck(id) {
   if (!Number.isFinite(id) || id <= lastAckedId) return;
   if (id > pendingAckId) pendingAckId = id;
-  if (!ackInFlight) void flushAck();
+  if (!ackInFlight && ackRetryTimer == null) void flushAck();
 }
 async function flushAck() {
+  if (ackInFlight || ackRetryTimer != null) return;
   ackInFlight = true;
+  let failed = false;
   try {
     while (pendingAckId > lastAckedId) {
       const id = pendingAckId;
@@ -804,11 +948,19 @@ async function flushAck() {
       if (id > lastAckedId) lastAckedId = id;
     }
   } catch (e) {
-    console.error('[transport] channel ack failed:', e.message || e);
-    setTimeout(() => { if (!ackInFlight && pendingAckId > lastAckedId) void flushAck(); }, 250);
+    failed = true;
+    const now = Date.now();
+    if (now - ackErrorLogAt >= EYRE_ERROR_LOG_MS) {
+      ackErrorLogAt = now;
+      console.error('[transport] channel ack failed; retrying:', e.message || e);
+    }
+    ackRetryTimer = setTimeout(() => {
+      ackRetryTimer = null;
+      if (pendingAckId > lastAckedId) void flushAck();
+    }, EYRE_RETRY_MS);
   } finally {
     ackInFlight = false;
-    if (pendingAckId > lastAckedId) void flushAck();
+    if (!failed && pendingAckId > lastAckedId) void flushAck();
   }
 }
 function channelEventId(msg) {

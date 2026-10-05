@@ -16,9 +16,11 @@
 ++  on-init
   ^-  (quip card _this)
   ::  Per-guest UDP transport ports (/utp/<ship>) are spun lazily on that
-  ::  guest's first outbound packet (idempotent), so nothing to open here.
+  ::  guest's first outbound packet (idempotent).  /ames is the optional
+  ::  sidecar IPC port; opening it is harmless when no sidecar is present.
   :_  this
-  :~  [%pass /bind %arvo %e %connect `/theseus %theseus-pyre]
+  :~  [%pass /ames %arvo %l %spin /ames]
+      [%pass /bind %arvo %e %connect `/theseus %theseus-pyre]
   ==
 ::
 ++  on-save  on-save:def
@@ -26,9 +28,14 @@
   |=  =vase
   ^-  (quip card _this)
   ::  Per-guest ports re-spin lazily on the next packet; on-init does NOT run on
-  ::  a code upgrade, so just re-bind the /theseus eyre route here.
+  ::  a code upgrade.  Runtime and sidecar Lick connections do not survive the
+  ::  load boundary, so discard their choices and reopen the sidecar port.
+  =.  transport-states  ~
+  =.  sidecar-connected  %.n
   :_  this
-  [[%pass /bind %arvo %e %connect `/theseus %theseus-pyre] legacy-sites:hc]
+  :-  [%pass /ames %arvo %l %spin /ames]
+  :-  [%pass /bind %arvo %e %connect `/theseus %theseus-pyre]
+  legacy-sites:hc
 ++  on-poke
   |=  [=mark =vase]
   ^-  (quip card _this)
@@ -51,32 +58,17 @@
     ?-    -.q.uf.ef
     ::  ames
         %saxo
-      ::  Vere runs STUN on the same UDP socket used by this guest.  Passing
-      ::  the complete chain lets it select the terminal sponsoring galaxy in
-      ::  the same way as the stock Ames driver.
-      =/  wir=wire  /utp/(scot %p who.ef)
-      :_  this
-      :~  [%pass wir %arvo %l %spin wir]
-          [%pass wir %arvo %l %spit wir [%saxo sponsors.q.uf.ef]]
-      ==
+      =^  cards  transport-states
+        (route-ames-effect:hc ef)
+      [cards this]
         %send
-      ::  A2 UDP transport: this guest's own lick port carries the packet.  Spin
-      ::  (idempotent) then spit [%send lane blob] -- the port name is the guest
-      ::  identity, so no `who` tag.  Vere resolves the lane and sends on the
-      ::  guest's own socket.
-      =/  wir=wire  /utp/(scot %p who.ef)
-      :_  this
-      :~  [%pass wir %arvo %l %spin wir]
-          [%pass wir %arvo %l %spit wir [%send p.q.uf.ef q.q.uf.ef]]
-      ==
+      =^  cards  transport-states
+        (route-ames-effect:hc ef)
+      [cards this]
         %push
-      ::  Mesa gives a packet plus a LIST of usable lanes; spit [%push lanes blob]
-      ::  and Vere sends to each usable lane on the guest's socket.
-      =/  wir=wire  /utp/(scot %p who.ef)
-      :_  this
-      :~  [%pass wir %arvo %l %spin wir]
-          [%pass wir %arvo %l %spit wir [%push p.q.uf.ef q.q.uf.ef]]
-      ==
+      =^  cards  transport-states
+        (route-ames-effect:hc ef)
+      [cards this]
     ::  behn
         %doze
       =^  cards  behn-piers
@@ -112,6 +104,7 @@
       =.  iris-piers  (~(del by iris-piers) who.ef)
       =.  behn-piers  (~(del by behn-piers) who.ef)
       =.  eyre-piers  (~(del by eyre-piers) who.ef)
+      =.  transport-states  (~(del by transport-states) who.ef)
       ::  Use the same name as %spin; Gall adds the %theseus-pyre prefix.
       =/  wir=wire  /utp/(scot %p who.ef)
       :_  this
@@ -124,6 +117,7 @@
       =.  iris-piers  (~(del by iris-piers) who.ef)
       =.  behn-piers  (~(del by behn-piers) who.ef)
       =.  eyre-piers  (~(del by eyre-piers) who.ef)
+      =.  transport-states  (~(del by transport-states) who.ef)
       =/  restart=(list theseus-event)
         :~  [who.ef /b/behn/0v1n.2m9vh %born ~]
             [who.ef /i/http-client/0v1n.2m9vh %born ~]
@@ -178,14 +172,42 @@
     ~?  !accepted.sign-arvo  [%theseus-pyre-site-refused binding.sign-arvo]
     `this
   ::
+      ::  A patched Vere handles /utp/<ship> itself.  Stock Lick reports
+      ::  %error because no IPC client owns that socket.  If neither produces
+      ::  a signal, a short timer selects native; patched Vere's outbound spit
+      ::  is intentionally fire-and-forget.
+      [%transport @ @ ~]
+    ?>  ?=([%behn %wake *] sign-arvo)
+    =/  who=@p  (slav %p i.t.wire)
+    =/  deadline=@da  (slav %da i.t.t.wire)
+    =/  state=(unit transport-state)  (~(get by transport-states) who)
+    ?~  state  `this
+    ?.  ?=([%probe *] u.state)  `this
+    ?.  =(deadline deadline.u.state)  `this
+    =/  selected=transport-state
+      ?:(sidecar-connected [%sidecar ~] [%native ~])
+    =.  transport-states  (~(put by transport-states) who selected)
+    `this
+  ::
       ::  Inbound datagram on a guest's UDP transport port (/utp/<ship>).  Vere
       ::  soaks mark %heer (mesa) or %hear (legacy ames) with noun [lane blob];
       ::  the guest ship is the port label in the wire.  Inject it into that moon.
-      ::  (%spin ack + %connect/%disconnect soaks are ignored.)
+      ::  A native-port connection or inbound traffic confirms native;
+      ::  %error selects sidecar.
       [%utp @ ~]
     ?.  ?=([%lick %soak *] sign-arvo)  `this
     =/  who=@p  (slav %p i.t.wire)
+    ?:  =(%connect mark.sign-arvo)
+      =.  transport-states  (~(put by transport-states) who [%native ~])
+      `this
+    ?:  =(%disconnect mark.sign-arvo)
+      =.  transport-states  (~(del by transport-states) who)
+      `this
+    ?:  =(%error mark.sign-arvo)
+      =.  transport-states  (~(put by transport-states) who [%sidecar ~])
+      `this
     ?:  =(%stun mark.sign-arvo)
+      =.  transport-states  (~(put by transport-states) who [%native ~])
       =/  inb  ;;([mode=?(%once %stop %fail) galaxy=@p lane=?([%.y p=@pC] [%.n p=@uxaddress])] noun.sign-arvo)
       :_  this
       :~  :*  %pass  /ames/stun  %agent  [our.bowl %theseus]  %poke
@@ -193,18 +215,47 @@
               !>(`action`[%ames-stun who mode.inb galaxy.inb lane.inb])
       ==  ==
     ?:  =(%heer mark.sign-arvo)
+      =.  transport-states  (~(put by transport-states) who [%native ~])
       =/  inb  ;;([lane=mesa-lane blob=@] noun.sign-arvo)
       :_  this
       :~  :*  %pass  /ames/in  %agent  [our.bowl %theseus]  %poke
               %theseus-action  !>(`action`[%mesa-inbound who lane.inb blob.inb])
       ==  ==
     ?.  =(%hear mark.sign-arvo)  `this
+    =.  transport-states  (~(put by transport-states) who [%native ~])
     ::  lick gives a bare address atom; wrap it [%| addr], typed lane:ames by the
     ::  `action` cast (can't name lane:ames here -- shadowed by the dead ++ames).
     =/  inb  ;;([addr=@ux blob=@] noun.sign-arvo)
     :_  this
     :~  :*  %pass  /ames/in  %agent  [our.bowl %theseus]  %poke
             %theseus-action  !>(`action`[%ames-inbound who [%| addr.inb] blob.inb])
+    ==  ==
+  ::
+      ::  Optional sidecar noun channel.  When disconnected, the same payloads
+      ::  flow through the existing /ames/outbound Eyre subscription instead.
+      [%ames ~]
+    ?.  ?=([%lick %soak *] sign-arvo)  `this
+    ?:  =(%connect mark.sign-arvo)
+      =.  sidecar-connected  %.y
+      ::  A sidecar may be started after stock Lick was optimistically selected.
+      ::  Re-probe on the next packet; actual native ingress still wins below.
+      =.  transport-states  ~
+      `this
+    ?:  =(%disconnect mark.sign-arvo)
+      =.  sidecar-connected  %.n
+      `this
+    ?:  =(%mesa-in mark.sign-arvo)
+      =/  inb  ;;([who=@p lane=mesa-lane blob=@] noun.sign-arvo)
+      :_  this
+      :~  :*  %pass  /ames/in  %agent  [our.bowl %theseus]  %poke
+              %theseus-action  !>(`action`[%mesa-inbound who.inb lane.inb blob.inb])
+      ==  ==
+    ?.  =(%ames-in mark.sign-arvo)  `this
+    =/  inb  ;;([who=@p from=@p addr=@ux blob=@] noun.sign-arvo)
+    =/  lan  ?:(=(0 addr.inb) [%& from.inb] [%| addr.inb])
+    :_  this
+    :~  :*  %pass  /ames/in  %agent  [our.bowl %theseus]  %poke
+            %theseus-action  !>(`action`[%ames-inbound who.inb lan blob.inb])
     ==  ==
   ==
 ::
@@ -231,7 +282,57 @@
 =|  iris-piers=(map ship iris-pier)
 ::  open moon HTTP requests by Eyre id, to cancel them when the browser leaves
 =|  http-ids=(map @ta ship)
+=|  transport-states=(map ship transport-state)
+=|  sidecar-connected=?
 |_  bowl=bowl:gall
+::
+++  route-ames-effect
+  |=  ef=ames-effect
+  ^-  [(list card:agent:gall) _transport-states]
+  =/  state=(unit transport-state)  (~(get by transport-states) who.ef)
+  ?^  state
+    =/  cards=(list card:agent:gall)
+      ?-    -.u.state
+          %native   (native-transport-cards ef)
+          %sidecar  (sidecar-transport-cards ef)
+          %probe
+        (weld (native-transport-cards ef) (sidecar-transport-cards ef))
+      ==
+    [cards transport-states]
+  =/  deadline=@da  (add now.bowl ~s1)
+  =.  transport-states
+    (~(put by transport-states) who.ef [%probe deadline])
+  =/  cards=(list card:agent:gall)
+    (weld (native-transport-cards ef) (sidecar-transport-cards ef))
+  =/  timer=card:agent:gall
+    [%pass /transport/(scot %p who.ef)/(scot %da deadline) %arvo %b %wait deadline]
+  [(snoc cards timer) transport-states]
+::
+++  native-transport-cards
+  |=  ef=ames-effect
+  ^-  (list card:agent:gall)
+  =/  wir=wire  /utp/(scot %p who.ef)
+  :~  [%pass wir %arvo %l %spin wir]
+      [%pass wir %arvo %l %spit wir q.uf.ef]
+  ==
+::
+++  sidecar-transport-cards
+  |=  ef=ames-effect
+  ^-  (list card:agent:gall)
+  ::  The sidecar owns its UDP sockets and does not need Vere's STUN setup.
+  ?:  =(%saxo -.q.uf.ef)  ~
+  ?:  sidecar-connected
+    =/  out-mark=@tas
+      ?:(=(%send -.q.uf.ef) %ames-out %mesa-out)
+    =/  out-noun=noun  [who.ef +.q.uf.ef]
+    [%pass /ames %arvo %l %spit /ames out-mark out-noun]~
+  =/  out=update
+    ?:  =(%send -.q.uf.ef)
+      =/  data=ames-send-data  ;;(ames-send-data +.q.uf.ef)
+      [%ames-outbound who.ef lane.data blob.data]
+    =/  data=mesa-push-data  ;;(mesa-push-data +.q.uf.ef)
+    [%mesa-outbound who.ef lanes.data blob.data]
+  [%give %fact ~[/ames/outbound] %theseus-update !>(out)]~
 ::
 ++  has-moon
   |=  who=ship

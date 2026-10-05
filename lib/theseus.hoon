@@ -195,6 +195,17 @@
           ::  are zero.  Emit (met 3) so the sidecar rebuilds exact packet bytes.
           [%blob-len (numb (met 3 blob.update))]
       ==
+    ::
+        %mesa-outbound
+      %-  pairs
+      :~  [%ship s+(scot %p who.update)]
+          :-  %lane-jams
+          :-  %a
+          %+  turn  lanes.update
+          |=(lane=mesa-lane [%s (scot %ux (jam lane))])
+          [%blob s+(scot %ux blob.update)]
+          [%blob-len (numb (met 3 blob.update))]
+      ==
     ==
   ::
   ++  fleets
@@ -247,6 +258,7 @@
   ++  ames-in
     %-  of
     :~  [%ames-inbound ames-inbound]
+        [%mesa-inbound mesa-inbound]
         [%ames-test-inbound ames-test-inbound]
     ==
   ++  recycle
@@ -263,6 +275,7 @@
         [%pause-ships (ot ~[[%hers (ar (se %p))]])]
         [%wish (ot ~[[%hers (ar (se %p))] [%p so]])]
         [%ames-inbound ames-inbound]
+        [%mesa-inbound mesa-inbound]
         [%ames-test-inbound ames-test-inbound]
     ==
   ::
@@ -286,6 +299,15 @@
       ((ot ~[[%who (se %p)] [%from (se %p)] [%addr bl] [%blob bl]]) jon)
     =/  =lane:ames
       ?:(=(0 addr.dat) [%& from.dat] [%| addr.dat])
+    [who.dat lane blob.dat]
+  ::
+  ::  Eyre sidecar Mesa injection. The UDP sidecar is IPv4 today, so rebuild
+  ::  the structured pact lane from the datagram source address and port.
+  ++  mesa-inbound
+    |=  jon=json
+    =/  dat=[who=ship ip=@ux port=@ud blob=@ux]
+      ((ot ~[[%who (se %p)] [%ip bl] [%port bl] [%blob bl]]) jon)
+    =/  lane=mesa-lane  [%if `@ifF`ip.dat `@udE`port.dat]
     [who.dat lane blob.dat]
   ::
   ++  ames-test-inbound
