@@ -59,6 +59,10 @@
     cards:(pass-request:(eyre:hc who.u.par) rid req)
   ::
       %theseus-effect
+    ::  only %theseus sends a moon's effects; the mark could otherwise be
+    ::  poked by any ship
+    ::
+    ?>  =(src.bowl our.bowl)
     =+  ef=!<([theseus-effect] vase)
     ?-    -.q.uf.ef
     ::  ames
