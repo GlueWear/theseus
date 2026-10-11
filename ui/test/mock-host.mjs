@@ -18,10 +18,21 @@ const deskRows = [
 const rejectedDesk = 'noltbook-data';
 // Mirrors %theseus: each desk tracks the host, or the host's own source.
 const sourceOf = (desk, from) => from === 'publisher' ? deskRows.find(r => r.desk === desk).source : {ship:host, desk: desk === 'base' ? 'kids' : desk};
-const moon = (ship, desks=[{desk:'base',from:'host'},{desk:'landscape',from:'host'}], {booted=Date.now(), stage='running'}={}) => ({ship,status:'healthy',paused:false,queued:0,identity:true,vanes,booted,desks:desks.map(({desk,from}) => ({desk,stage:desk === 'base' ? 'running' : stage,reason:null,source:sourceOf(desk,from)}))});
-// Desks of a fresh boot install for a moment, as Kiln does on the host.
+const moon = (ship, desks=[{desk:'base',from:'host'},{desk:'landscape',from:'host'}], {booted=Date.now(), stage='running'}={}) => ({ship,status:'healthy',paused:false,queued:0,identity:true,vanes,booted,desks:desks.map(({desk,from}) => ({desk,stage:desk === 'base' ? (stage === 'running' ? 'running' : 'catching-up') : stage,reason:null,source:sourceOf(desk,from)}))});
+// Desks of a fresh boot install for a moment, then catch up with their
+// sources, as Kiln does on the host. .held moons stay catching up until a
+// test lets them go.
 let installing = new Map();
-const settle = () => {for (const [ship, at] of installing) {const moon=data.moons.find(m => m.ship === ship);if (Date.now() >= at && moon && !moon.paused) {installing.delete(ship); moon.desks.forEach(d => {d.stage = 'running';});}}};
+let held = new Set();
+const settle = () => {
+  for (const [ship, at] of installing) {
+    const moon = data.moons.find(m => m.ship === ship);
+    if (Date.now() < at || !moon || moon.paused) continue;
+    const caught = !held.has(ship) && Date.now() >= at + 800;
+    if (caught) installing.delete(ship);
+    moon.desks.forEach(d => {if (d.stage !== 'failed') d.stage = caught ? 'running' : 'catching-up';});
+  }
+};
 // Terminal input the console sent, and each moon's current input line.
 let termLog = [];
 const lines = new Map();
@@ -29,9 +40,17 @@ const lines = new Map();
 const da = ms => {const d = new Date(ms); return `~${d.getUTCFullYear()}.${d.getUTCMonth()+1}.${d.getUTCDate()}..${d.getUTCHours()}.${d.getUTCMinutes()}.${d.getUTCSeconds()}`;};
 let data;
 let gw;
+// Names and pictures: ~sampel runs Noltbook, ~dozlet does not (a nickname
+// kept by Theseus), and the host runs Noltbook.
+let profiles;
+let dojoLog = [];
+// A 1x1 PNG, served as a picture a profile can point at.
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 let installed = new Set();
+// Pictures uploaded to Noltbook: the host's from the browser, moons' via %theseus.
+let uploads = [];
 const code = 'lidlut-tabwed-pillex-ridrup';
-const reset = () => {installing = new Map(); termLog = []; lines.clear(); data={version:3,host,moons:[moon(first, undefined, {booted: Date.UTC(2026,9,2,12)}), moon(older, undefined, {booted: Date.UTC(2026,9,1,9)})],fleets:[],caches:['default'],snapshots:[{path:'/baseline',ships:[first],compatible:true,created:'~2026.10.2..12.00.00'}]}; installed=new Set([first]); gw={mode:'auto',port:null,template:null,live:{port:5174,upstream:8083,at:'~2026.10.2..12.00.00'}};}; reset();
+const reset = () => {uploads = []; installing = new Map(); held = new Set(); termLog = []; dojoLog = []; lines.clear(); profiles = new Map([[host, {noltbook: true, name: null, avatar: null}], [first, {noltbook: true, name: null, avatar: null}]]); data={version:3,host,moons:[moon(first, undefined, {booted: Date.UTC(2026,9,2,12)}), moon(older, undefined, {booted: Date.UTC(2026,9,1,9)})],fleets:[],caches:['default'],snapshots:[{path:'/baseline',set:'/baseline',ships:[first],compatible:true,created:'~2026.10.2..12.00.00'}]}; installed=new Set([first]); gw={mode:'auto',port:null,template:null,live:{port:5174,upstream:8083,at:'~2026.10.2..12.00.00'}};}; reset();
 // Mirrors %theseus-ui's /x/gateway status logic.
 const gatewayJson = () => {
   const url = gw.mode === 'hosting' ? gw.template : gw.mode === 'declared' ? `http://{moon}.localhost:${gw.port}` : gw.live ? `http://{moon}.localhost:${gw.live.port}` : null;
@@ -50,6 +69,31 @@ createServer(async (req,res) => {
   if (req.url === '/reset') {reset(); deletes = 0; return res.end('ok');}
   if (req.url === '/deletes') return res.end(String(deletes));
   if (req.url === '/term-log') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(termLog));}
+  if (req.url === '/dojo-log') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(dojoLog));}
+  if (req.url === '/avatar.png') {res.setHeader('Content-Type','image/png'); return res.end(png);}
+  // Hold a moon's desks catching up, then let them go.
+  const hold = /^\/(hold|release)\/(~[a-z-]+)$/.exec(req.url);
+  if (hold) {
+    const m = data.moons.find(row => row.ship === hold[2]);
+    if (hold[1] === 'hold') {held.add(hold[2]); installing.set(hold[2], Date.now()); m?.desks.forEach(d => {d.stage = 'catching-up';});}
+    else held.delete(hold[2]);
+    return res.end('ok');
+  }
+  if (req.url === '/uploads') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(uploads));}
+  // The host's Noltbook: an owner's upload, and each ship's uploaded picture.
+  if (req.url === '/apps/noltbook/upload-avatar' && req.method === 'POST') {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    const bytes = Buffer.concat(chunks);
+    if (!bytes.length || bytes.length > 51200) {res.statusCode = bytes.length ? 413 : 400; return res.end();}
+    uploads.push({who: host, bytes: bytes.length, jpeg: bytes[0] === 0xff && bytes[1] === 0xd8}); return res.end();
+  }
+  if (req.url.startsWith('/apps/noltbook/user-avatar/')) {res.setHeader('Content-Type','image/png'); return res.end(png);}
+  if (req.url === '/~/scry/theseus/profiles.json') {
+    // Mirrors %theseus /x/profiles: Noltbook's profile, else a nickname.
+    const row = ship => {const p = profiles.get(ship) || {noltbook: false, name: null, avatar: null}; return {ship, noltbook: p.noltbook, name: p.name, avatar: p.noltbook ? p.avatar : null};};
+    res.setHeader('Content-Type','application/json');
+    return res.end(JSON.stringify({host: row(host), moons: data.moons.map(m => row(m.ship))}));
+  }
   if (req.url === '/gateway-down') {gw.live = null; return res.end('ok');}
   if (req.url === '/~/scry/theseus-ui/gateway.json') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(gatewayJson()));}
   const web = /^\/~\/scry\/theseus\/web\/(~[a-z-]+)\.json$/.exec(req.url);
@@ -77,6 +121,13 @@ createServer(async (req,res) => {
       const okTemplate = t => t === null || /^https?:\/\/[^/\s]*\{moon\}[^/\s]*\/?$/.test(t);
       if (!set || !okPort(set.port) || !okTemplate(set.template) || (set.mode === 'declared' && set.port === null) || (set.mode === 'hosting' && set.template === null)) {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
       gw = {...gw, mode: set.mode, port: set.port, template: set.template}; send(channel,{id:action.id,response:'poke',ok:'ok'}); continue;
+    }
+    // The host's own Noltbook API, as the owner's browser pokes it.
+    if (action.app === 'noltbook') {
+      const av = action.json?.data?.avatar;
+      if (action.mark !== 'noltbook-api' || action.json.action !== 'update-profile' || av?.type !== 'urbit' || !uploads.some(u => u.who === host)) {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
+      profiles.get(host).avatar = {type: 'urbit', url: av.url};
+      send(channel,{id:action.id,response:'poke',ok:'ok'}); continue;
     }
     const [kind,value] = Object.entries(action.json)[0];
     if (value.command === 'fail') {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
@@ -126,7 +177,10 @@ createServer(async (req,res) => {
     if (kind === 'snapshot') {
       // Mirrors mar/theseus/ui: resume is required.
       if (typeof value.resume !== 'boolean') {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
-      data.snapshots.push({path:`/${value.name}`,ships:value.ships,compatible:true,created:da(Date.now() + 1000 * data.snapshots.length)});
+      // Mirrors %theseus: one snapshot per ship, /<name>/<~ship>, in set /<name>.
+      if (data.snapshots.some(s => s.path === `/${value.name}` || s.set === `/${value.name}`)) {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
+      const created = da(Date.now() + 1000 * data.snapshots.length);
+      for (const ship of value.ships) data.snapshots.push({path:`/${value.name}/${ship}`,set:`/${value.name}`,ships:[ship],compatible:true,created});
       if (!value.resume) data.moons.forEach(m=>{if(value.ships.includes(m.ship))m.paused=true;});
     }
     if (kind === 'term') {
@@ -137,11 +191,30 @@ createServer(async (req,res) => {
       if (!ok) {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
       termLog.push({who: value.who, act});
     }
-    if (kind === 'restore') data.snapshots.find(s=>s.path===value.path).ships.forEach(ship=>{const m=data.moons.find(m=>m.ship===ship);if(m)m.paused=false;else data.moons.push(moon(ship));});
-    if (kind === 'delete') data.snapshots=data.snapshots.filter(s=>s.path!==value.path);
+    // A path names one ship's snapshot, or a set: every snapshot in it.
+    const inPath = s => s.path === value.path || (!data.snapshots.some(t => t.path === value.path) && s.set === value.path);
+    if (kind === 'restore') data.snapshots.filter(inPath).flatMap(s => s.ships).forEach(ship=>{const m=data.moons.find(m=>m.ship===ship);if(m)m.paused=false;else data.moons.push(moon(ship));});
+    if (kind === 'delete') data.snapshots=data.snapshots.filter(s=>!inPath(s));
+    if (kind === 'profile') {
+      // Mirrors mar/theseus/ui: absent keeps, null clears, a string sets.
+      // .upload is a moon's new picture; %theseus uploads it inside the moon.
+      const p = profiles.get(value.who) || {noltbook: false, name: null, avatar: null};
+      if ('upload' in value) {
+        const bytes = Buffer.from(String(value.upload), 'base64');
+        const moonRow = data.moons.find(m => m.ship === value.who);
+        if (value.who === host || !moonRow || moonRow.paused || !p.noltbook || 'avatar' in value || !bytes.length || bytes.length > 51200) {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
+        uploads.push({who: value.who, bytes: bytes.length, jpeg: bytes[0] === 0xff && bytes[1] === 0xd8});
+        p.avatar = {type: 'urbit', url: `0v${uploads.length}`};
+      }
+      if ('name' in value) p.name = value.name || null;
+      if (p.noltbook && 'avatar' in value) p.avatar = value.avatar === null ? null : {type: 'external', url: value.avatar};
+      profiles.set(value.who, p);
+    }
     if (kind === 'dojo' && /^\|install ~[a-z-]+ %landscape$/.test(value.command)) installed.add(value.who);
+    if (kind === 'dojo') dojoLog.push({who: value.who, command: value.command});
     send(channel,{id:action.id,response:'poke',ok:'ok'});
-    if (kind === 'dojo') send(channel,{id:channel.sub,response:'diff',json:{ship:value.who,blits:[{put:[...`> ${value.command}`]},{nel:true},{put:['4']},{nel:true}]}});
+    // The moon echoes its prompt with the command, then answers.
+    if (kind === 'dojo') send(channel,{id:channel.sub,response:'diff',json:{ship:value.who,blits:[{put:[...`${value.who}:dojo> ${value.command}`]},{nel:true},{put:[...(value.command === '(add 2 2)' ? '4' : `ran ${value.command}`)]},{nel:true}]}});
     // A tiny Dojo: echo typing, answer (add 2 2) on Enter, redraw on hail.
     if (kind === 'term') {
       const prompt = `${value.who.slice(1)}:dojo> `, out = blits => send(channel,{id:channel.sub,response:'diff',json:{ship:value.who,blits}});

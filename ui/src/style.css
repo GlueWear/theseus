@@ -137,10 +137,11 @@ tbody tr:hover td { background: #fdf9f1; }
 .select-cell input { margin-top: 9px; }
 .right { text-align: right; }
 .moon-cell { min-width: 260px; }
-.ship-link { gap: 12px; padding: 0; border: 0; background: transparent; font-size: 13px; color: var(--ink); min-height: 32px; }
-.ship-link:hover:not(:disabled) { background: transparent; color: var(--sky-deep); }
+.ship-link { display: inline-flex; align-items: center; gap: 12px; padding: 0; border: 0; background: transparent; font-size: 13px; color: var(--ink); min-height: 42px; }
+.ship-link:hover:not(:disabled) { background: transparent; }
+.ship-link.editable:hover:not(:disabled) { color: var(--sky-deep); }
 .ship-link strong { font-weight: 600; }
-.moon-actions { display: flex; gap: 2px; margin: 6px 0 0 38px; }
+.moon-actions { display: flex; gap: 2px; margin: 6px 0 0 54px; }
 .moon-actions .icon-button { width: 30px; min-width: 30px; height: 30px; min-height: 30px; padding: 6px; }
 .booting-row .ship-link { color: var(--sea-deep); }
 .booting-row .muted { margin-left: 44px; display: block; }
@@ -160,9 +161,8 @@ tbody tr:hover td { background: #fdf9f1; }
 .fleet-child td { background: #fffdf9; }
 .fleet-child:hover td { background: #fbf7ef; }
 .fleet-child .moon-cell { padding-left: 42px; }
-.fleet-child .ship-link { position: relative; }
-.fleet-child .ship-link:before {
-  content: ''; position: absolute; left: -22px; top: -14px; width: 12px; height: 30px;
+.fleet-child .ship-id:before {
+  content: ''; position: absolute; left: -22px; top: -14px; width: 12px; height: 35px;
   border-left: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2);
 }
 .pending-member .ship-link { cursor: default; color: var(--ink-3); }
@@ -170,6 +170,9 @@ tbody tr:hover td { background: #fdf9f1; }
 .badge { display: inline-flex; align-items: center; gap: 7px; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 550; text-transform: capitalize; white-space: nowrap; background: var(--ok-tint); color: var(--ok); }
 td .badge { margin-top: 6px; }
 .badge.paused { background: var(--warn-tint); color: var(--warn); }
+.badge.catching { background: var(--sea-tint); color: var(--sea-deep); }
+.badge.catching i { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
 .badge.empty, .badge.degraded { background: var(--bad-tint); color: var(--bad); }
 .desk-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; max-width: 320px; margin-top: 6px; }
 .mobile-desks { display: none; }
@@ -178,6 +181,9 @@ td .badge { margin-top: 6px; }
 .desk-state i { order: -1; width: 5px; height: 5px; border-radius: 50%; background: var(--ink-3); }
 .desk-state.running i { background: var(--ok); }
 .desk-state.installing i, .desk-state.seeded i { background: var(--sea); }
+.desk-state.catching-up { border-color: #b9dce9; }
+.desk-state.catching-up i { background: var(--sea); animation: pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .badge.catching i, .desk-state.catching-up i { animation: none; } }
 .desk-state.failed { border-color: #ecc4b5; color: var(--bad); }
 .desk-state.failed i { background: var(--bad); }
 .empty { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 64px 20px; color: var(--ink-3); }
@@ -200,17 +206,66 @@ footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 4
 .detail-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding-bottom: 18px; font-size: 12px; color: var(--ink-3); }
 .detail-bar .tools { margin-left: auto; }
 .term-window { border-radius: 10px; overflow: hidden; background: var(--night); box-shadow: 0 0 0 1px #00000040, 0 18px 40px #2e33382e; }
-.term-titlebar { position: relative; display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 8px 0 14px; background: linear-gradient(#323a42, #2a3239); border-bottom: 1px solid #12171b; color: #c9c2b4; }
-.term-lights { display: flex; gap: 8px; }
-.term-lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; box-shadow: inset 0 0 0 .5px #00000033; }
-.term-lights i:nth-child(2) { background: #febc2e; }
-.term-lights i:nth-child(3) { background: #28c840; }
-.term-title { position: absolute; left: 50%; transform: translateX(-50%); max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 550; color: #d9d2c4; }
+.term-titlebar { display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 8px 0 14px; background: linear-gradient(#323a42, #2a3239); border-bottom: 1px solid #12171b; color: #c9c2b4; }
+.term-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 550; color: #d9d2c4; }
 .term-titlebar .tools { margin-left: auto; gap: 2px; }
 .term-titlebar .icon-button { color: #b7b0a2; width: 28px; min-width: 28px; height: 28px; min-height: 28px; }
 .term-titlebar .icon-button:hover:not(:disabled) { background: #3b444d; border-color: transparent; color: #f3ecdf; }
-.terminal { height: clamp(380px, 60vh, 640px); padding: 12px 14px; min-width: 0; cursor: text; }
+/* xterm marks its own element .terminal too, so the panel has its own class
+   and the padding sits on xterm's element, which the fit addon accounts for. */
+.term-screen { height: clamp(380px, 60vh, 640px); min-width: 0; cursor: text; }
+.term-screen .xterm { height: 100%; padding: 12px 14px; }
 .term-note { padding: 9px 14px; border-top: 1px solid #12171b; background: var(--night-2); font-size: 12px; color: #d9d2c4; }
+/* Fleet terminal: one command for every moon, so it looks unlike a moon's Dojo */
+.fleet-term { box-shadow: 0 0 0 2px var(--sea), 0 18px 40px #2e33382e; }
+.fleet-term .term-titlebar { background: linear-gradient(#1f4f63, #183f50); border-bottom-color: #0d2a36; }
+.fleet-term .term-title { display: inline-flex; align-items: center; gap: 7px; color: #e3f2f8; }
+.fleet-term .term-titlebar .icon-button { color: #b9dce9; }
+.fleet-term .term-titlebar .icon-button:hover:not(:disabled) { background: #24566b; color: #fff; }
+/* The composer: one field holding the fleet prompt and the command, and a
+   run button, on a band in the frame's blue with a lit top edge. */
+.fleet-input { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #183f50; box-shadow: inset 0 1px 0 #2e6a82; }
+.fleet-field { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; height: 38px; padding: 0 12px; border: 1px solid #2e6a82; border-radius: 7px; background: #0e222b; cursor: text; }
+.fleet-field:focus-within { border-color: var(--sea); box-shadow: 0 0 0 3px #219fd140; }
+.fleet-prompt { display: inline-flex; flex-shrink: 0; align-items: center; gap: 5px; min-width: 0; max-width: 45%; font: 600 13px "SF Mono", SFMono-Regular, ui-monospace, Menlo, monospace; color: #6fd0d6; white-space: nowrap; }
+.fleet-prompt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.fleet-prompt svg:last-child { margin-left: -2px; color: #4f98ad; }
+.fleet-field input { flex: 1; min-width: 0; height: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: #ece4d4; font: 13px "SF Mono", SFMono-Regular, ui-monospace, Menlo, monospace; }
+.fleet-field input::placeholder { color: #7f9aa5; }
+.fleet-field input:focus { border: 0; box-shadow: none; outline: none; }
+.fleet-run { flex-shrink: 0; height: 38px; min-height: 38px; padding: 0 16px; border-color: var(--sea-deep); background: var(--sea-deep); color: #fff; font-weight: 600; }
+.fleet-run:hover:not(:disabled) { border-color: #11607f; background: #11607f; color: #fff; }
+.fleet-run:disabled { border-color: #2e6a82; background: transparent; color: #9cc3d1; opacity: .7; }
+.fleet-term .term-note { border-top-color: #0d2a36; background: #142e3a; color: #b9dce9; }
+.fleet-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 14px; background: #3a2318; box-shadow: inset 0 1px 0 #6b3a26; color: #f7e1d6; font-size: 13px; }
+.fleet-confirm code { padding: 1px 6px; border-radius: 4px; background: #00000040; }
+.fleet-confirm .tools { margin-left: auto; }
+
+/* Names and pictures */
+.avatar { display: inline-block; flex-shrink: 0; border-radius: 6px; object-fit: cover; background: var(--sand); }
+.ship-name { display: inline-flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.2; text-align: left; }
+.ship-name strong { overflow: hidden; max-width: 260px; text-overflow: ellipsis; white-space: nowrap; }
+.ship-name small { font-size: 11px; font-weight: 400; color: var(--ink-3); }
+.avatar-wrap { position: relative; display: inline-flex; flex-shrink: 0; }
+.avatar-edit { position: absolute; right: -5px; bottom: -5px; display: grid; place-items: center; width: 18px; height: 18px; border: 2px solid var(--card); border-radius: 50%; background: var(--sky-deep); color: #fff; opacity: 0; transition: opacity .12s ease; }
+.ship-link.editable:hover:not(:disabled) .avatar-edit, .ship-link.editable:focus-visible .avatar-edit { opacity: 1; }
+.ship-link.editable:disabled { opacity: 1; cursor: default; }
+.ship-id { position: relative; display: flex; align-items: center; min-height: 42px; }
+.detail-ship { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink); }
+.host > div .icon-button { margin-left: auto; width: 26px; min-width: 26px; height: 26px; min-height: 26px; }
+.connection.busy { color: var(--warn); }
+.profile-preview { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+.picture-field { margin: 16px 0; }
+.field-label { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 550; }
+.picture-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.picture-actions .link-button { margin-top: 0; }
+.picture-field .muted { margin-top: 8px; overflow-wrap: anywhere; }
+dialog label.file-button { position: relative; display: inline-flex; align-items: center; gap: 7px; margin: 0; min-height: 36px; padding: 7px 12px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--card); font-size: 13px; font-weight: 500; cursor: pointer; }
+dialog label.file-button:hover { background: var(--sand); border-color: #c4ae88; }
+dialog label.file-button:focus-within { outline: 2px solid var(--sea); outline-offset: 3px; }
+dialog .file-button input { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; min-height: 0; border: 0; opacity: 0; overflow: hidden; clip-path: inset(50%); }
+.link-button { min-height: 0; margin-top: 6px; padding: 0; border: 0; background: transparent; color: var(--sky-deep); font-size: 12px; text-decoration: underline; }
+.link-button:hover:not(:disabled) { background: transparent; color: var(--sky-deeper); }
 
 /* Dialogs */
 dialog { width: 480px; max-width: calc(100vw - 32px); padding: 24px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); box-shadow: 0 18px 70px #2e33383d; }
@@ -293,7 +348,7 @@ dialog .form-error { margin-top: 12px; color: var(--bad); }
   .snapshot-info { min-width: 190px; }
   .gateway, .sidecar { grid-template-columns: minmax(0, 1fr); }
   .desk-column { display: none; }
-  .mobile-desks { display: block; margin: 8px 0 0 38px; }
+  .mobile-desks { display: block; margin: 8px 0 0 54px; }
 }
 @media (max-width: 700px) {
   .shell { display: block; }
@@ -321,11 +376,11 @@ dialog .form-error { margin-top: 12px; color: var(--bad); }
   .fleet-link { min-width: 0; }
   .fleet-actions { margin-left: 36px; }
   .fleet-child .moon-cell { padding-left: 30px; }
-  .fleet-child .ship-link:before { left: -16px; }
+  .fleet-child .ship-id:before { left: -16px; }
   .mobile-desks { margin-left: 0; }
   .mobile-desks .desk-state { padding: 2px 5px; font-size: 9px; }
-  .terminal { height: clamp(360px, 60vh, 520px); padding: 8px 6px; }
-  .term-title { position: static; transform: none; max-width: none; flex: 1; }
+  .term-screen { height: clamp(360px, 60vh, 520px); }
+  .term-screen .xterm { padding: 8px 6px; }
   .detail-bar { gap: 12px; }
   .detail-bar .tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; margin-left: 0; }
   .banner { flex-wrap: wrap; }

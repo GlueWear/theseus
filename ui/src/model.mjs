@@ -93,11 +93,17 @@ export function byBoot(moons) {
   return [...moons].sort((a, b) => (a.booted ?? Infinity) - (b.booted ?? Infinity) || a.ship.localeCompare(b.ship));
 }
 // A booting moon's desks: how many run, and why any failed.
+// A desk is done once it runs (Kiln installed it, heard back from its
+// source and merged what it brought) or failed. Catching up comes between.
 export function deskTally(desks = []) {
   const running = desks.filter(d => d.stage === 'running').length;
   const failed = desks.filter(d => d.stage === 'failed');
-  return {total: desks.length, running, failed, done: running + failed.length === desks.length};
+  const catching = desks.filter(d => d.stage === 'catching-up').length;
+  const installing = desks.filter(d => d.stage === 'seeded' || d.stage === 'installing').length;
+  return {total: desks.length, running, failed, catching, installing, done: running + failed.length === desks.length};
 }
+// Still catching up with a desk's source: running, but busy on the host.
+export const catchingUp = moon => (moon?.desks || []).some(d => d.stage === 'catching-up');
 export function validateFleet(data) {
   if (data?.version !== 3 || !Array.isArray(data.moons) || !Array.isArray(data.fleets) || !Array.isArray(data.snapshots) || !Array.isArray(data.caches) || !ob.isValidPatp(data.host)) throw new Error('Theseus management API is unavailable or incompatible.');
   if (data.moons.some(m => !Array.isArray(m.desks) || (m.recovery != null && (!['registering', 'restarting', 'failed'].includes(m.recovery.stage) || typeof m.recovery.attempts !== 'number')))) throw new Error('Theseus returned an invalid moon record.');
@@ -119,7 +125,8 @@ export function fleetState(group, moons) {
   const running = members.filter(moon => moon.status === 'healthy' && !moon.paused && !moon.recovery).length;
   const paused = members.filter(moon => moon.paused && !moon.recovery).length;
   const attention = members.length - running - paused + missing.length;
-  return {members, missing, running, paused, attention};
+  const catching = members.filter(moon => moon.status === 'healthy' && !moon.paused && !moon.recovery && catchingUp(moon)).length;
+  return {members, missing, running, paused, attention, catching};
 }
 export function validateHostDesks(data) {
   if (data?.version !== 1 || !Array.isArray(data.desks)) throw new Error('Theseus host desk inventory is unavailable or incompatible.');
@@ -178,4 +185,77 @@ export function gatewayProblem(gw) {
     stale: 'The web gateway is still forwarding to an old Eyre port.',
     mismatch: 'The web gateway is still switching to the declared port.',
   }[gw.status] || 'The web gateway is not ready.';
+}
+// Snapshots hold one ship each. Those taken together (a fleet's) share a set,
+// /<set>/<~ship>, and restore or delete together through the set's path. A
+// snapshot from before sets is a set of its own.
+export function snapshotSets(snapshots = []) {
+  const sets = new Map();
+  for (const s of snapshots) {
+    const key = s.set || s.path;
+    const set = sets.get(key) || {path: key, created: s.created, compatible: true, ships: [], entries: []};
+    if ((daMs(s.created) || 0) > (daMs(set.created) || 0)) set.created = s.created;
+    set.compatible = set.compatible && s.compatible;
+    set.ships.push(...s.ships);
+    set.entries.push(s);
+    sets.set(key, set);
+  }
+  return [...sets.values()].map(set => ({...set, ships: [...new Set(set.ships)].sort()}))
+    .sort((a, b) => (daMs(b.created) || 0) - (daMs(a.created) || 0));
+}
+// A snapshot's or set's name for people: its path without the leading slash.
+export const snapshotLabel = path => String(path || '').replace(/^\//, '');
+// The visible text of one Dill blit, without styles.
+function blitText(blit) {
+  if (blit.put) return blit.put.map(safe).join('');
+  if (blit.klr) return blit.klr.map(run => (run.text || []).map(safe).join('')).join('');
+  return '';
+}
+// The fleet terminal's merged log: turn a moon's blits into the lines it
+// finished printing. Dill redraws the line in progress with %put/%klr and ends
+// it with %nel; only ended lines are shown. The Dojo prompt line, which each
+// moon echoes for every command, is left out.
+export function blitLines(cur = '', blits = []) {
+  const lines = [];
+  const walk = list => {
+    for (const blit of list) {
+      if (blit.mor) walk(blit.mor);
+      else if (blit.put || blit.klr) cur = blitText(blit);
+      else if ('nel' in blit) {
+        if (cur.trim() && !/^~[a-z-]+:dojo> /.test(cur)) lines.push(cur);
+        cur = '';
+      } else if ('clr' in blit) cur = '';
+    }
+  };
+  walk(Array.isArray(blits) ? blits : []);
+  return {cur, lines};
+}
+// Fleet terminal commands that change or wipe something in every moon, so the
+// console asks before running them across a fleet.
+export function riskyCommand(text) {
+  return /^\s*\|\s*(nuke|uninstall|suspend|ota|rein|breach|rm|mv|cp|commit|merge|cork|exit|knob|rekey|moon-breach|code|bump|pass|unsync|cancel|rebuild)\b/.test(text)
+    || /^\s*:\S+\s*\|/.test(text);
+}
+// A moon's name without its host's part: ~fopsep-litruc-siglup-narwet ->
+// ~fopsep-litruc. Moons share their host's name, so the rest is noise.
+export function shortMoon(ship, host) {
+  const tail = String(host || '').replace(/^~/, '');
+  return tail && ship.endsWith(`-${tail}`) ? ship.slice(0, -tail.length - 1) : ship;
+}
+// Where to load a profile picture from: an absolute URL as it is, a path on
+// the ship (an avatar uploaded in Noltbook) at the ship's own origin, if any.
+export function avatarSrc(avatar, origin, ship) {
+  const url = typeof avatar?.url === 'string' ? avatar.url.trim() : '';
+  if (/^https?:\/\//i.test(url)) return url;
+  if (origin === undefined) return '';
+  if (url.startsWith('/')) return `${origin}${url}`;
+  // A picture uploaded to Noltbook: its url is a version, which goes in the
+  // address so a new upload isn't hidden behind the old one in a cache.
+  if (avatar?.type === 'urbit') return ship ? `${origin}/apps/noltbook/user-avatar/${ship}${url ? `?v=${encodeURIComponent(url)}` : ''}` : `${origin}/apps/noltbook/avatar`;
+  return '';
+}
+export function validateProfiles(data) {
+  const ok = p => p && typeof p.ship === 'string' && typeof p.noltbook === 'boolean' && (p.name === null || typeof p.name === 'string') && (p.avatar === null || typeof p.avatar === 'object');
+  if (!ok(data?.host) || !Array.isArray(data.moons) || !data.moons.every(ok)) throw new Error('Theseus returned invalid profiles.');
+  return data;
 }

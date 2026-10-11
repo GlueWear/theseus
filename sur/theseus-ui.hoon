@@ -15,6 +15,12 @@
       [%snapshot name=@tas ships=(list ship) resume=?]
       [%restore =path]
       [%delete =path]
+      ::  a ship's display name and picture: ~ keeps, [~ ~] clears.
+      ::  Written to the ship's Noltbook profile when it runs Noltbook,
+      ::  else the name is kept here as a nickname.  .upload is a new
+      ::  picture for a moon, as base64 bytes, instead of an address.
+      ::
+      [%profile who=ship name=(unit (unit @t)) avatar=(unit (unit @t)) upload=(unit @t)]
   ==
 ::  A moon's terminal from the console, as a terminal client drives Dill:
 ::  keystrokes, the window size, and a redraw of the prompt line.

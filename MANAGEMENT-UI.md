@@ -25,11 +25,16 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
 ### API
 
 - `GET /~/scry/theseus/ui.json` →
-  `{version: 3, host, caches: [..], moons: [{ship, status, paused, queued, identity, vanes, desks, booted, recovery}], fleets: [{name, ships, desks, created}], snapshots: [{path, created, compatible, ships}]}`.
+  `{version: 3, host, caches: [..], moons: [{ship, status, paused, queued, identity, vanes, desks, booted, recovery}], fleets: [{name, ships, desks, created}], snapshots: [{path, set, created, compatible, ships}]}`.
+  Each snapshot holds one ship (`ships` has one entry); snapshots taken
+  together share a `set`, and their paths are `<set>/~ship`. Older snapshots
+  are a set of their own.
   `booted` is the boot time in Unix ms. The console lists moons oldest first.
   `desks` is the moon's install plan, `[{desk, stage, reason, source: {ship, desk}}]`,
-  with `stage` one of `installing`, `running`, `failed`. It is empty for
-  moons booted before the desk picker.
+  with `stage` one of `installing`, `catching-up`, `running`, `failed`.
+  `catching-up` means installed, while Kiln's first check of the source, and
+  any merge it brings, are under way; the moon is busy on the host until
+  then. It is empty for moons booted before the desk picker.
   `recovery` is null or `{stage, attempts, reason}`; its stages are
   `registering`, `restarting`, and `failed`.
   A fleet record is durable even while some members are not booted. Membership
@@ -44,7 +49,7 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
   `fleet-pause|fleet-resume|fleet-kill {name}`,
   `dojo {who, command}`,
   `term {who, act}`, `pause|resume|kill {who}`, `snapshot {name, ships, resume}`,
-  `restore|delete {path}`.
+  `restore|delete {path}`, `profile {who, name?, avatar?}`.
   - `term` is the moon's terminal. `act` is one of:
     - `{belts: [...]}`: keystrokes, each `{txt}`, `{ret}`, `{bac}`, `{del}`,
       `{aro: "u"|"d"|"l"|"r"}`, `{ctl: letter}` or `{met: letter}`.
@@ -53,8 +58,22 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
 
     The console sends these in order, one poke at a time. The moon's Dill
     echoes them back on pyre's `/blit`.
-  - `snapshot` pauses its moons while it seals them. With `resume: true`,
-    moons that were running carry on afterwards.
+  - `snapshot` pauses its moons while it seals them, one snapshot per ship at
+    `/<name>/~ship`. With `resume: true`, moons that were running carry on
+    afterwards.
+  - `restore` and `delete` take one snapshot's path, or a set's path to act on
+    every snapshot in it.
+  - `profile` sets a ship's name and picture (the host or a moon). A field left
+    out is kept, `null` clears it, a string sets it; `avatar` is an `http(s)`
+    address. `upload` is instead a moon's new picture, as base64 bytes (at
+    most 51,200, as Noltbook allows): Theseus logs in to the moon's Eyre with
+    its `+code`, posts the picture to Noltbook's `/apps/noltbook/upload-avatar`,
+    logs out, and points the profile at the upload, all in one host event. A
+    refusal (no `%noltbook-data` desk, not a picture, too large) rejects the
+    poke. The console uploads the host's own picture itself, then pokes the
+    host's `%noltbook` (`noltbook-api` `update-profile`). With Noltbook, a
+    profile change updates the ship's own Noltbook profile; without, `name` is
+    kept by Theseus and `avatar` is ignored.
   - `fleet-add-desks` merges the selected host Clay material into every live
     member without replacing moon-local desks, starts Kiln installs, and
     expands the recipe used by members booted later. Paused members retain
@@ -62,6 +81,12 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
   - `moon-add-desks` performs the same preserving merge and tracked Kiln
     install for one existing moon without changing a managed fleet recipe.
   See "Choosing a moon's desks" in ARCHITECTURE.md for what `boot` does.
+- `GET /~/scry/theseus/profiles.json` →
+  `{host: profile, moons: [profile]}`, each `{ship, noltbook, name, avatar: {type, url} | null}`:
+  read now from each ship's own Noltbook profile, or the Theseus nickname for
+  a ship without Noltbook (`noltbook: false`). Read on demand only.
+- Poke `%theseus` with mark `theseus-recycle`, `{who, path}`: restore one moon,
+  from its own snapshot or from its snapshot in the set `path`. Used by manor.
 - `GET /~/scry/theseus/web/~<moon>.json` → `{ship, code, landscape}`: the moon's
   login code (no `~`) and whether `%landscape` is installed, read from inside the
   moon when asked.

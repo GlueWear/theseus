@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 const moon = '~sampel-siglup-narwet';
 test.beforeEach(async ({request,page})=>{await request.get('http://127.0.0.1:8085/reset');page.on('pageerror',e=>console.log('PAGE ERROR',e.message));});
 test('fleet lists moons oldest first; boot shows progress; snapshots return to a point',async({page})=>{
-  await page.goto('/'); await expect(page.getByRole('button',{name:moon,exact:true})).toBeVisible();
+  await page.goto('/'); await expect(page.getByRole('button',{name:`Open Dojo for ${moon}`})).toBeVisible();
   // ~dozlet was booted first, though the host lists ~sampel first
   await expect(page.locator('tbody tr .ship-link strong')).toHaveText(['~dozlet-siglup-narwet',moon]);
   await page.screenshot({path:'test-results/fleet-desktop.png',fullPage:true});
@@ -43,11 +43,13 @@ test('fleet lists moons oldest first; boot shows progress; snapshots return to a
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button',{name:`Pause ${moon}`,exact:true})).toBeVisible();
   await page.getByRole('button',{name:/^Snapshots \d/}).click();
-  await expect(page.locator('article').first()).toContainText('/paused-checkpoint');
+  await expect(page.locator('article').first()).toContainText('paused-checkpoint');
+  // the big select-to-snapshot button and the snapshot counter are gone
+  await expect(page.getByRole('button',{name:/^New snapshot/})).toHaveCount(0);
   await page.getByRole('button',{name:/^Moons/}).click();
   await page.getByRole('button',{name:`Remove ${name}`,exact:true}).click();
   await page.getByRole('dialog').getByRole('button',{name:'Remove moon',exact:true}).click();
-  await expect(page.getByRole('button',{name,exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:`Open Dojo for ${name}`})).toHaveCount(0);
 });
 test('boot picker lists every desk and adds Landscape for docket apps',async({page})=>{
   await page.goto('/'); await page.getByRole('button',{name:'Boot moon',exact:true}).click();
@@ -98,7 +100,7 @@ test('a rejected desk addition stays open with the host error and changes nothin
   await expect(page.locator('tbody tr').filter({hasText:moon}).locator('.desk-state',{hasText:'%noltbook-data'})).toHaveCount(0);
   await expect(page.locator('.banner.success')).toHaveCount(0);
 });
-test('a fleet generates moons and applies folder actions to every member',async({page})=>{
+test('a fleet generates moons and applies folder actions to every member',async({page,request})=>{
   await page.goto('/');
   await page.getByRole('button',{name:'Boot Fleet',exact:true}).click();
   const dialog=page.getByRole('dialog');
@@ -131,9 +133,47 @@ test('a fleet generates moons and applies folder actions to every member',async(
   await expect(page.locator('tr.fleet-child .desk-column .desk-state.installing',{hasText:'%groups'})).toHaveCount(2);
   await page.getByRole('button',{name:'Resume fleet workers'}).click();
   await expect(page.locator('tr.fleet-child .desk-column .desk-state.running',{hasText:'%groups'})).toHaveCount(2,{timeout:10000});
-  await page.getByRole('button',{name:'Snapshot fleet workers'}).click();
-  await expect(page.getByRole('dialog').locator('.affected li')).toHaveCount(2);
-  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  // A fleet snapshot is one snapshot per moon, restored together.
+  await page.getByRole('button',{name:'Snapshots of fleet workers'}).click();
+  const snaps=page.getByRole('dialog');
+  await expect(snaps).toContainText('No snapshots of workers yet');
+  await snaps.getByLabel('Snapshot name').fill('fleet-clean');
+  await snaps.getByRole('button',{name:'Take snapshot'}).click();
+  await expect(snaps.locator('.snap-list li').first()).toContainText('fleet-clean');
+  await expect(snaps.locator('.snap-list li').first()).toContainText('2 of 2 moons');
+  await page.screenshot({path:'test-results/fleet-snapshots.png',fullPage:true});
+  await snaps.locator('.snap-list li').first().getByRole('button',{name:'Restore all'}).click();
+  await expect(page.getByRole('dialog')).toContainText('all 2 moons below');
+  await page.getByRole('button',{name:'Restore & resume'}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  // each member's own tool shows its part of the fleet snapshot
+  const member=(await page.locator('tr.fleet-child .ship-link strong').first().textContent()).trim();
+  await page.getByRole('button',{name:`Snapshots of ${member}`,exact:true}).click();
+  await expect(page.getByRole('dialog').locator('.snap-list li').first()).toContainText('part of a fleet snapshot of 2 moons');
+  await page.getByRole('button',{name:'Close',exact:true}).click();
+
+  // The fleet terminal runs one command in every member and merges the output.
+  await page.getByRole('button',{name:'Open fleet terminal for workers'}).click();
+  const fleetTerm=page.getByRole('region',{name:'Fleet terminal for workers'});
+  await expect(fleetTerm).toContainText('workers — fleet terminal · 2 of 2 moons');
+  await fleetTerm.getByLabel('Command for every moon in workers').fill('(add 2 2)');
+  await fleetTerm.getByRole('button',{name:'Run in 2'}).click();
+  const log=fleetTerm.getByTestId('fleet-terminal-log').locator('.xterm-rows');
+  await expect(log).toContainText('▶ (add 2 2) in 2 moons');
+  await expect.poll(async()=>((await log.textContent()).match(/│ 4/g)||[]).length).toBe(2);
+  expect(await log.textContent()).not.toContain(':dojo>');
+  await page.screenshot({path:'test-results/fleet-terminal.png',fullPage:true});
+  await page.setViewportSize({width:1280,height:900});
+  await page.screenshot({path:'test-results/fleet-terminal-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  // a command that changes every moon asks first
+  await fleetTerm.getByLabel('Command for every moon in workers').fill('|nuke %glurff');
+  await fleetTerm.getByRole('button',{name:'Run in 2'}).click();
+  await expect(fleetTerm.getByRole('alert')).toContainText('Run |nuke %glurff in all 2 moons?');
+  await fleetTerm.getByRole('button',{name:'Cancel'}).click();
+  const sent=await (await request.get('http://127.0.0.1:8085/dojo-log')).json();
+  expect(sent.map(e=>e.command)).toEqual(['(add 2 2)','(add 2 2)']);
+  await page.getByRole('button',{name:'All moons'}).click();
 
   await page.getByRole('button',{name:'Remove fleet workers'}).click();
   await expect(page.getByRole('dialog')).toContainText('all of its booted moons');
@@ -162,11 +202,11 @@ test('the Dojo is a terminal: typing goes straight to the moon',async({page,requ
   await expect(page.getByRole('button',{name:'Download transcript'})).toBeVisible();
 });
 test('mobile layout and keyboard dialog cancellation',async({page})=>{
-  await page.setViewportSize({width:390,height:844});await page.goto('/');await expect(page.getByRole('button',{name:moon,exact:true})).toBeVisible();
+  await page.setViewportSize({width:390,height:844});await page.goto('/');await expect(page.getByRole('button',{name:`Open Dojo for ${moon}`})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
   await page.screenshot({path:'test-results/fleet-mobile.png',fullPage:true});
   await page.getByRole('button',{name:'Boot moon',exact:true}).click();await expect(page.getByLabel('Include %noltbook-data')).toBeVisible();await page.screenshot({path:'test-results/picker-mobile.png',fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.getByRole('button',{name:moon,exact:true}).click();await page.screenshot({path:'test-results/dojo-mobile.png',fullPage:true});
+  await page.getByRole('button',{name:`Open Dojo for ${moon}`}).click();await page.screenshot({path:'test-results/dojo-mobile.png',fullPage:true});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
 });
 test('offline is explicit and disables actions',async({page})=>{
@@ -174,14 +214,14 @@ test('offline is explicit and disables actions',async({page})=>{
   await expect(page.getByRole('alert')).toContainText('503');await expect(page.getByRole('button',{name:'Boot moon',exact:true})).toBeDisabled();
 });
 test('workspace is top-aligned and closing the page deletes the channel',async({page,request})=>{
-  await page.setViewportSize({width:1280,height:1600});await page.goto('/');await expect(page.getByRole('button',{name:moon,exact:true})).toBeVisible();
+  await page.setViewportSize({width:1280,height:1600});await page.goto('/');await expect(page.getByRole('button',{name:`Open Dojo for ${moon}`})).toBeVisible();
   expect(await page.locator('main').evaluate(el=>el.getBoundingClientRect().top)).toBeLessThan(5);
   await page.getByRole('button',{name:`Open Dojo for ${moon}`}).click();await expect(page.locator('.xterm-rows')).toContainText('dojo>');
   await page.goto('about:blank');
   await expect.poll(async()=>Number(await (await request.get('http://127.0.0.1:8085/deletes')).text())).toBeGreaterThan(0);
 });
 test('Landscape opens on the moon origin and logs in with a posted code',async({page,context,request})=>{
-  await page.goto('/');await expect(page.getByRole('button',{name:moon,exact:true})).toBeVisible();
+  await page.goto('/');await expect(page.getByRole('button',{name:`Open Dojo for ${moon}`})).toBeVisible();
   const login=context.waitForEvent('request',r=>r.method()==='POST'&&r.url().endsWith('/~/login'));
   await page.getByRole('button',{name:`Open Landscape for ${moon}`}).click();
   const req=await login;
@@ -192,7 +232,7 @@ test('a moon without Landscape offers to install it, then opens',async({page,con
   await page.goto('/');await page.getByRole('button',{name:'Boot moon',exact:true}).click();
   const name=await page.getByLabel('Moon name',{exact:true}).inputValue();
   await page.getByRole('dialog').getByRole('button',{name:'Boot moon',exact:true}).click();
-  await expect(page.getByRole('button',{name,exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:`Open Dojo for ${name}`})).toBeVisible();
   await page.getByRole('button',{name:`Open Landscape for ${name}`}).click();
   await expect(page.getByRole('dialog')).toContainText('does not have Landscape');
   await expect(page.getByRole('dialog')).toContainText('|install ~siglup-narwet %landscape');
@@ -269,4 +309,108 @@ test('sidecar view downloads a fleet map and builds the run command',async({page
   await page.setViewportSize({width:390,height:844});
   await page.screenshot({path:'test-results/sidecar-mobile.png',fullPage:true});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+});
+test('a Noltbook ship\'s picture or name opens its name and picture; a file or an address sets the picture',async({page,request})=>{
+  await page.goto('/');await expect(page.getByRole('button',{name:`Open Dojo for ${moon}`})).toBeVisible();
+  const row=page.locator('tbody tr').filter({hasText:moon});
+  const old='~dozlet-siglup-narwet', oldRow=page.locator('tbody tr').filter({hasText:old});
+  // no person button; a ship without Noltbook shows its name and does nothing
+  await expect(page.locator('.moon-actions [aria-label^="Edit name"]')).toHaveCount(0);
+  await expect(row.locator('button.ship-link')).toHaveCount(1);
+  await expect(oldRow.locator('button.ship-link')).toHaveCount(0);
+  await oldRow.locator('.ship-link strong').click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.detail-bar')).toHaveCount(0);
+  // the thumbnail is 42px, a third larger than before
+  expect(await row.locator('.avatar-wrap').evaluate(el=>el.getBoundingClientRect().width)).toBe(42);
+  // the name opens the editor; an address sets the picture
+  await row.locator('.ship-link strong').click();
+  let dialog=page.getByRole('dialog');
+  await expect(dialog).toContainText(`Name and picture of ${moon}`);
+  await expect(dialog).toContainText('Saved to the Noltbook profile');
+  await dialog.getByLabel('Name').fill('Sam');
+  await dialog.getByLabel('Picture address').fill('ftp://nope');
+  await dialog.getByRole('button',{name:'Save'}).click();
+  await expect(dialog.getByRole('alert')).toContainText('https://');
+  await dialog.getByLabel('Picture address').fill('http://127.0.0.1:8085/avatar.png');
+  await dialog.getByRole('button',{name:'Save'}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(row.locator('.ship-name strong')).toHaveText('Sam');
+  await expect(row.locator('.ship-name small')).toHaveText(moon);
+  await expect(row.locator('img.avatar')).toHaveAttribute('src','http://127.0.0.1:8085/avatar.png');
+  expect(await row.locator('img.avatar').evaluate(img=>img.complete&&img.naturalWidth>0)).toBeTruthy();
+  // the picture opens it too; a chosen file is shrunk and sent to the host,
+  // which uploads it inside the moon
+  const big=Buffer.from(await page.evaluate(()=>{const c=document.createElement('canvas');c.width=400;c.height=300;const x=c.getContext('2d');x.fillStyle='#e66949';x.fillRect(0,0,400,300);return c.toDataURL('image/png').split(',')[1];}),'base64');
+  await row.locator('.avatar-wrap').click();
+  dialog=page.getByRole('dialog');
+  await expect(dialog.getByLabel('Name')).toHaveValue('Sam');
+  await dialog.getByLabel('Picture file').setInputFiles({name:'notes.txt',mimeType:'text/plain',buffer:Buffer.from('hi')});
+  await expect(dialog.getByRole('alert')).toContainText('Choose a picture file');
+  await dialog.getByLabel('Picture file').setInputFiles({name:'sail.png',mimeType:'image/png',buffer:big});
+  await expect(dialog).toContainText('sail.png, as a 128×96 JPEG');
+  await expect(dialog.locator('.profile-preview img.avatar')).toHaveAttribute('src',/^data:image\/jpeg;base64,/);
+  await expect(dialog.getByLabel('Picture address')).toHaveValue('');
+  await page.screenshot({path:'test-results/profile-editor.png',fullPage:true});
+  await dialog.getByRole('button',{name:'Save'}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  let uploads=await (await request.get('http://127.0.0.1:8085/uploads')).json();
+  expect(uploads.at(-1)).toMatchObject({who:moon,jpeg:true});
+  await expect(row.locator('img.avatar')).toHaveAttribute('src',new RegExp(`/apps/noltbook/user-avatar/${moon}\\?v=0v1$`));
+  // the Dojo view shows the name over the @p, and opens the editor too
+  await page.getByRole('button',{name:`Open Dojo for ${moon}`}).click();
+  await expect(page.locator('.detail-ship .ship-name strong')).toHaveText('Sam');
+  await expect(page.locator('.detail-ship .ship-name small')).toHaveText(moon);
+  await page.locator('.detail-ship .ship-link').click();
+  await expect(page.getByRole('dialog')).toContainText(`Name and picture of ${moon}`);
+  await page.getByRole('dialog').getByRole('button',{name:'Cancel'}).click();
+  await page.getByRole('button',{name:'All moons'}).click();
+  // the host's own picture is uploaded to its Noltbook from this browser
+  await page.getByRole('button',{name:"Edit the host's name and picture"}).click();
+  dialog=page.getByRole('dialog');
+  await dialog.getByLabel('Name').fill('Harbor');
+  await dialog.getByLabel('Picture file').setInputFiles({name:'harbor.png',mimeType:'image/png',buffer:big});
+  await dialog.getByRole('button',{name:'Save'}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.host .ship-name strong')).toHaveText('Harbor');
+  uploads=await (await request.get('http://127.0.0.1:8085/uploads')).json();
+  expect(uploads.at(-1)).toMatchObject({who:'~siglup-narwet',jpeg:true});
+  await expect(page.locator('.host img.avatar')).toHaveAttribute('src',/^\/apps\/noltbook\/user-avatar\/~siglup-narwet\?v=/);
+  await expect.poll(()=>page.locator('.host img.avatar').evaluate(img=>img.complete&&img.naturalWidth>0)).toBeTruthy();
+  await page.screenshot({path:'test-results/names-and-pictures.png',fullPage:true});
+  // clearing a name brings back the @p; removing the picture, the sigil
+  await row.locator('.ship-link strong').click();
+  await page.getByRole('dialog').getByLabel('Name').fill('');
+  await page.getByRole('dialog').getByRole('button',{name:'Remove picture'}).click();
+  await page.getByRole('dialog').getByRole('button',{name:'Save'}).click();
+  await expect(row.locator('.ship-name')).toHaveCount(0);
+  await expect(row.locator('img.avatar')).toHaveCount(0);
+});
+test('a moon still catching up with its desks\' sources says so until Kiln is done',async({page,request})=>{
+  await page.goto('/');await expect(page.getByRole('button',{name:`Open Dojo for ${moon}`})).toBeVisible();
+  const row=page.locator('tbody tr').filter({hasText:moon});
+  await expect(row.locator('.badge')).toHaveText('running');
+  await request.get(`http://127.0.0.1:8085/hold/${moon}`);
+  await page.getByRole('button',{name:'Refresh fleet'}).click();
+  await expect(row.locator('.badge')).toHaveText('catching up');
+  await expect(row.locator('.desk-column .desk-state.catching-up')).toHaveCount(2);
+  await expect(row.locator('.desk-column .desk-state.catching-up').first()).toContainText('catching up');
+  await expect(row.locator('.desk-column .desk-state.catching-up').first()).toHaveAttribute('title',/catching up with ~siglup-narwet\/%kids/);
+  await page.screenshot({path:'test-results/catching-up.png',fullPage:true});
+  await request.get(`http://127.0.0.1:8085/release/${moon}`);
+  await expect.poll(async()=>{await page.getByRole('button',{name:'Refresh fleet'}).click();return row.locator('.badge').textContent();},{timeout:8000}).toBe('running');
+  await expect(row.locator('.desk-column .desk-state.catching-up')).toHaveCount(0);
+});
+test('a slow host shows as busy, not as an error, and recovers on its own',async({page})=>{
+  await page.clock.install();
+  await page.goto('/');await expect(page.getByRole('button',{name:`Open Dojo for ${moon}`})).toBeVisible();
+  await page.route('**/~/scry/theseus/ui.json',()=>new Promise(()=>{}));
+  await page.clock.runFor(4000);
+  await page.clock.runFor(16000);
+  await expect(page.locator('.connection')).toContainText('Host busy');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Boot moon',exact:true})).toBeEnabled();
+  await page.unroute('**/~/scry/theseus/ui.json');
+  await page.clock.runFor(4000);
+  await expect(page.locator('.connection')).toContainText('Connected');
 });

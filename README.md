@@ -36,9 +36,10 @@ Verified on `[%zuse 408]` (October 2026, host `~siglup-narwet`):
   bidirectional live Ames traffic for a multi-moon fleet.
 - The web console at `/apps/theseus` (also a Landscape tile): fleet health,
   boot individual moons or generated fleets with a choice of host desks,
-  pause/resume/remove at moon or fleet scope, a terminal Dojo per moon,
-  per-moon snapshots and restore, each moon's `+code`, and one-click Landscape
-  per moon.
+  pause/resume/remove at moon or fleet scope, a terminal Dojo per moon and a
+  fleet terminal per fleet, per-moon and per-fleet snapshots and restore, names
+  and pictures from each ship's Noltbook profile, each moon's `+code`, and
+  one-click Landscape per moon.
 - Moon web apps open on their own origin, `http://<moon>.localhost:<port>`,
   through a local Caddy gateway that `ops/theseus-gateway` runs under launchd.
 
@@ -182,17 +183,33 @@ From the console, click **Boot moon**:
   host, so nothing is downloaded.
 - For each desk, choose whether it takes updates from the host or from the
   ship the host got it from.
-- A status bar shows the boot, then each desk installing, until the moon is
-  ready.
+- A status bar shows the boot, then each desk installing, then catching up
+  with its source (Kiln's first check, and any merge it brings) until the
+  moon is ready. While a moon is catching up, its badge says so: it works,
+  but it is busy on the host and slow to answer.
 
 The moon's Dojo opens as a terminal: click it and type. Its camera button holds
 the moon's snapshots: take one, or restore an earlier one.
+
+On a moon running Noltbook, click its name or picture (its sigil until it
+has one) to set its name and picture: choose a picture file, or paste an
+address. They are its Noltbook profile, so Noltbook and Glurff show them too.
+A file is shrunk to 128 pixels and uploaded into the moon's Noltbook, which
+keeps it in the moon's own `%noltbook-data`. Noltbook creates that desk
+itself when installed; don't choose `%noltbook-data` when booting moons, as
+that copies the host's, with every file uploaded on the host. A chosen name is shown with the
+moon's @p underneath. The host's name, picture, or the pencil beside it does
+the same for the host. On a ship without Noltbook, the name and picture are
+only shown; open its Dojo with the terminal button.
 
 **Boot Fleet** creates a named group of 1-64 generated child moons with the
 same desk plan. The folder persists before its members boot, so an interrupted
 boot can resume with **Boot missing moons**. Expand the folder for each moon's
 normal controls; the folder itself pauses, resumes, snapshots, or removes all
-of its booted members together. The folder's **%** action adds selected host
+of its booted members together. A fleet snapshot keeps one snapshot per moon:
+restore the whole fleet from the folder, or one moon from its own snapshots.
+The folder's terminal button opens a **fleet terminal**: each command runs in
+every running member's Dojo, and their output is merged into one log. The folder's **%** action adds selected host
 desks to every booted member and to the durable fleet recipe. Missing members
 receive those desks when they boot; paused members continue installation when
 they resume. The same **%** action on an individual moon adds host desks only

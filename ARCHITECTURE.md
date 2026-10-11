@@ -135,13 +135,18 @@ login page.
 
 | View | What it does |
 | --- | --- |
-| Moons | Health (vanes, identity, queue), oldest boot first; boot with a status bar; per moon: Dojo, Landscape, `+code`, pause/resume, snapshots, remove |
-| Snapshots | Every snapshot, newest first: restore, delete |
+| Moons | Health (vanes, identity, queue), oldest boot first; boot with a status bar; per moon: Dojo, name and picture, Landscape, `+code`, pause/resume, snapshots, remove; per fleet: fleet terminal, snapshots, pause/resume, add desks, remove |
+| Snapshots | Every snapshot set, newest first: restore, delete |
 | Gateway | Gateway status and settings (see below) |
 
 Under the hood the page:
 
-- reads `/~/scry/theseus/ui.json` every few seconds;
+- reads `/~/scry/theseus/ui.json` every few seconds. If the host is busy with
+  a long event and doesn't answer within 15 seconds, the page says "Host busy"
+  and keeps retrying; it stays usable and isn't marked offline;
+- reads names and pictures (`/~/scry/theseus/profiles.json`) only when
+  something happens: on load, the refresh button, after a boot, a restore, a
+  removal or an edit. Never on a timer;
 - sends commands as pokes that succeed only when the agent acknowledges them;
 - subscribes to pyre's `/blit` for Dojo output.
 
@@ -153,7 +158,49 @@ Under the hood the page:
   acknowledges it. The status bar shows that phase, then each chosen desk
   installing, until the moon is ready (or which desk failed and why).
 - **Snapshots.** A moon's camera button opens its snapshots: take a new one
-  (by default the moon keeps running), or restore one of its earlier ones.
+  (by default the moon keeps running), or restore one of its earlier ones. A
+  fleet's camera button does the same for every member at once (see below).
+- **Fleet terminal.** A fleet's terminal button opens one command line for
+  the whole fleet. Each command runs in the Dojo of every running member, one
+  moon at a time, so each is its own event on the host; paused members are
+  skipped and named. What the moons print is merged into one log, each line
+  marked with its moon in its own colour; the Dojo prompt echoes are left out.
+  The panel is blue-framed, titled "fleet terminal", and types into a
+  composer bar with the fleet's name as its prompt, so it can't be mistaken
+  for one moon's Dojo, where keys go straight to the moon. Commands that change every moon (`|nuke`, `|uninstall`,
+  `|ota`, `|commit`, `|rm`…) ask for confirmation first.
+- **Cookies.** A moon's pages reach it through the host's Eyre at
+  `/theseus/~<moon>/…`. At the host's own address the browser sends every
+  cookie it holds there, the host's login among them. `%theseus-pyre` passes a
+  moon only its own Eyre login cookie (`urbauth-~<moon>`), and lets a moon's
+  answer set no cookie but that one, so a moon can neither read nor replace
+  the host's login. Moon apps use no other cookie.
+- **Names and pictures.** A ship that runs Noltbook shows its own Noltbook
+  display name and picture, read from inside it through Noltbook's API
+  (`/x/api/profile/~ship`). Editing them in the console writes them back as the
+  ship itself: a `noltbook-api` `%update-profile` injected into the moon (or
+  poked into the host's own `%noltbook`), which Noltbook's same-ship API
+  accepts. So Noltbook and Glurff show the same name. The @p is always shown
+  under a chosen name. On a Noltbook ship, the name and picture open the
+  editor when clicked; on any other they are only shown (a nickname set
+  earlier, `nicknames` in state `%12`, still shows).
+- **Uploaded pictures.** Noltbook takes a picture file only as an HTTP upload
+  from its logged-in owner, and only that upload marks it as having one. The
+  console shrinks a chosen file to at most 128 pixels as a JPEG. For the host,
+  the console posts it to the host's own `/apps/noltbook/upload-avatar`, then
+  pokes `%noltbook` to point the profile at it. For a moon, the console sends
+  the bytes to `%theseus`, which, inside one host event, injects a login with
+  the moon's `+code` into the moon's Eyre, reads the session from Eyre's
+  answer, injects the upload with that session, then a logout and the
+  profile update. Eyre answers the login within the moon's event; Noltbook
+  answers the upload then only to refuse it (`400`, `413`, or `503` without
+  `%noltbook-data`), which rejects the poke. Nothing reaches a browser.
+  Noltbook creates an empty `%noltbook-data` of its own when installed, so a
+  moon needs no copy of the host's, which holds the host's uploads. Pictures
+  are shown from
+  `/apps/noltbook/user-avatar/~ship?v=<version>`, through the moon's gateway
+  address; the version changes with each upload, so caches don't hide it.
+  Without Noltbook, or a gateway, the parent's sigil is shown.
 
 ## Choosing a moon's desks
 
@@ -183,15 +230,24 @@ What happens on boot (`%init-moon-desks` in `app/theseus.hoon`):
 3. **Add the desks after boot.** `+inject-desks` adds them with their history
    intact. Clay `%zest %live` starts their agents.
 4. **Install.** Each desk is `|install`ed from its chosen source. Its files are
-   already local, so nothing is downloaded.
+   already local, but Kiln's first check of each source still downloads the
+   source's latest revision to compare, and merges it if it differs (for
+   `%base`, the host's `%kids` is often newer than the boot cache).
 5. **Ally publishers.** If `%landscape` is on the moon, each publisher (the
    ship the host's copy syncs from) is allied in the moon's `%treaty`, as a
    Landscape install would do. Docket only installs apps whose treaty it has,
    so an app's in-app "install X" button needs this.
 6. **Progress.** A 2-second timer reads the moon's Kiln until each desk runs
-   from the expected source. A desk is marked failed only on a wrong source,
-   or after 20 minutes. Each moon row shows each desk's stage, and hovering
-   shows its source.
+   from the expected source. Then each desk is *catching up* until Kiln has
+   heard back from its source (the revision its sync waits for is one past
+   the source's latest: the host's own, or what the host's sync of that
+   publisher has heard) and the desk's contents match the source's as the
+   host has them. That polls every 5 seconds. A desk is marked failed on a
+   wrong source, or when, after 20 minutes, it is not installed or its
+   source was never heard from; a desk that heard back but still differs
+   then runs anyway. The moon's badge reads "catching up" meanwhile, and a
+   fleet's boot bar says "settling" until every member is done. Each moon row
+   shows each desk's stage, and hovering shows its source.
 
 Verified live on 2026-10-03:
 
@@ -207,9 +263,16 @@ Not yet tested live: the "publisher" source choice and the treaty allies.
 
 ## Snapshots and restore
 
-A snapshot seals each chosen moon's whole Arvo state. Its moons pause while it
-is taken, and by default they then carry on running. Restoring puts that state
-back.
+A snapshot seals one moon's whole Arvo state. Its moon pauses while it is
+taken, and by default then carries on running. Restoring puts that state back.
+
+**Fleet snapshots are sets.** Snapshotting several moons at once (a fleet's
+camera button) seals them all in one event but stores one snapshot per moon,
+`/<set>/<~moon>`. Restoring or deleting the set's path, `/<set>`, acts on every
+snapshot in it, still in one event; each moon's own path restores just that
+moon. So after a demo you can reset the whole fleet, or only the moons people
+used. State `%12` split every older multi-moon snapshot `/p` the same way, into
+`/p/~moon`, with `/p` as their set. `ui.json` gives each snapshot its `set`.
 
 **Restore starts a new network era.** A restore rolls back the moon's Ames
 message flows too, but every other ship keeps its own:
@@ -222,7 +285,7 @@ reconnect to world", with other users never appearing. It's the same reason a
 real ship must never boot an old copy of its pier.
 
 So when Theseus restores one of the host's moons, it runs a persisted recovery
-transaction (`state-11` in `app/theseus.hoon`) and treats the restore as a
+transaction (`recoveries` in `app/theseus.hoon`) and treats the restore as a
 breach:
 
 1. **Freeze before replacement.** Theseus unions the peers known by the live

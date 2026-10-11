@@ -180,6 +180,19 @@
   ==
 +$  kiln-pikes  (map desk kiln-pike)
 ::
+::  Kiln's state for one sync, as /hood/kiln/syncs gives it ($sync-state in
+::  /lib/hood/kiln): .let is the source revision it waits for next.
+::
++$  kiln-sync
+  $:  nun=@ta
+      kid=(unit desk)
+      let=@ud
+      nit=(unit ?)
+      hav=(unit @ud)
+      yea=?
+  ==
++$  kiln-syncs  (map [syd=desk her=ship sud=desk] kiln-sync)
+::
 ::  where a desk chosen at boot takes its updates from: us, or the ship
 ::  our own copy syncs from
 ::

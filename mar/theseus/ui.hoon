@@ -76,6 +76,9 @@
         [%snapshot (ot ~[[%name (se %tas)] [%ships (ar (se %p))] [%resume bo]])]
         [%restore (ot ~[[%path pa]])]
         [%delete (ot ~[[%path pa]])]
+        ::  name/avatar: absent keeps, null clears, a string sets.
+        ::  upload: a moon's new picture as base64, else absent
+        [%profile (ou ~[[%who (un (se %p))] [%name (uf ~ (pe ~ (mu so)))] [%avatar (uf ~ (pe ~ (mu so)))] [%upload (uf ~ (mu so))]])]
     ==
   --
 ++  grow

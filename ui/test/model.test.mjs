@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {newMoon, validateMoon, blitsToAnsi, validateFleet, validateHostDesks, resolveDeskSelection, bootDesks, deskPublisher, keysToBelts, byBoot, deskTally, snapshotName, shipNumber, fleetState} from '../src/model.mjs';
+import {newMoon, validateMoon, blitsToAnsi, validateFleet, validateHostDesks, resolveDeskSelection, bootDesks, deskPublisher, keysToBelts, byBoot, deskTally, catchingUp, snapshotName, shipNumber, fleetState, snapshotSets, snapshotLabel, blitLines, riskyCommand, shortMoon, avatarSrc, validateProfiles} from '../src/model.mjs';
 test('generated moon belongs to host and avoids existing identities', () => {
   const a = newMoon('~siglup-narwet', [], 123);
   assert.equal(validateMoon(a, '~siglup-narwet'), '');
@@ -35,7 +35,7 @@ test('fleet records are exclusive and report missing members', () => {
   const moon = {ship:a,status:'healthy',paused:false,recovery:null};
   const data = validateFleet({version:3,host,moons:[{...moon,desks:[]}],fleets:[group],snapshots:[],caches:[]});
   assert.equal(data.fleets[0].name, 'workers');
-  assert.deepEqual(fleetState(group,[moon]), {members:[moon],missing:[b],running:1,paused:0,attention:1});
+  assert.deepEqual(fleetState(group,[moon]), {members:[moon],missing:[b],running:1,paused:0,attention:1,catching:0});
   assert.throws(() => validateFleet({...data,fleets:[group,{...group,name:'other'}]}), /overlapping/);
 });
 test('desk selection locks base and resolves docket dependencies', () => {
@@ -82,8 +82,50 @@ test('a boot is done when every desk runs or failed', () => {
   const done = deskTally([{stage:'running'},{stage:'failed',desk:'x'}]);
   assert.equal(done.done, true); assert.equal(done.failed.length, 1);
   assert.equal(deskTally([]).done, true);
+  // catching up comes after installing and before running: not done yet
+  const catching = deskTally([{stage:'running'},{stage:'catching-up'},{stage:'installing'}]);
+  assert.deepEqual([catching.catching, catching.installing, catching.done], [1, 1, false]);
+  assert.equal(catchingUp({desks:[{stage:'running'},{stage:'catching-up'}]}), true);
+  assert.equal(catchingUp({desks:[{stage:'running'}]}), false);
+  assert.equal(catchingUp({}), false);
 });
 test('styled Dill text keeps bold, underline and colours', () => {
   const ansi = blitsToAnsi([{klr:[{text:['h','i'],stye:{deco:['br'],fore:'r',back:null}},{text:['x'],stye:{deco:['un'],fore:{r:1,g:2,b:3},back:'b'}},{text:['p'],stye:{deco:[null],fore:null,back:null}}]}]);
   assert.equal(ansi, '\x1b[1;31mhi\x1b[0m\x1b[4;38;2;1;2;3;44mx\x1b[0mp');
+});
+
+test('snapshots group into sets: a fleet snapshot is one per moon, restored together', () => {
+  const sets = snapshotSets([
+    {path: '/clean/~a-host', set: '/clean', ships: ['~a-host'], compatible: true, created: '~2026.10.8..10.00.00'},
+    {path: '/clean/~b-host', set: '/clean', ships: ['~b-host'], compatible: false, created: '~2026.10.8..10.00.00'},
+    {path: '/old', ships: ['~a-host'], compatible: true, created: '~2026.10.1..10.00.00'},
+  ]);
+  assert.deepEqual(sets.map(s => [s.path, s.ships, s.compatible, s.entries.length]), [['/clean', ['~a-host', '~b-host'], false, 2], ['/old', ['~a-host'], true, 1]]);
+  assert.equal(snapshotLabel('/clean'), 'clean');
+});
+test('the fleet terminal keeps the lines a moon finished printing, not its prompt', () => {
+  let r = blitLines('', [{mor: [{hop: 0}, {put: [...'~a-host:dojo> +vats']}]}, {nel: true}, {put: [...'%base']}]);
+  assert.deepEqual(r.lines, []);
+  assert.equal(r.cur, '%base');
+  r = blitLines(r.cur, [{nel: true}, {klr: [{stye: {deco: ['br']}, text: [...'running']}]}, {nel: true}, {put: ['\x1b', 'x']}, {nel: true}]);
+  assert.deepEqual(r.lines, ['%base', 'running', 'x']);
+  assert.equal(r.cur, '');
+});
+test('commands that change every moon are caught before a fleet runs them', () => {
+  for (const c of ['|nuke %glurff', ' |uninstall %pong', '|ota ~zod %kids', '|commit %base', '|rm /foo', ':hood|code %reset']) assert.ok(riskyCommand(c), c);
+  for (const c of ['+vats', '(add 2 2)', '|hi ~zod', '|mount %base']) assert.ok(!riskyCommand(c), c);
+});
+test('moons are named without their host, and pictures resolve to where they live', () => {
+  assert.equal(shortMoon('~fopsep-litruc-siglup-narwet', '~siglup-narwet'), '~fopsep-litruc');
+  assert.equal(shortMoon('~sampel-palnet', '~siglup-narwet'), '~sampel-palnet');
+  assert.equal(avatarSrc({type: 'external', url: 'https://x.test/a.png'}, undefined), 'https://x.test/a.png');
+  assert.equal(avatarSrc({type: 'urbit', url: '/apps/noltbook/avatar'}, 'http://moon.localhost:8086'), 'http://moon.localhost:8086/apps/noltbook/avatar');
+  assert.equal(avatarSrc({type: 'urbit', url: '/apps/noltbook/avatar'}, undefined), '', 'no gateway, no picture');
+  assert.equal(avatarSrc({type: 'external', url: 'javascript:alert(1)'}, ''), '');
+  assert.equal(avatarSrc(null, ''), '');
+  // an upload's version goes in the address, so a new one is fetched anew
+  assert.equal(avatarSrc({type: 'urbit', url: '0v1a.b2c'}, 'http://moon.localhost:8086', '~sampel-siglup-narwet'), 'http://moon.localhost:8086/apps/noltbook/user-avatar/~sampel-siglup-narwet?v=0v1a.b2c');
+  assert.equal(avatarSrc({type: 'urbit', url: ''}, '', '~siglup-narwet'), '/apps/noltbook/user-avatar/~siglup-narwet');
+  assert.throws(() => validateProfiles({host: {ship: '~zod'}, moons: []}));
+  assert.ok(validateProfiles({host: {ship: '~zod', noltbook: true, name: 'Z', avatar: null}, moons: []}));
 });

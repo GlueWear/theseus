@@ -156,7 +156,10 @@
     ::  Clay from a boot cache, then installed from its source: us, or the
     ::  ship our copy syncs from
     ::
-    +$  desk-stage  ?(%seeded %installing %running %failed)
+    ::  %catching-up: installed, while Kiln's first check of the source,
+    ::  and any merge it brings, are still under way
+    ::
+    +$  desk-stage  ?(%seeded %installing %catching-up %running %failed)
     +$  desk-progress
       $:  =desk
           stage=desk-stage
@@ -288,7 +291,27 @@
           recovery-timer=(unit @da)
           fleets=(map @tas managed-fleet)
       ==
-    +$  versioned-state  $%(state-5 state-6 state-7 state-8 state-9 state-10 state-11)
+    ::  %12: every snapshot holds exactly one ship.  Snapshots taken together
+    ::  (a fleet's) share a set path, /<set>/<~ship>, and restore or delete
+    ::  together.  .nicknames name ships that don't run Noltbook.
+    ::
+    +$  state-12
+      $:  %12
+          piers=fleet
+          fleet-snaps=(map path fleet-snapshot)
+          files=(axal (cask))
+          park=vase
+          caches=(map @tas vase)
+          boot-caches=(map (set desk) boot-cache)
+          install-plans=(map ship install-plan)
+          install-timer=(unit @da)
+          booted=(map ship @da)
+          recoveries=(map ship recovery-job)
+          recovery-timer=(unit @da)
+          fleets=(map @tas managed-fleet)
+          nicknames=(map ship @t)
+      ==
+    +$  versioned-state  $%(state-5 state-6 state-7 state-8 state-9 state-10 state-11 state-12)
     ++  pack-park
       |=  pak=task:clay
       ^-  vase
@@ -351,7 +374,7 @@
     +$  card  $+(card card:agent:gall)
     --
 ::
-=|  state-11
+=|  state-12
 =*  state  -
 =<
   %-  agent:dbug
@@ -384,34 +407,39 @@
     ::  cast failure here used to erase every pier and every snapshot.
     |^
     ?+    -.q.old-vase  ~|([%theseus-unknown-state -.q.old-vase] !!)
+        %12
+      =/  old  !<(state-12 old-vase)
+      ~&  [%theseus-state-load %12]
+      (load-state old)
+    ::
         %11
       =/  old  !<(state-11 old-vase)
-      ~&  [%theseus-state-load %11]
-      (load-state old)
+      ~&  [%theseus-state-migrate %11 %12]
+      (load-state (state-11-to-12 old))
     ::
         %10
       =/  old  !<(state-10 old-vase)
-      ~&  [%theseus-state-migrate %10 %11]
-      (load-state (state-10-to-11 old))
+      ~&  [%theseus-state-migrate %10 %12]
+      (load-state (state-11-to-12 (state-10-to-11 old)))
     ::
         %9
       =/  old  !<(state-9 old-vase)
-      ~&  [%theseus-state-migrate %9 %11]
-      (load-state (state-10-to-11 (state-9-to-10 old)))
+      ~&  [%theseus-state-migrate %9 %12]
+      (load-state (state-11-to-12 (state-10-to-11 (state-9-to-10 old))))
     ::
         %8
       =/  old  !<(state-8 old-vase)
-      ~&  [%theseus-state-migrate %8 %11]
-      (load-state (state-10-to-11 (state-9-to-10 (state-8-to-9 old))))
+      ~&  [%theseus-state-migrate %8 %12]
+      (load-state (state-11-to-12 (state-10-to-11 (state-9-to-10 (state-8-to-9 old)))))
     ::
         %7
       =/  old  !<(state-7 old-vase)
-      ~&  [%theseus-state-migrate %7 %11]
-      (load-state (state-10-to-11 (state-9-to-10 (state-7-to-9 old))))
+      ~&  [%theseus-state-migrate %7 %12]
+      (load-state (state-11-to-12 (state-10-to-11 (state-9-to-10 (state-7-to-9 old)))))
     ::
         %6
       =/  old  !<(state-6 old-vase)
-      ~&  [%theseus-state-migrate %6 %11]
+      ~&  [%theseus-state-migrate %6 %12]
       ::  every plan so far installed from us
       ::
       =/  plans=(map ship install-plan)
@@ -427,6 +455,7 @@
             updated.p
         ==
       %-  load-state
+      %-  state-11-to-12
       %-  state-10-to-11
       %-  state-9-to-10
       %-  state-7-to-9
@@ -436,8 +465,9 @@
     ::
         %5
       =/  old  !<(state-5 old-vase)
-      ~&  [%theseus-state-migrate %5 %11]
+      ~&  [%theseus-state-migrate %5 %12]
       %-  load-state
+      %-  state-11-to-12
       %-  state-10-to-11
       %-  state-9-to-10
       (state-7-to-9 [%7 piers.old fleet-snaps.old files.old park.old caches.old ~ ~ ~])
@@ -446,7 +476,7 @@
     ::  timer and re-arm it from persisted jobs before accepting traffic.
     ::
     ++  load-state
-      |=  new=state-11
+      |=  new=state-12
       ^-  (quip card _this)
       =.  this  this(state new(recovery-timer ~))
       =^  cards  state  arm-recovery-timer:hc
@@ -515,6 +545,41 @@
           recoveries.old
           recovery-timer.old
           *(map @tas managed-fleet)
+      ==
+    ::  %12 splits each multi-ship snapshot /p into one per ship, /p/~ship,
+    ::  so any one moon can be restored alone; /p becomes their set.
+    ::
+    ++  state-11-to-12
+      |=  old=state-11
+      ^-  state-12
+      =/  rows  ~(tap by fleet-snaps.old)
+      =/  out  *(map path fleet-snapshot)
+      =/  split=(map path fleet-snapshot)
+        |-
+        ?~  rows  out
+        =/  p=path  p.i.rows
+        =/  shot=fleet-snapshot  q.i.rows
+        ?:  (lte ~(wyt by ships.shot) 1)
+          $(rows t.rows, out (~(put by out) p shot))
+        =/  hers  ~(tap by ships.shot)
+        |-
+        ?~  hers  ^$(rows t.rows)
+        =/  one=fleet-snapshot  shot(ships (~(put by *fleet) p.i.hers q.i.hers))
+        $(hers t.hers, out (~(put by out) (snoc p (scot %p p.i.hers)) one))
+      :*  %12
+          piers.old
+          split
+          files.old
+          park.old
+          caches.old
+          boot-caches.old
+          install-plans.old
+          install-timer.old
+          booted.old
+          recoveries.old
+          recovery-timer.old
+          fleets.old
+          *(map ship @t)
       ==
     --
   ::
@@ -614,6 +679,12 @@
               [(weld snap-cards resume-cards) state]
             %restore  (poke-action:hc [%restore-snap path.cmd])
             %delete   (poke-action:hc [%delete-snap path.cmd])
+            %profile
+              ?~  upload.cmd  (set-profile:hc who.cmd name.cmd avatar.cmd)
+              ::  a new picture comes as its bytes, in place of an address
+              ::
+              ?>  ?=(~ avatar.cmd)
+              (upload-picture:hc who.cmd name.cmd u.upload.cmd)
           ==
         %theseus-events  (poke-theseus-events:hc !<((list theseus-event) vase))
         %theseus-action  (poke-action:hc !<(action vase))
@@ -621,12 +692,17 @@
         ::  Refuse a missing, multi-ship, or wrong-ship snapshot before restore.
         %theseus-recycle
           =/  rec  !<(recycle vase)
-          =/  sip  (~(get by fleet-snaps) path.rec)
-          ?~  sip  ~|([%theseus-recycle-missing path.rec] !!)
+          ::  .path is the moon's own snapshot, or a set holding one for it
+          ::
+          =/  pax=path
+            ?:  (~(has by fleet-snaps) path.rec)  path.rec
+            (snoc path.rec (scot %p who.rec))
+          =/  sip  (~(get by fleet-snaps) pax)
+          ?~  sip  ~|([%theseus-recycle-missing path.rec who.rec] !!)
           =/  hers  (turn ~(tap by ships.u.sip) head)
           ?.  =(~[who.rec] hers)
-            ~|([%theseus-recycle-snapshot-mismatch who.rec path.rec hers] !!)
-          (poke-action:hc [%restore-snap path.rec])
+            ~|([%theseus-recycle-snapshot-mismatch who.rec pax hers] !!)
+          (poke-action:hc [%restore-snap pax])
         ::  sidecar Ames injection: widen the tiny $ames-in to $action (a
         ::  compile-time nest, so no task-arvo runtime coercion) and reuse
         ::  the existing %ames-inbound / %ames-test-inbound handlers.
@@ -642,6 +718,11 @@
       ``json+!>(ui-state:hc)
         [%x %desks ~]
       ``json+!>(ui-host-desks:hc)
+    ::  names and pictures: each ship's own Noltbook profile, read now, or a
+    ::  nickname kept here for ships without Noltbook.  Read on demand only.
+    ::
+        [%x %profiles ~]
+      ``json+!>(ui-profiles:hc)
     ::  host-only (Eyre /~/scry requires the owner): login code and whether
     ::  %landscape is installed, read from inside the moon at open time
     ::
@@ -942,16 +1023,28 @@
     =/  res  (mole |.((peek-arvo:theseus-kernel snap.saved [[~ ~] / vis bem])))
     ?.  ?=([~ ~ ~ *] res)  ~
     `q.q.u.u.u.res
-  =/  code=(unit @)
-    (bind (peek %j [who %code da+scry-time.saved] /(scot %p who)) |=(n=* ;;(@ n)))
+  =/  code=(unit @t)  (moon-code who saved)
   =/  desks=(set desk)
     (fall (bind (peek %cd [who %$ da+scry-time.saved] /) |=(n=* ;;((set desk) n))) ~)
   =,  enjs:format
   %-  pairs
   :~  [%ship s+(scot %p who)]
-      [%code ?~(code ~ s+(rsh 3 (scot %p u.code)))]
+      [%code ?~(code ~ s+u.code)]
       [%landscape b+(~(has in desks) %landscape)]
   ==
+::  +moon-code: a moon's +code, read inside it
+::
+::    Jael only answers %code locally ([~ ~]) at the kernel's current time.
+::
+++  moon-code
+  |=  [who=ship saved=saved-pier]
+  ^-  (unit @t)
+  =/  res
+    %-  mole  |.
+    %+  peek-arvo:theseus-kernel  snap.saved
+    [[~ ~] / %j [who %code da+scry-time.saved] /(scot %p who)]
+  ?.  ?=([~ ~ ~ *] res)  ~
+  `(rsh 3 (scot %p ;;(@ q.q.u.u.u.res)))
 ::
 ++  ui-snapshot
   |=  [p=path shot=fleet-snapshot]
@@ -959,10 +1052,253 @@
   =,  enjs:format
   %-  pairs
   :~  [%path (path:enjs:format p)]
+      [%set (path:enjs:format (snap-set p))]
       [%created s+(scot %da created-at.shot)]
       [%compatible b+=(runtime.shot current-runtime)]
       [%ships a+(turn ~(tap by ships.shot) |=([who=@p saved=saved-pier] s+(scot %p who)))]
   ==
+::  +snap-entries: the snapshot at .p, or else every snapshot of the set .p
+::  (one ship each, at /p/~ship)
+::
+++  snap-entries
+  |=  p=path
+  ^-  (list (pair path fleet-snapshot))
+  =/  exact  (~(get by fleet-snaps) p)
+  ?^  exact  [p u.exact]~
+  =/  rows  ~(tap by fleet-snaps)
+  =/  out=(list (pair path fleet-snapshot))  ~
+  =/  len  (lent p)
+  |-
+  ?~  rows  (flop out)
+  =/  q=path  p.i.rows
+  ?.  ?&  =(+(len) (lent q))
+          =(p (scag len q))
+          !=(~ (slaw %p (rear q)))
+      ==
+    $(rows t.rows)
+  $(rows t.rows, out [i.rows out])
+::  +snap-set: the set a snapshot belongs to: /p for /p/~ship, else itself
+::
+++  snap-set
+  |=  p=path
+  ^-  path
+  ?:  (lth (lent p) 2)  p
+  ?:  =(~ (slaw %p (rear p)))  p
+  (snip p)
+::  +ui-profiles: the host's and every moon's name and picture
+::
+::    A ship running Noltbook shows its own profile, as Noltbook's API gives
+::    it; any other ship, the nickname kept here, with no picture.
+::
+++  ui-profiles
+  ^-  json
+  =,  enjs:format
+  %-  pairs
+  :~  [%host (ui-profile our.bowl host-profile)]
+      :-  %moons
+      :-  %a
+      %+  turn  ~(tap by piers)
+      |=  [who=@p saved=saved-pier]
+      (ui-profile who (moon-profile who saved))
+  ==
+::
+++  ui-profile
+  |=  [who=ship got=(unit json)]
+  ^-  json
+  =,  enjs:format
+  ?~  got
+    =/  nick  (~(get by nicknames) who)
+    (pairs ~[[%ship s+(scot %p who)] [%noltbook b+|] [%name ?~(nick ~ s+u.nick)] [%avatar ~]])
+  =/  jo=(map @t json)  ?.(?=([%o *] u.got) ~ p.u.got)
+  %-  pairs
+  :~  [%ship s+(scot %p who)]
+      [%noltbook b+&]
+      [%name (~(gut by jo) 'displayName' ~)]
+      [%avatar (~(gut by jo) 'avatar' ~)]
+  ==
+::  +host-noltbook: is %noltbook running here?
+::
+++  host-noltbook
+  ^-  ?
+  =/  got  (mole |.(.^(? %gu /(scot %p our.bowl)/noltbook/(scot %da now.bowl)/$)))
+  ?~(got | u.got)
+::  +host-profile: our own Noltbook profile, or ~ without Noltbook
+::
+++  host-profile
+  ^-  (unit json)
+  ?.  host-noltbook  ~
+  (mole |.(.^(json %gx /(scot %p our.bowl)/noltbook/(scot %da now.bowl)/api/profile/(scot %p our.bowl)/json)))
+::  +moon-profile: a moon's own Noltbook profile, read inside it, or ~ when
+::  it doesn't run Noltbook
+::
+++  moon-profile
+  |=  [who=ship saved=saved-pier]
+  ^-  (unit json)
+  =/  res
+    %-  mole  |.
+    %+  peek-arvo:theseus-kernel  snap.saved
+    [[~ ~] / %gx [who %noltbook da+scry-time.saved] /api/profile/(scot %p who)/json]
+  ?.  ?=([~ ~ ~ *] res)  ~
+  (mole |.(;;(json q.q.u.u.u.res)))
+::  +set-profile: change a ship's name and picture
+::
+::    With Noltbook, this is the ship updating its own profile: our own
+::    %noltbook for the host, or the poke injected into the moon as the moon
+::    itself, which Noltbook's same-ship API accepts.  Without Noltbook the
+::    name is kept here as a nickname (and a picture has nowhere to go).
+::    .name/.avatar: ~ keeps, [~ ~] clears, [~ ~ x] sets.
+::
+++  set-profile
+  |=  [who=ship name=(unit (unit @t)) avatar=(unit (unit @t))]
+  ^-  (quip card _state)
+  ?>  ?|(?=(~ name) ?=(~ u.name) (lte (met 3 u.u.name) 256))
+  ?>  ?|  ?=(~ avatar)
+          ?=(~ u.avatar)
+          ?&  (lte (met 3 u.u.avatar) 2.048)
+              =/  url  (trip u.u.avatar)
+              |(=("https://" (scag 8 url)) =("http://" (scag 7 url)))
+      ==  ==
+  =/  update
+    :*  %update-profile
+        ~
+        name
+        ?~(avatar [%keep ~] ?~(u.avatar [%clear ~] [%set %external u.u.avatar]))
+        ~
+        ~
+    ==
+  ?:  =(who our.bowl)
+    ?.  host-noltbook  (set-nickname who name)
+    :_  state
+    [%pass /profile %agent [our.bowl %noltbook] %poke-as %noltbook-api noun+!>(update)]~
+  =/  saved  (~(get by piers) who)
+  ?~  saved  ~|([%theseus-profile-missing who] !!)
+  ?:  (recovery-blocked who)  ~|([%theseus-profile-recovering who] !!)
+  =/  got  (moon-profile who u.saved)
+  ?~  got  (set-nickname who name)
+  %-  poke-theseus-events
+  :_  ~
+  ^-  theseus-event
+  :-  who
+  :*  /g
+      %deal
+      `sack`[who who /theseus/profile]
+      %noltbook
+      `deal:gall`[%raw-poke %noltbook-api update]
+  ==
+::
+++  set-nickname
+  |=  [who=ship name=(unit (unit @t))]
+  ^-  (quip card _state)
+  ?~  name  `state
+  ?:  |(?=(~ u.name) =('' u.u.name))
+    `state(nicknames (~(del by nicknames) who))
+  `state(nicknames (~(put by nicknames) who u.u.name))
+::  +upload-picture: give a moon's Noltbook profile a picture from its bytes
+::
+::    Noltbook takes a picture only over HTTP, from its logged-in owner.  So,
+::    all inside this one event, Theseus logs in to the moon's Eyre with the
+::    moon's +code, posts the picture to Noltbook's upload endpoint with that
+::    session, logs the session out, and points the profile at the upload.
+::    Eyre answers the login within the moon's event.  Noltbook answers the
+::    upload then only to refuse it; otherwise it holds the request until a
+::    later event has verified its write.  No browser sees the code or the
+::    session.  The console uploads the host's own picture itself.
+::
+++  upload-picture
+  |=  [who=ship name=(unit (unit @t)) data=@t]
+  ^-  (quip card _state)
+  ?:  =(who our.bowl)  ~|([%theseus-picture-host who] !!)
+  ?>  ?|(?=(~ name) ?=(~ u.name) (lte (met 3 u.u.name) 256))
+  =/  bytes=(unit octs)  (de:base64:mimes:html data)
+  ?~  bytes  ~|([%theseus-picture-not-base64 who] !!)
+  ?.  &((gth p.u.bytes 0) (lte p.u.bytes 51.200))
+    ~|([%theseus-picture-size who p.u.bytes] !!)
+  =/  saved  (~(get by piers) who)
+  ?~  saved  ~|([%theseus-profile-missing who] !!)
+  ?:  (recovery-blocked who)  ~|([%theseus-profile-recovering who] !!)
+  ?:  paused.u.saved  ~|([%theseus-picture-paused who] !!)
+  ?:  =(~ (moon-profile who u.saved))
+    ~|([%theseus-picture-needs-noltbook who] !!)
+  =/  code  (moon-code who u.saved)
+  ?~  code  ~|([%theseus-picture-no-code who] !!)
+  =/  tag=@ta  (scot %uv (end [3 8] eny.bowl))
+  =/  login-id=@ta   (cat 3 'theseus-login-' tag)
+  =/  upload-id=@ta  (cat 3 'theseus-picture-' tag)
+  =/  logout-id=@ta  (cat 3 'theseus-logout-' tag)
+  =/  local=address:eyre  [%ipv4 .127.0.0.1]
+  =.  this  apex-theseus
+  =.  this
+    %-  run-events
+    :_  ~
+    ^-  theseus-event
+    :^  who  /e/(scot %p who)/[login-id]  %request
+    :+  |  local
+    :^  %'POST'  '/~/login'
+      ~[['content-type' 'application/x-www-form-urlencoded']]
+    `(as-octs:mimes:html (cat 3 'password=' u.code))
+  ::  the login answers 200 with the session id, the cookie's value
+  ::
+  =/  login  (moon-response who login-id)
+  ?.  ?=([~ %start *] login)  ~|([%theseus-picture-login who] !!)
+  ?.  =(200 status-code.response-header.u.login)
+    ~|([%theseus-picture-login who status-code.response-header.u.login] !!)
+  ?~  data.u.login  ~|([%theseus-picture-login who] !!)
+  =/  cookie=@t
+    (rap 3 ~['urbauth-' (scot %p who) '=' q.u.data.u.login])
+  =.  this
+    %-  run-events
+    :_  ~
+    ^-  theseus-event
+    :^  who  /e/(scot %p who)/[upload-id]  %request
+    :+  |  local
+    :^  %'POST'  '/apps/noltbook/upload-avatar'
+      ~[['cookie' cookie]]
+    bytes
+  ::  an answer now is a refusal: 400 not a picture, 413 too big, 503 no
+  ::  %noltbook-data desk to keep it in
+  ::
+  =/  refused  (moon-response who upload-id)
+  ?^  refused  ~|([%theseus-picture-refused who u.refused] !!)
+  ::  the picture's version is in its address, so a new one is fetched anew
+  ::
+  =/  ver=@t  (scot %uv (end [3 5] (sham q.u.bytes)))
+  =/  update
+    :*  %update-profile
+        ~
+        name
+        [%set %urbit ver]
+        ~
+        ~
+    ==
+  =.  this
+    %-  run-events
+    :~  ^-  theseus-event
+        :^  who  /e/(scot %p who)/[logout-id]  %request
+        :+  |  local
+        [%'POST' '/~/logout' ~[['cookie' cookie]] ~]
+      ::
+        ^-  theseus-event
+        :-  who
+        :*  /g
+            %deal
+            `sack`[who who /theseus/profile]
+            %noltbook
+            `deal:gall`[%raw-poke %noltbook-api update]
+        ==
+    ==
+  abet-theseus
+::  +moon-response: what a moon's Eyre answered, so far in this event, to
+::  the request we sent it as .rid
+::
+++  moon-response
+  |=  [who=ship rid=@ta]
+  ^-  (unit http-event:http)
+  =/  ufs=(list unix-effect)  (~(get ja unix-effects) who)
+  |-  ^-  (unit http-event:http)
+  ?~  ufs  ~
+  ?.  ?=([%response *] q.i.ufs)  $(ufs t.ufs)
+  ?.  &(!=(~ p.i.ufs) =(rid (rear p.i.ufs)))  $(ufs t.ufs)
+  `http-event.q.i.ufs
 ::
 ::
 ::  Represents a single ship's state.
@@ -1121,7 +1457,13 @@
 ++  poke-theseus-events
   |=  events=(list theseus-event)
   ^-  (quip card _state)
-  =.  this  apex-theseus  =<  abet-theseus
+  abet-theseus:(run-events:apex-theseus events)
+::
+::  +run-events: apply events, gathering their effects in this core
+::
+++  run-events
+  |=  events=(list theseus-event)
+  ^+  this
   ::  Runtime events can race a kill/restore.  Drop events for absent piers
   ::  instead of letting an external timer, browser request, or packet create
   ::  a default ghost pier (or crash the whole batch).
@@ -1229,7 +1571,7 @@
       sources
       %-  ~(gas by *(map desk desk-progress))
       %+  turn  ~(tap in desks)
-      |=(d=desk [d d ?:(=(d %base) %running stage) ~])
+      |=(d=desk [d d ?:(=(d %base) %catching-up stage) ~])
       now.bowl
       now.bowl
   ==
@@ -1296,7 +1638,7 @@
   |=  plan=install-plan
   ^-  ?
   %+  lien  ~(val by progress.plan)
-  |=(pro=desk-progress ?=(?(%seeded %installing) stage.pro))
+  |=(pro=desk-progress ?=(?(%seeded %installing %catching-up) stage.pro))
 ::  +plan-runnable: paused moons retain pending installs without timing out
 ::
 ++  plan-runnable
@@ -1313,9 +1655,16 @@
 ::    plan is .late.  A desk that tracks some other source has failed.
 ::
 ++  next-progress
-  |=  [d=desk src=[=ship =desk] pik=(unit kiln-pike) late=?]
+  |=  $:  d=desk
+          src=[=ship =desk]
+          pik=(unit kiln-pike)
+          msy=kiln-syncs
+          hsy=kiln-syncs
+          hpk=kiln-pikes
+          late=?
+      ==
   ^-  desk-progress
-  ?:  =(d %base)  [d %running ~]
+  ?:  =(d %base)  (next-catch d src pik msy hsy hpk late)
   =/  wait=desk-progress
     ?.  late  [d %installing ~]
     [d %failed `'Timed out waiting for Kiln to install the desk.']
@@ -1323,13 +1672,94 @@
   ?~  sync.u.pik  wait
   ?.  =(src u.sync.u.pik)
     [d %failed `'The desk tracks another source.']
-  ?:(?=(%live zest.u.pik) [d %running ~] wait)
+  ?.  ?=(%live zest.u.pik)  wait
+  (next-catch d src pik msy hsy hpk late)
+::  +next-catch: an installed desk's stage while Kiln catches it up
+::
+::    Kiln's first check of a source downloads the source's latest revision,
+::    and merges it if it differs; the moon is busy until both are done.  A
+::    sync has heard back once the revision it waits for is one past the
+::    source's latest: our own, or what our own sync of a publisher has
+::    heard.  The desk is merged once it matches the source's contents, as
+::    our copy has them.  A source still unheard from when the plan is .late
+::    has failed; a desk that heard back but still differs (local changes,
+::    or a publisher ahead of our copy) runs anyway.
+::
+++  next-catch
+  |=  $:  d=desk
+          src=[=ship =desk]
+          pik=(unit kiln-pike)
+          msy=kiln-syncs
+          hsy=kiln-syncs
+          hpk=kiln-pikes
+          late=?
+      ==
+  ^-  desk-progress
+  =/  ours=?  =(ship.src our.bowl)
+  =/  want=(unit @ud)
+    ?.  ours
+      (bind (~(get by hsy) [d ship.src desk.src]) |=(s=kiln-sync let.s))
+    %+  bind
+      (mole |.(.^(cass:clay %cw /(scot %p our.bowl)/[desk.src]/(scot %da now.bowl))))
+    |=(c=cass:clay +(ud.c))
+  =/  zyn  (~(get by msy) [d ship.src desk.src])
+  =/  heard=?
+    ?~  want  &
+    ?~  zyn  |
+    (gte let.u.zyn u.want)
+  =/  same=?
+    ?~  pik  &
+    =/  them  (~(get by hpk) ?:(ours desk.src d))
+    ?~  them  &
+    =(hash.u.pik hash.u.them)
+  ?:  &(heard same)  [d %running ~]
+  ?.  late  [d %catching-up ~]
+  ?:  heard  [d %running ~]
+  :+  d  %failed
+  `(rap 3 ~['Kiln never heard back from ' (scot %p ship.src) '/%' desk.src '.'])
 ::
 ++  install-timeout  ~m20
 ++  install-poll  ~s2
+++  catch-poll  ~s5
+::  +install-delay: poll quickly while desks install, gently while they
+::  only catch up
+::
+++  install-delay
+  ^-  @dr
+  =/  installing=?
+    %+  lien  ~(tap by install-plans)
+    |=  [who=ship plan=install-plan]
+    ?&  (plan-runnable who plan)
+        %+  lien  ~(val by progress.plan)
+        |=(pro=desk-progress ?=(?(%seeded %installing) stage.pro))
+    ==
+  ?:(installing install-poll catch-poll)
+::  +moon-syncs: a moon's Kiln syncs, read inside it
+::
+++  moon-syncs
+  |=  who=ship
+  ^-  (unit kiln-syncs)
+  =/  saved  (~(get by piers) who)
+  ?~  saved  ~
+  =/  res
+    %-  mole  |.
+    %+  peek-arvo:theseus-kernel  snap.u.saved
+    [[~ ~] / %gx [who %hood da+scry-time.u.saved] /kiln/syncs/noun]
+  ?.  ?=([~ ~ ~ *] res)  ~
+  (mole |.(;;(kiln-syncs q.q.u.u.u.res)))
+::
+++  host-syncs
+  ^-  kiln-syncs
+  %+  fall
+    %-  mole  |.
+    ;;  kiln-syncs
+    .^(* %gx /(scot %p our.bowl)/hood/(scot %da now.bowl)/kiln/syncs/noun)
+  ~
 ::
 ++  refresh-install-plans
   ^-  (map ship install-plan)
+  =/  hsy=kiln-syncs  host-syncs
+  =/  hpk=kiln-pikes  (fall (mole |.(host-pikes)) ~)
   %-  ~(urn by install-plans)
   |=  [who=ship plan=install-plan]
   ?.  (plan-runnable who plan)  plan
@@ -1337,13 +1767,22 @@
   =/  late=?  (gth now.bowl (add started.plan install-timeout))
   ?:  &(?=(~ pks) !late)  plan
   =/  got=kiln-pikes  (fall pks ~)
+  =/  msy=kiln-syncs  (fall (moon-syncs who) ~)
   %=    plan
       updated  now.bowl
       progress
     %-  ~(urn by progress.plan)
     |=  [d=desk pro=desk-progress]
-    ?.  ?=(?(%seeded %installing) stage.pro)  pro
-    (next-progress d (~(gut by sources.plan) d [our.bowl d]) (~(get by got) d) late)
+    ?.  ?=(?(%seeded %installing %catching-up) stage.pro)  pro
+    %:  next-progress
+      d
+      (~(gut by sources.plan) d [our.bowl d])
+      (~(get by got) d)
+      msy
+      hsy
+      hpk
+      late
+    ==
   ==
 ::  +arm-install-timer: poll Kiln while any install is pending
 ::
@@ -1355,7 +1794,7 @@
     |=  [who=ship plan=install-plan]
     (plan-runnable who plan)
   ?.  pending  `state
-  =/  when  (add now.bowl install-poll)
+  =/  when  (add now.bowl install-delay)
   :_  state(install-timer `when)
   [%pass /install-plans/(scot %da when) %arvo %b %wait when]~
 ::
@@ -2032,6 +2471,9 @@
     =.  recoveries
       %-  ~(dif by recoveries)
       (~(gas by *(map ship recovery-job)) (turn hers.act |=(=ship [ship *recovery-job])))
+    =.  nicknames
+      %-  ~(dif by nicknames)
+      (~(gas by *(map ship @t)) (turn hers.act |=(=ship [ship *@t])))
     =.  fleets
       =/  pending  hers.act
       =/  groups  fleets
@@ -2048,7 +2490,7 @@
     =.  this  apex-theseus  =<  abet-theseus
     ?:  =(~ hers.act)
       ~|([%theseus-snapshot-empty path.act] !!)
-    ?:  (~(has by fleet-snaps) path.act)
+    ?:  |((~(has by fleet-snaps) path.act) !=(~ (snap-entries path.act)))
       ~|([%theseus-snapshot-exists path.act] !!)
     =/  requested=(set ship)  (~(gas in *(set ship)) hers.act)
     ?.  =((lent hers.act) ~(wyt in requested))
@@ -2085,16 +2527,35 @@
       $(pending t.pending, failed ?:(ready failed [her failed]))
     ?^  bad
       ~|([%theseus-snapshot-not-ready path.act bad] !!)
+    ::  one snapshot per ship, /<set>/<~ship>, all sealed in this event
+    ::
     =.  fleet-snaps
-      %+  ~(put by fleet-snaps)  path.act
-      [now.bowl current-runtime selected]
-    ~&  theseus+snapshot+path.act
+      =/  rows  ~(tap by selected)
+      |-
+      ?~  rows  fleet-snaps
+      =/  one=fleet  (~(put by *fleet) p.i.rows q.i.rows)
+      %=  $
+        rows         t.rows
+        fleet-snaps  %+  ~(put by fleet-snaps)  (snoc path.act (scot %p p.i.rows))
+                     [now.bowl current-runtime one]
+      ==
+    ~&  theseus+snapshot+[path.act ~(wyt by selected)]
     this
   ::
       %restore-snap
-    =/  shot  (~(got by fleet-snaps) path.act)
-    ?.  =(runtime.shot current-runtime)
-      ~|([%theseus-snapshot-runtime-mismatch path.act runtime.shot current-runtime] !!)
+    ::  .path is one ship's snapshot, or a set: every snapshot under it.
+    ::  A set restores in this one event, like a single snapshot.
+    ::
+    =/  entries=(list (pair path fleet-snapshot))  (snap-entries path.act)
+    ?~  entries  ~|([%theseus-snapshot-missing path.act] !!)
+    =/  shot=fleet-snapshot
+      =/  rows=(list (pair path fleet-snapshot))  entries
+      =/  out=fleet  *fleet
+      |-
+      ?~  rows  [created-at.q.i.entries current-runtime out]
+      ?.  =(runtime.q.i.rows current-runtime)
+        ~|([%theseus-snapshot-runtime-mismatch p.i.rows runtime.q.i.rows current-runtime] !!)
+      $(rows t.rows, out (~(uni by out) ships.q.i.rows))
     =/  hers=(list ship)  (turn ~(tap by ships.shot) head)
     =/  bad=(list ship)
       =/  pending  hers
@@ -2180,8 +2641,17 @@
     [:(weld kill-cards register-cards timer-cards) state]
   ::
       %delete-snap
+    ::  one ship's snapshot, or every snapshot in a set
+    ::
+    =/  entries=(list (pair path fleet-snapshot))  (snap-entries path.act)
+    ?~  entries  ~|([%theseus-snapshot-missing path.act] !!)
+    =.  fleet-snaps
+      =/  rows=(list (pair path fleet-snapshot))  entries
+      |-
+      ?~  rows  fleet-snaps
+      $(rows t.rows, fleet-snaps (~(del by fleet-snaps) p.i.rows))
     ~&  deleted+path.act
-    `state(fleet-snaps (~(del by fleet-snaps) path.act))
+    `state
   ::
       %unpause-ships
     =/  blocked  (skim hers.act |=(who=ship (~(has by recoveries) who)))
@@ -2230,7 +2700,7 @@
       |=  [who=ship plan=install-plan]
       (plan-runnable who plan)
     ?.  runnable  this
-    =/  when  (add now.bowl install-poll)
+    =/  when  (add now.bowl install-delay)
     =.  this  this(install-timer `when)
     (emit-cards [%pass /install-plans/(scot %da when) %arvo %b %wait when]~)
   ::
