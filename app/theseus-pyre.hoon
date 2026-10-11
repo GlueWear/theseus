@@ -49,6 +49,11 @@
     ?:  |(?=(~ par) !(has-moon:hc who.u.par))
       [(not-found:hc rid) this]
     =.  url.request.req  url.u.par
+    ::  the moon sees its own login cookie and no other: at the host's own
+    ::  address the browser also sends the host's login
+    ::
+    =.  header-list.request.req
+      (keep-moon-cookie:theseus-pyre who.u.par header-list.request.req)
     =.  http-ids  (~(put by http-ids) rid who.u.par)
     :_  this
     cards:(pass-request:(eyre:hc who.u.par) rid req)
@@ -570,7 +575,9 @@
     ::   rather than editing the login page within eyre. This should be easy
         %start
       =*  hed  response-header.ev
-      =.  headers.hed  (parse-headers:theseus-pyre headers.hed)
+      =.  headers.hed
+        %+  keep-moon-set-cookie:theseus-pyre  who
+        (parse-headers:theseus-pyre headers.hed)
       =.  this
         %-  emit-cards
         ;:  weld
