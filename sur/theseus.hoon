@@ -193,6 +193,14 @@
   ==
 +$  kiln-syncs  (map [syd=desk her=ship sud=desk] kiln-sync)
 ::
+::  A visitor's session on a moon, for an agent on this ship (such as
+::  %manor): watch /session/<rid> on %theseus, then poke
+::  %theseus-session with the request.  The one fact on that path is the
+::  moon's login cookie, urbauth-~moon=<session>, or why not.
+::
++$  session-request  [rid=@ta who=ship]
++$  session-result   (each @t @t)
+::
 ::  where a desk chosen at boot takes its updates from: us, or the ship
 ::  our own copy syncs from
 ::

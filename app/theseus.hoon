@@ -586,10 +586,14 @@
   ++  on-poke
     |=  [=mark =vase]
     ^-  (quip card _this)
+    ::  Everything that pokes Theseus is on this ship: the console and
+    ::  manor (through Eyre, logged in as us), %theseus-pyre, the sidecar.
+    ::  Marks with a noun grab could otherwise be poked by any ship.
+    ::
+    ?>  =(src.bowl our.bowl)
     =^  cards  state
       ?+  mark  ~|([%theseus-bad-mark mark] !!)
         %theseus-ui
-          ?>  =(src.bowl our.bowl)
           =/  cmd  !<(command:ui vase)
           ?-  -.cmd
             %boot
@@ -687,6 +691,9 @@
               (upload-picture:hc who.cmd name.cmd u.upload.cmd)
           ==
         %theseus-events  (poke-theseus-events:hc !<((list theseus-event) vase))
+        ::  a visitor's session on a moon, for an agent on this ship
+        ::
+        %theseus-session  (open-session:hc !<(session-request vase))
         %theseus-action  (poke-action:hc !<(action vase))
         ::  Narrow JSON control surface for the external recycle orchestrator.
         ::  Refuse a missing, multi-ship, or wrong-ship snapshot before restore.
@@ -791,7 +798,16 @@
       (scry:(pe who) (weld /gx/[her]/[dap]/0 paf))
     ==
   ::
-  ++  on-watch  on-watch:def
+  ++  on-watch
+    |=  =path
+    ^-  (quip card _this)
+    ?+    path  (on-watch:def path)
+    ::  a visitor's session on a moon: agents on this ship only
+    ::
+        [%session @ ~]
+      ?>  =(src.bowl our.bowl)
+      `this
+    ==
   ++  on-leave  on-leave:def
   ++  on-agent  on-agent:def
   ++  on-arvo
@@ -1215,36 +1231,20 @@
     ~|([%theseus-picture-size who p.u.bytes] !!)
   =/  saved  (~(get by piers) who)
   ?~  saved  ~|([%theseus-profile-missing who] !!)
-  ?:  (recovery-blocked who)  ~|([%theseus-profile-recovering who] !!)
-  ?:  paused.u.saved  ~|([%theseus-picture-paused who] !!)
   ?:  =(~ (moon-profile who u.saved))
     ~|([%theseus-picture-needs-noltbook who] !!)
-  =/  code  (moon-code who u.saved)
-  ?~  code  ~|([%theseus-picture-no-code who] !!)
+  =/  code  (login-code who)
+  ?:  ?=(%| -.code)  ~|([%theseus-picture-login who p.code] !!)
   =/  tag=@ta  (scot %uv (end [3 8] eny.bowl))
   =/  login-id=@ta   (cat 3 'theseus-login-' tag)
   =/  upload-id=@ta  (cat 3 'theseus-picture-' tag)
   =/  logout-id=@ta  (cat 3 'theseus-logout-' tag)
   =/  local=address:eyre  [%ipv4 .127.0.0.1]
   =.  this  apex-theseus
-  =.  this
-    %-  run-events
-    :_  ~
-    ^-  theseus-event
-    :^  who  /e/(scot %p who)/[login-id]  %request
-    :+  |  local
-    :^  %'POST'  '/~/login'
-      ~[['content-type' 'application/x-www-form-urlencoded']]
-    `(as-octs:mimes:html (cat 3 'password=' u.code))
-  ::  the login answers 200 with the session id, the cookie's value
-  ::
-  =/  login  (moon-response who login-id)
-  ?.  ?=([~ %start *] login)  ~|([%theseus-picture-login who] !!)
-  ?.  =(200 status-code.response-header.u.login)
-    ~|([%theseus-picture-login who status-code.response-header.u.login] !!)
-  ?~  data.u.login  ~|([%theseus-picture-login who] !!)
-  =/  cookie=@t
-    (rap 3 ~['urbauth-' (scot %p who) '=' q.u.data.u.login])
+  =.  this  (run-events ~[(login-event who p.code login-id)])
+  =/  login  (login-cookie who login-id)
+  ?:  ?=(%| -.login)  ~|([%theseus-picture-login who p.login] !!)
+  =/  cookie=@t  p.login
   =.  this
     %-  run-events
     :_  ~
@@ -1287,6 +1287,73 @@
         ==
     ==
   abet-theseus
+::  Logging in to a moon's Eyre, inside one host event
+::
+::    The moon's +code goes to its /~/login as a form, the way a browser
+::    sends it.  Eyre answers within the moon's event: 200 with the new
+::    session as the body, which is the value of the moon's login cookie,
+::    urbauth-~moon.  Run +login-event between +apex-theseus and
+::    +abet-theseus, then read the cookie with +login-cookie.
+::
+::  +login-code: the moon's +code, or why it can't be logged in to now
+::
+++  login-code
+  |=  who=ship
+  ^-  (each @t @t)
+  =/  saved  (~(get by piers) who)
+  ?~  saved  |+'There is no such moon.'
+  ?:  (recovery-blocked who)  |+'The moon is being restored.'
+  ?:  paused.u.saved  |+'The moon is paused.'
+  ?:  !=(%healthy status:(health-of who u.saved))  |+'The moon is not running.'
+  =/  code  (moon-code who u.saved)
+  ?~  code  |+'Could not read the moon\'s +code.'
+  &+u.code
+::
+++  login-event
+  |=  [who=ship code=@t rid=@ta]
+  ^-  theseus-event
+  :^  who  /e/(scot %p who)/[rid]  %request
+  :+  |  [%ipv4 .127.0.0.1]
+  :^  %'POST'  '/~/login'
+    ~[['content-type' 'application/x-www-form-urlencoded']]
+  `(as-octs:mimes:html (cat 3 'password=' code))
+::  +login-cookie: the moon's login cookie from Eyre's answer to .rid
+::
+++  login-cookie
+  |=  [who=ship rid=@ta]
+  ^-  (each @t @t)
+  =/  login  (moon-response who rid)
+  ?.  ?=([~ %start *] login)  |+'The moon\'s Eyre did not answer the login.'
+  ?.  =(200 status-code.response-header.u.login)
+    |+'The moon refused its +code.'
+  ?~  data.u.login  |+'The moon\'s Eyre gave no session.'
+  &+(rap 3 ~['urbauth-' (scot %p who) '=' q.u.data.u.login])
+::  +open-session: log a visitor in to a moon, for an agent on this ship
+::
+::    The asker watches /session/<rid>, then pokes %theseus-session with
+::    [rid who].  It gets one fact on that path, the moon's login cookie or
+::    why not, and the path is kicked.  The session is an ordinary owner
+::    session in the moon's Eyre, so a restore drops it.  Nothing is kept
+::    here, and nothing is printed.
+::
+++  open-session
+  |=  req=session-request
+  ^-  (quip card _state)
+  =/  pax=path  /session/[rid.req]
+  =/  answer
+    |=  got=session-result
+    ^-  (list card)
+    :~  [%give %fact ~[pax] %noun !>(got)]
+        [%give %kick ~[pax] ~]
+    ==
+  =/  code  (login-code who.req)
+  ?:  ?=(%| -.code)  [(answer code) state]
+  =/  id=@ta  (cat 3 'theseus-session-' (scot %uv (end [3 8] eny.bowl)))
+  =.  this  apex-theseus
+  =.  this  (run-events ~[(login-event who.req p.code id)])
+  =/  got=session-result  (login-cookie who.req id)
+  =/  done  abet-theseus
+  [(weld -.done (answer got)) +.done]
 ::  +moon-response: what a moon's Eyre answered, so far in this event, to
 ::  the request we sent it as .rid
 ::

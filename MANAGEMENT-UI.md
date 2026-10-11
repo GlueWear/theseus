@@ -87,6 +87,16 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
   a ship without Noltbook (`noltbook: false`). Read on demand only.
 - Poke `%theseus` with mark `theseus-recycle`, `{who, path}`: restore one moon,
   from its own snapshot or from its snapshot in the set `path`. Used by manor.
+- A visitor's session on a moon, for an agent on this ship (`%manor`): watch
+  `%theseus` `/session/<rid>`, then poke mark `theseus-session` with
+  `[rid=@ta who=ship]` (a noun, not JSON). The one fact on the path is
+  `(each @t @t)`: the moon's login cookie `urbauth-~<moon>=<session>`, or why
+  not (no such moon, paused, being restored, not running). Then the path is
+  kicked. %theseus logs in to the moon's Eyre with its `+code` inside one
+  event, keeps nothing and prints nothing. A restore drops the session.
+- `%theseus` accepts pokes only from this ship, and `%theseus-pyre` takes its
+  effect poke only from this ship: the console and manor reach them through
+  Eyre logged in as the host.
 - `GET /~/scry/theseus/web/~<moon>.json` → `{ship, code, landscape}`: the moon's
   login code (no `~`) and whether `%landscape` is installed, read from inside the
   moon when asked.

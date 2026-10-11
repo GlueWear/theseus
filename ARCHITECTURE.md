@@ -169,6 +169,16 @@ Under the hood the page:
   composer bar with the fleet's name as its prompt, so it can't be mistaken
   for one moon's Dojo, where keys go straight to the moon. Commands that change every moon (`|nuke`, `|uninstall`,
   `|ota`, `|commit`, `|rm`…) ask for confirmation first.
+- **Who may poke.** Every sender of Theseus's pokes is on the host: the
+  console and manor through Eyre logged in as the host, `%theseus-pyre`, the
+  sidecar. So `%theseus` accepts pokes only from the host, and `%theseus-pyre`
+  its effect poke; marks with a noun grab could otherwise be poked by any
+  ship. Moon web pages still reach `%theseus-pyre` through Eyre as before.
+- **Visitor sessions.** `%manor` asks `%theseus` for a moon session with the
+  `theseus-session` poke (see MANAGEMENT-UI.md). It is the picture upload's
+  login step on its own: the moon's `+code` posted to its Eyre inside one
+  host event, and the session from Eyre's answer handed back on
+  `/session/<rid>`, which only the host's own agents may watch.
 - **Cookies.** A moon's pages reach it through the host's Eyre at
   `/theseus/~<moon>/…`. At the host's own address the browser sends every
   cookie it holds there, the host's login among them. `%theseus-pyre` passes a
