@@ -60,6 +60,19 @@ const gatewayJson = () => {
 let id = 0;
 let deletes = 0;
 const channels = new Map();
+// Mirrors %theseus /x/profiles: Noltbook's profile, else a nickname.
+const profileRow = ship => {const p = profiles.get(ship) || {noltbook: false, name: null, avatar: null}; return {ship, noltbook: p.noltbook, name: p.name, avatar: p.noltbook ? p.avatar : null};};
+// Mirrors %theseus's /ui facts: "something changed", after an action and
+// while installs move on.
+const pushUi = () => {for (const ch of channels.values()) if (ch.ui) send(ch, {id: ch.ui, response: 'diff', json: true});};
+// The host's install timer: desks move on, and the pages are told.
+setInterval(() => {
+  const before = JSON.stringify(data.moons.map(m => m.desks.map(d => d.stage)));
+  settle();
+  if (JSON.stringify(data.moons.map(m => m.desks.map(d => d.stage))) !== before) pushUi();
+}, 250);
+// Mirrors %theseus's /profiles facts: one row per change, to every watcher.
+const pushProfile = ship => {for (const ch of channels.values()) if (ch.profiles) send(ch, {id: ch.profiles, response: 'diff', json: profileRow(ship)});};
 const send = (channel, event) => {
   const text = `id: ${++id}\ndata: ${JSON.stringify(event)}\n\n`;
   if (channel.response) channel.response.write(text); else channel.pending.push(text);
@@ -77,6 +90,7 @@ createServer(async (req,res) => {
     const m = data.moons.find(row => row.ship === hold[2]);
     if (hold[1] === 'hold') {held.add(hold[2]); installing.set(hold[2], Date.now()); m?.desks.forEach(d => {d.stage = 'catching-up';});}
     else held.delete(hold[2]);
+    pushUi();
     return res.end('ok');
   }
   if (req.url === '/uploads') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(uploads));}
@@ -89,12 +103,19 @@ createServer(async (req,res) => {
   }
   if (req.url.startsWith('/apps/noltbook/user-avatar/')) {res.setHeader('Content-Type','image/png'); return res.end(png);}
   if (req.url === '/~/scry/theseus/profiles.json') {
-    // Mirrors %theseus /x/profiles: Noltbook's profile, else a nickname.
-    const row = ship => {const p = profiles.get(ship) || {noltbook: false, name: null, avatar: null}; return {ship, noltbook: p.noltbook, name: p.name, avatar: p.noltbook ? p.avatar : null};};
     res.setHeader('Content-Type','application/json');
-    return res.end(JSON.stringify({host: row(host), moons: data.moons.map(m => row(m.ship))}));
+    return res.end(JSON.stringify({host: profileRow(host), moons: data.moons.map(m => profileRow(m.ship))}));
   }
-  if (req.url === '/gateway-down') {gw.live = null; return res.end('ok');}
+  // A change made elsewhere, e.g. in the moon's own Noltbook: %theseus
+  // notices it and pushes the row to every open page.
+  const change = /^\/profile-change\?ship=(~[a-z-]+)&name=([^&]*)$/.exec(req.url);
+  if (change) {
+    const p = profiles.get(change[1]) || {noltbook: true, name: null, avatar: null};
+    p.name = decodeURIComponent(change[2]) || null; profiles.set(change[1], p); pushProfile(change[1]);
+    return res.end('ok');
+  }
+  if (req.url === '/gateway-down') {gw.live = null; pushUi(); return res.end('ok');}
+  if (req.url === '/ui-signal') {pushUi(); return res.end('ok');}
   if (req.url === '/~/scry/theseus-ui/gateway.json') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(gatewayJson()));}
   const web = /^\/~\/scry\/theseus\/web\/(~[a-z-]+)\.json$/.exec(req.url);
   if (web) {
@@ -114,19 +135,25 @@ createServer(async (req,res) => {
   let body=''; for await (const chunk of req) body+=chunk;
   for (const action of JSON.parse(body || '[]')) {
     if (action.action === 'delete') {deletes++; channel.response?.end(); channels.delete(req.url); continue;}
-    if (action.action === 'subscribe') {channel.sub=action.id; send(channel,{id:action.id,response:'subscribe',ok:'ok'}); continue;}
+    if (action.action === 'subscribe') {
+      if (action.app === 'theseus' && action.path === '/profiles') channel.profiles = action.id;
+      else if (action.app === 'theseus' && action.path === '/ui') channel.ui = action.id;
+      else channel.sub = action.id;
+      send(channel,{id:action.id,response:'subscribe',ok:'ok'}); continue;
+    }
     if (action.action !== 'poke') continue;
     if (action.app === 'theseus-ui') {
       const set = action.json.set; const okPort = p => p === null || (Number.isInteger(p) && p > 0 && p < 65536);
       const okTemplate = t => t === null || /^https?:\/\/[^/\s]*\{moon\}[^/\s]*\/?$/.test(t);
       if (!set || !okPort(set.port) || !okTemplate(set.template) || (set.mode === 'declared' && set.port === null) || (set.mode === 'hosting' && set.template === null)) {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
-      gw = {...gw, mode: set.mode, port: set.port, template: set.template}; send(channel,{id:action.id,response:'poke',ok:'ok'}); continue;
+      gw = {...gw, mode: set.mode, port: set.port, template: set.template}; send(channel,{id:action.id,response:'poke',ok:'ok'}); pushUi(); continue;
     }
     // The host's own Noltbook API, as the owner's browser pokes it.
     if (action.app === 'noltbook') {
       const av = action.json?.data?.avatar;
       if (action.mark !== 'noltbook-api' || action.json.action !== 'update-profile' || av?.type !== 'urbit' || !uploads.some(u => u.who === host)) {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
       profiles.get(host).avatar = {type: 'urbit', url: av.url};
+      pushProfile(host);
       send(channel,{id:action.id,response:'poke',ok:'ok'}); continue;
     }
     const [kind,value] = Object.entries(action.json)[0];
@@ -209,10 +236,13 @@ createServer(async (req,res) => {
       if ('name' in value) p.name = value.name || null;
       if (p.noltbook && 'avatar' in value) p.avatar = value.avatar === null ? null : {type: 'external', url: value.avatar};
       profiles.set(value.who, p);
+      pushProfile(value.who);
     }
     if (kind === 'dojo' && /^\|install ~[a-z-]+ %landscape$/.test(value.command)) installed.add(value.who);
     if (kind === 'dojo') dojoLog.push({who: value.who, command: value.command});
     send(channel,{id:action.id,response:'poke',ok:'ok'});
+    // %theseus tells the pages, except for Dojo input and profile edits
+    if (!['dojo','term','profile'].includes(kind)) pushUi();
     // The moon echoes its prompt with the command, then answers.
     if (kind === 'dojo') send(channel,{id:channel.sub,response:'diff',json:{ship:value.who,blits:[{put:[...`${value.who}:dojo> ${value.command}`]},{nel:true},{put:[...(value.command === '(add 2 2)' ? '4' : `ran ${value.command}`)]},{nel:true}]}});
     // A tiny Dojo: echo typing, answer (add 2 2) on Enter, redraw on hail.

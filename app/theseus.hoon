@@ -480,7 +480,7 @@
       ^-  (quip card _this)
       =.  this  this(state new(recovery-timer ~))
       =^  cards  state  arm-recovery-timer:hc
-      [cards this]
+      [(weld cards noltbook-watch:hc) this]
     ::  moons from before %8 get the time of their boot commit
     ::
     ++  state-7-to-9
@@ -591,6 +591,10 @@
     ::  Marks with a noun grab could otherwise be poked by any ship.
     ::
     ?>  =(src.bowl our.bowl)
+    ::  moon traffic never changes what the pages show; anything else is
+    ::  compared before and after, and the pages are told (/ui)
+    =/  quiet=?  (traffic:hc mark q.vase)
+    =/  before=(unit *)  ?:(quiet ~ `ui-print:hc)
     =^  cards  state
       ?+  mark  ~|([%theseus-bad-mark mark] !!)
         %theseus-ui
@@ -715,6 +719,7 @@
         ::  the existing %ames-inbound / %ames-test-inbound handlers.
         %theseus-ames-in  (poke-action:hc `action`!<(ames-in vase))
       ==
+    =?  cards  &(!quiet !=(before `ui-print:hc))  [ui-signal:hc cards]
     [cards this]
   ::
   ++  on-peek
@@ -807,22 +812,47 @@
         [%session @ ~]
       ?>  =(src.bowl our.bowl)
       `this
+    ::  "the moons, fleets or snapshots changed": the owner's pages read
+    ::  ui.json again when told, instead of on a timer (see +ui-print)
+    ::
+        [%ui ~]
+      ?>  =(src.bowl our.bowl)
+      `this
+    ::  names and pictures as they change: one profile row per fact (see
+    ::  +profile-facts).  The owner's pages watch it through Eyre.
+    ::
+        [%profiles ~]
+      ?>  =(src.bowl our.bowl)
+      [noltbook-watch:hc this]
     ==
   ++  on-leave  on-leave:def
-  ++  on-agent  on-agent:def
+  ::  our own %noltbook: a change to our profile is passed on to /profiles
+  ::
+  ++  on-agent
+    |=  [=wire =sign:agent:gall]
+    ^-  (quip card _this)
+    ?.  ?=([%noltbook-profile ~] wire)  (on-agent:def wire sign)
+    ?+    -.sign  `this
+        %kick  [noltbook-watch:hc this]
+        %fact
+      ?.  (own-profile-update:hc cage.sign)  `this
+      [~[host-profile-fact:hc] this]
+    ==
   ++  on-arvo
     |=  [=wire =sign-arvo]
     ^-  (quip card _this)
     ?+    wire  (on-arvo:def wire sign-arvo)
         [%install-plans @ ~]
       ?>  ?=([%behn %wake *] sign-arvo)
+      =/  before  ui-print:hc
       =^  cards  state  (wake-install-plans:hc (slav %da i.t.wire))
-      [cards this]
+      [?:(=(before ui-print:hc) cards [ui-signal:hc cards]) this]
     ::
         [%recoveries @ ~]
       ?>  ?=([%behn %wake *] sign-arvo)
+      =/  before  ui-print:hc
       =^  cards  state  (wake-recoveries:hc (slav %da i.t.wire))
-      [cards this]
+      [?:(=(before ui-print:hc) cards [ui-signal:hc cards]) this]
     ==
   ++  on-fail   on-fail:def
   --
@@ -835,6 +865,8 @@
 =|  unix-events=(jar ship unix-timed-event)
 =|  unix-boths=(jar ship unix-both)
 =|  cards=(list card)
+::  moons whose own Noltbook profile changed in this event
+=|  profile-changes=(set ship)
 |_  =bowl:gall
 ::
 ++  this  .
@@ -1206,9 +1238,85 @@
   |=  [who=ship name=(unit (unit @t))]
   ^-  (quip card _state)
   ?~  name  `state
-  ?:  |(?=(~ u.name) =('' u.u.name))
-    `state(nicknames (~(del by nicknames) who))
-  `state(nicknames (~(put by nicknames) who u.u.name))
+  =.  nicknames
+    ?:  |(?=(~ u.name) =('' u.u.name))
+      (~(del by nicknames) who)
+    (~(put by nicknames) who u.u.name)
+  :_  state
+  ?:  =(who our.bowl)  ~[host-profile-fact]
+  (profile-facts ~[who])
+::  +ui-print: what the pages show that can change, cheaply.  Comparing it
+::  before and after a poke or a timer says whether to tell them (/ui):
+::  paused moons, restore stages, install progress, fleets, snapshots.
+::  Health and queue lengths are read with ui.json, not pushed.
+::
+++  ui-print
+  ^-  *
+  :*  (~(run by piers) |=(p=saved-pier paused.p))
+      (~(run by recoveries) |=(j=recovery-job [stage.j reason.j]))
+      (~(run by install-plans) |=(p=install-plan progress.p))
+      fleets
+      ~(key by fleet-snaps)
+      ~(key by caches)
+      booted
+  ==
+::
+++  ui-signal
+  ^-  card
+  [%give %fact ~[/ui] %json !>(`json`b+&)]
+::
+::  +traffic: a poke that is moon traffic or a terminal: packets, events
+::  from %theseus-pyre, sessions, Dojo input, profile edits (/profiles)
+::
+++  traffic
+  |=  [=mark q=*]
+  ^-  ?
+  ?|  ?=(?(%theseus-events %theseus-ames-in %theseus-session) mark)
+      ?&  =(%theseus-action mark)
+          ?=([?(%ames-inbound %mesa-inbound %ames-stun %ames-test-inbound) *] q)
+      ==
+      ?&  =(%theseus-ui mark)
+          ?=([?(%dojo %term %profile) *] q)
+      ==
+  ==
+::
+::  Names and pictures as they change, to the owner's open pages: each
+::  fact on /profiles is one ship's row, as in +ui-profiles.  Moons' rows
+::  come from +abet-theseus (a request changed the moon's profile) and
+::  from restores; ours from our own %noltbook's %profile-updated.
+::
+++  profile-facts
+  |=  hers=(list ship)
+  ^-  (list card)
+  %+  murn  hers
+  |=  who=ship
+  ^-  (unit card)
+  =/  saved  (~(get by piers) who)
+  ?~  saved  ~
+  `[%give %fact ~[/profiles] %json !>((ui-profile who (moon-profile who u.saved)))]
+::
+++  host-profile-fact
+  ^-  card
+  [%give %fact ~[/profiles] %json !>((ui-profile our.bowl host-profile))]
+::
+::  +noltbook-watch: hear our own %noltbook's updates, once
+::
+++  noltbook-watch
+  ^-  (list card)
+  ?.  host-noltbook  ~
+  ?:  (~(has by wex.bowl) [/noltbook-profile our.bowl %noltbook])  ~
+  ~[[%pass /noltbook-profile %agent [our.bowl %noltbook] %watch /notes]]
+::
+::  +own-profile-update: is this our %noltbook announcing our own profile?
+::
+++  own-profile-update
+  |=  =cage
+  ^-  ?
+  ?.  =(%noltbook-update p.cage)  |
+  =/  upd=*  q.q.cage
+  ?&  ?=([%profile-updated @ *] upd)
+      =(our.bowl +<.upd)
+  ==
 ::  +upload-picture: give a moon's Noltbook profile a picture from its bytes
 ::
 ::    Noltbook takes a picture only over HTTP, from its logged-in owner.  So,
@@ -1413,6 +1521,10 @@
     ::  ship -- the sidecar does the real delivery -- so drop it quietly.
     ?:  paused  ..abet-pe
     =^  ue  next-events  ~(get to next-events)
+    ::  a request that could change the moon's Noltbook profile: compare it
+    ::  before and after, so open pages hear of the change (/profiles)
+    =/  watch=?  (touches-profile ue)
+    =/  before=(unit *)  ?.(watch ~ own-profile)
     ::  Poke execution now lives in lib/theseus-kernel (Phase 3a slice 1); this
     ::  loop no longer names poke:arvo-adult / Arvo-private types.  Both crash casts are
     ::  still contained (inside +mule there) so a bad %hear result drops instead
@@ -1424,6 +1536,8 @@
       ((slog >%theseus-snap-cast-crash< >who< tang.p.res) $)
     =.  snap  snap.p.res
     =.  scry-time  now.bowl
+    =?  profile-changes  &(watch !=(before own-profile))
+      (~(put in profile-changes) who)
     =.  ..abet-pe  (publish-event now.bowl ue)
     =.  ..abet-pe  (handle-effects effects.p.res)
     $
@@ -1484,6 +1598,29 @@
   ::
   ::  When paused, events are added to the queue but not processed.
   ::
+  ::  +touches-profile: could this event change the moon's own Noltbook
+  ::  profile?  A browser's write (a poke through a channel, an upload) or a
+  ::  poke straight into its %noltbook; never a page load or a packet.
+  ::
+  ++  touches-profile
+    |=  ue=unix-event
+    ^-  ?
+    =/  task=*  q.ue
+    ?|  ?=([%request * * %'PUT' *] task)
+        ?=([%request * * %'POST' *] task)
+        ?=([%deal * %noltbook *] task)
+    ==
+  ::  +own-profile: the moon's Noltbook profile as its API gives it, or ~
+  ::
+  ++  own-profile
+    ^-  (unit *)
+    =/  res
+      %-  mole  |.
+      %+  peek-arvo:theseus-kernel  snap
+      [[~ ~] / %gx [who %noltbook da+scry-time] /api/profile/(scot %p who)/json]
+    ?.  ?=([~ ~ ~ *] res)  ~
+    `q.q.u.u.u.res
+  ::
   ++  pause    .(paused &)
   ++  unpause  .(paused |)
   --
@@ -1492,10 +1629,11 @@
 ::
 ++  apex-theseus
   ^+  this
-  =:  cards         ~
-      unix-effects  ~
-      unix-events   ~
-      unix-boths    ~
+  =:  cards            ~
+      unix-effects     ~
+      unix-events      ~
+      unix-boths       ~
+      profile-changes  ~
     ==
   this
 ::
@@ -1512,6 +1650,7 @@
     :^  %pass  /theseus-pyre  %agent
     :+  [our.bowl %theseus-pyre]  %poke
     theseus-effect+!>(`theseus-effect`[ship uf])
+  =.  this  (emit-cards (profile-facts ~(tap in profile-changes)))
   [(flop cards) state]
 ::
 ++  emit-cards
@@ -2705,7 +2844,8 @@
       (recovery-register-cards who job)
     =^  timer-cards  state  arm-recovery-timer
     ~&  theseus+restore-snap+path.act
-    [:(weld kill-cards register-cards timer-cards) state]
+    ::  the restored names and pictures, to open pages
+    [:(weld kill-cards register-cards timer-cards (profile-facts hers)) state]
   ::
       %delete-snap
     ::  one ship's snapshot, or every snapshot in a set

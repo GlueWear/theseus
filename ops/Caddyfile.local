@@ -26,11 +26,14 @@
 		header_up Host {$THESEUS_EYRE_HOST}
 		# Eyre's port is chosen at boot (first free from 8080), so another
 		# ship can hold it after a restart. Only forward while the upstream
-		# answers /~/host as our ship; otherwise clients get 503.
+		# answers /~/host as our ship; otherwise clients get 503. A ship busy
+		# with its moons can be slow, so it counts as down only after three
+		# checks in a row go unanswered.
 		health_uri /~/host
 		health_body "^{$THESEUS_SHIP}$"
-		health_interval 5s
-		health_timeout 2s
+		health_interval 10s
+		health_timeout 10s
+		health_fails 3
 	}
 }
 
@@ -47,5 +50,19 @@ http://:{$THESEUS_WEB_PORT:8084} {
 	# not depend on ports, so an existing localhost host session remains valid.
 	handle {
 		import eyre
+	}
+
+	# The ship didn't answer (down, restarting, or busy for half a minute):
+	# say so, rather than leave a blank tab.
+	handle_errors 502 503 504 {
+		header Content-Type "text/html; charset=utf-8"
+		header Cache-Control no-store
+		respond <<HTML
+			<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Not answering</title>
+			<body style="font-family:-apple-system,Segoe UI,sans-serif;text-align:center;padding:3rem 1.25rem;line-height:1.55;color:#2e3338;background:#fbf6ec">
+			<h2>This page isn't answering right now</h2>
+			<p>Your host ship is busy or restarting. Close this tab and open it again from Theseus in a moment.</p>
+			</body>
+			HTML 503
 	}
 }

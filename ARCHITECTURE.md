@@ -194,6 +194,28 @@ Under the hood the page:
   under a chosen name. On a Noltbook ship, the name and picture open the
   editor when clicked; on any other they are only shown (a nickname set
   earlier, `nicknames` in state `%12`, still shows).
+- **No refresh timer.** The console reads `ui.json` when it opens and when
+  `%theseus` says something changed (`/ui`). `%theseus` compares a cheap
+  fingerprint of what the console shows (paused moons, restore stages,
+  install progress, fleets, snapshots, caches) before and after each poke
+  and each install or restore timer, and sends the signal only when it
+  differs. Moon traffic never triggers it. While the host is busy or out of
+  reach, the console retries once at a time. An idle console makes no
+  requests at all.
+- **Gateway health check.** The local gateway's Caddy forwards to the host
+  only while it answers `/~/host` as itself. A host busy with its moons can
+  be slow to answer, so it counts as down only after three ten-second
+  checks in a row go unanswered; with a two-second limit, a busy moment used
+  to make Caddy refuse requests (Landscape tabs opened blank). When the host
+  really doesn't answer, the gateway says so on a page.
+- **Live names and pictures.** Pages read every profile once, then
+  `%theseus` pushes each change on `/profiles`, wherever it was made: in the
+  console, the Manor page, or Noltbook itself. For a moon, `%theseus` reads
+  its Noltbook profile before and after each request that could change it
+  (a POST or PUT, such as a channel poke or an upload, or a poke into its
+  `%noltbook`) and pushes the row if it differs; page loads and packets are
+  never compared. For the host, it watches its own `%noltbook` and passes on
+  `%profile-updated` for itself. A restore pushes the restored rows.
 - **Uploaded pictures.** Noltbook takes a picture file only as an HTTP upload
   from its logged-in owner, and only that upload marks it as having one. The
   console shrinks a chosen file to at most 128 pixels as a JPEG. For the host,

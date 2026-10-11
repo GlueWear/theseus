@@ -5,7 +5,7 @@ import '@urbit/sigil-js';
 import {Terminal} from '@xterm/xterm';
 import {FitAddon} from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import {fleet, hostDesks as fetchHostDesks, profiles as fetchProfiles, uploadHostPicture, watchDojo, command, term as sendTerm, moonWeb, gateway, setGateway, reachable} from './api';
+import {fleet, hostDesks as fetchHostDesks, profiles as fetchProfiles, uploadHostPicture, watchDojo, watchProfiles, watchUi, command, term as sendTerm, moonWeb, gateway, setGateway, reachable} from './api';
 import {blitsToAnsi, keysToBelts, byBoot, deskTally, daMs, newMoon, validateMoon, snapshotName, dateLabel, moonOrigin, validPort, validTemplate, gatewayProblem, resolveDeskSelection, deskPublisher, bootDesks, shipNumber, fleetState, catchingUp, snapshotSets, snapshotLabel, blitLines, riskyCommand, shortMoon, avatarSrc} from './model.mjs';
 import icon from './icon.png';
 import './style.css';
@@ -428,30 +428,71 @@ function App() {
     setSelected(prev => prev.filter(s => next.moons.some(m => m.ship === s)));
     return next;
   }
+  // The console reads the fleet when it opens, when %theseus says something
+  // changed (/ui), when the tab is shown again, and when its channel
+  // reopens. No timer, except one retry at a time while the host is busy or
+  // can't be reached.
+  const again = useRef(false);
+  const retry = useRef(null);
+  function scheduleRefresh() {
+    if (refreshing.current) {again.current = true; return;}
+    refresh();
+  }
+  function retryIn(ms) {
+    clearTimeout(retry.current);
+    retry.current = setTimeout(() => {retry.current = null; scheduleRefresh();}, ms);
+  }
   async function refresh() {
     if (refreshing.current) return;
     refreshing.current = true;
     try {
       await readFleet(); if (!mounted.current) return;
       gateway().then(g => mounted.current && setGw(g)).catch(() => mounted.current && setGw(null));
-      await watchDojo(receive, status => mounted.current && setChannel(status));
+      await watchDojo(receive, status => {
+        if (!mounted.current) return;
+        setChannel(status);
+        // a reopened channel may have missed changes
+        if (status === 'connected') scheduleRefresh();
+      });
+      watchUi(scheduleRefresh).catch(() => retryIn(5000));
+      watchProfiles(applyProfile).catch(() => retryIn(5000));
     } catch (err) {
       if (!mounted.current) return;
       // A busy host is not an outage: keep the console usable and retry.
-      if (err.busy) {setHostBusy(true); return;}
+      if (err.busy) {setHostBusy(true); retryIn(5000); return;}
       refreshError.current = err.message; setError(err.message); setOnline(false);
+      retryIn(10000);
     }
-    finally {refreshing.current = false; if (mounted.current) setLoading(false);}
+    finally {
+      refreshing.current = false;
+      if (mounted.current) setLoading(false);
+      if (again.current && mounted.current) {again.current = false; setTimeout(refresh, 0);}
+    }
   }
   // Names and pictures are read when something happens, never on a timer:
-  // on load, the refresh button, and after boots, restores and edits. The
-  // console works without them.
+  // on load, the refresh button, and after boots, restores and edits. After
+  // that, %theseus pushes each change (/profiles), wherever it was made, and
+  // it replaces that ship's row. The console works without them.
+  function applyProfile(row) {
+    if (!mounted.current) return;
+    setProfileData(cur => {
+      if (!cur) return cur;
+      if (row.ship === cur.host.ship) return {...cur, host: row};
+      const known = cur.moons.some(m => m.ship === row.ship);
+      return {...cur, moons: known ? cur.moons.map(m => m.ship === row.ship ? row : m) : [...cur.moons, row]};
+    });
+  }
   async function loadProfiles() {
     try {const next = await fetchProfiles(); if (mounted.current) setProfileData(next); return next;}
     catch {return null;}
   }
   useEffect(() => {if (online && !profileData) loadProfiles();}, [online]);
-  useEffect(() => {mounted.current = true; refresh(); const timer = setInterval(refresh, 4000); return () => {mounted.current = false; clearInterval(timer);};}, []);
+  useEffect(() => {
+    mounted.current = true; refresh();
+    const shown = () => {if (document.visibilityState === 'visible') scheduleRefresh();};
+    document.addEventListener('visibilitychange', shown);
+    return () => {mounted.current = false; clearTimeout(retry.current); document.removeEventListener('visibilitychange', shown);};
+  }, []);
   // A dialog's action reports a rejection inside the dialog (report =
   // setFormError), where it stays visible above the backdrop.
   async function run(kind, value, report = setError) {

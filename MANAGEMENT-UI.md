@@ -87,6 +87,19 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
   a ship without Noltbook (`noltbook: false`). Read on demand only.
 - Poke `%theseus` with mark `theseus-recycle`, `{who, path}`: restore one moon,
   from its own snapshot or from its snapshot in the set `path`. Used by manor.
+- Subscribe `%theseus` `/ui` for "something changed": a fact (JSON `true`)
+  after any action that changes moons, fleets, snapshots or caches, and
+  while installs or restores move on; never for moon traffic, Dojo input or
+  profile edits. The console reads `ui.json` again when told, when its tab
+  is shown again, and when its channel reopens: it has no refresh timer.
+  `%manor` has the same for its own state on `/state`.
+- Subscribe `%theseus` `/profiles` for names and pictures as they change:
+  each fact is one ship's profile row, as in `profiles.json`. A moon's row
+  comes when a request into it changes its own Noltbook profile (a browser's
+  poke or upload, or the `profile` command), and after a restore; the host's
+  when its own `%noltbook` says `%profile-updated`. Nothing polls: a moon's
+  profile is compared before and after only for POST and PUT requests and
+  pokes into its `%noltbook`. The console and the Manor page both watch it.
 - A visitor's session on a moon, for an agent on this ship (`%manor`): watch
   `%theseus` `/session/<rid>`, then poke mark `theseus-session` with
   `[rid=@ta who=ship]` (a noun, not JSON). The one fact on the path is

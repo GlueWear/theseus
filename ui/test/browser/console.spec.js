@@ -401,16 +401,49 @@ test('a moon still catching up with its desks\' sources says so until Kiln is do
   await expect.poll(async()=>{await page.getByRole('button',{name:'Refresh fleet'}).click();return row.locator('.badge').textContent();},{timeout:8000}).toBe('running');
   await expect(row.locator('.desk-column .desk-state.catching-up')).toHaveCount(0);
 });
-test('a slow host shows as busy, not as an error, and recovers on its own',async({page})=>{
+test('a name or picture changed anywhere shows on every open page, with no reload',async({page,context,request})=>{
+  await page.goto('/');await expect(page.getByRole('button',{name:`Open Dojo for ${moon}`})).toBeVisible();
+  const other=await context.newPage();
+  await other.goto('/');await expect(other.getByRole('button',{name:`Open Dojo for ${moon}`})).toBeVisible();
+  const row=p=>p.locator('tbody tr').filter({hasText:moon});
+  // changed in one page: the other hears it from %theseus
+  await row(page).locator('.ship-link strong').click();
+  await page.getByRole('dialog').getByLabel('Name').fill('Sam');
+  await page.getByRole('dialog').getByRole('button',{name:'Save'}).click();
+  await expect(row(other).locator('.ship-name strong')).toHaveText('Sam');
+  // changed in the moon's own Noltbook: both hear it
+  await request.get(`http://127.0.0.1:8085/profile-change?ship=${moon}&name=Samwise`);
+  await expect(row(page).locator('.ship-name strong')).toHaveText('Samwise');
+  await expect(row(other).locator('.ship-name strong')).toHaveText('Samwise');
+  // the host's too
+  await request.get('http://127.0.0.1:8085/profile-change?ship=~siglup-narwet&name=Harbor');
+  await expect(other.locator('.host .ship-name strong')).toHaveText('Harbor');
+  await other.close();
+});
+test('a slow host shows as busy, not as an error, and recovers on its own',async({page,request})=>{
   await page.clock.install();
   await page.goto('/');await expect(page.getByRole('button',{name:`Open Dojo for ${moon}`})).toBeVisible();
   await page.route('**/~/scry/theseus/ui.json',()=>new Promise(()=>{}));
-  await page.clock.runFor(4000);
+  // %theseus says something changed; reading the fleet hangs
+  await request.get('http://127.0.0.1:8085/ui-signal');
+  await page.waitForTimeout(300);
   await page.clock.runFor(16000);
   await expect(page.locator('.connection')).toContainText('Host busy');
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Boot moon',exact:true})).toBeEnabled();
+  // one retry a few seconds later finds it answering again
   await page.unroute('**/~/scry/theseus/ui.json');
-  await page.clock.runFor(4000);
+  await page.clock.runFor(6000);
   await expect(page.locator('.connection')).toContainText('Connected');
+});
+test('an idle console asks the host nothing until something changes',async({page,request})=>{
+  await page.goto('/');await expect(page.getByRole('button',{name:`Open Dojo for ${moon}`})).toBeVisible();
+  await page.waitForTimeout(1000);
+  const reads=[];
+  page.on('request',r=>{if(r.url().includes('/~/scry/theseus/ui.json'))reads.push(r.url());});
+  await page.waitForTimeout(9000);
+  expect(reads).toHaveLength(0);
+  // a change on the host is pushed, and the console reads the fleet once
+  await request.get('http://127.0.0.1:8085/ui-signal');
+  await expect.poll(()=>reads.length).toBeGreaterThan(0);
 });

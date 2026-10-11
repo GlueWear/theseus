@@ -82,12 +82,39 @@ export async function watchDojo(event, status) {
   api.onRetry = () => status('reconnecting');
   // A fatal SSE error leaves subscriptions registered on a dead channel.
   // Start a fresh channel; the next fleet refresh resubscribes.
-  api.onError = () => {started = false; status('disconnected'); api.reset();};
+  api.onError = () => {started = false; profilesStarted = false; uiStarted = false; status('disconnected'); api.reset();};
   try {
     return await api.subscribe({app: 'theseus-pyre', path: '/blit', event,
       err: () => {started = false; status('disconnected');},
       quit: () => {started = false; status('disconnected');}});
   } catch (e) {started = false; status('disconnected'); throw e;}
+}
+// "The moons, fleets or snapshots changed", pushed by %theseus after an
+// action, and during boots, installs and restores. The console reads ui.json
+// again when told, instead of on a timer.
+let uiStarted = false;
+export async function watchUi(event) {
+  if (uiStarted) return;
+  uiStarted = true;
+  try {
+    return await api.subscribe({app: 'theseus', path: '/ui', event: () => event(),
+      err: () => {uiStarted = false;},
+      quit: () => {uiStarted = false;}});
+  } catch (e) {uiStarted = false; throw e;}
+}
+// Names and pictures as they change, pushed by %theseus: one ship's profile
+// row per fact, whenever its Noltbook profile changes, from anywhere. No
+// polling. Resubscribed with the Dojo after the channel is reset.
+let profilesStarted = false;
+export async function watchProfiles(event) {
+  if (profilesStarted) return;
+  profilesStarted = true;
+  const one = row => {try {validateProfiles({host: row, moons: []}); event(row);} catch { /* not a profile row */ }};
+  try {
+    return await api.subscribe({app: 'theseus', path: '/profiles', event: one,
+      err: () => {profilesStarted = false;},
+      quit: () => {profilesStarted = false;}});
+  } catch (e) {profilesStarted = false; throw e;}
 }
 // Resolves only when Gall acks the poke, not on HTTP acceptance.
 function poke(app, mark, json, rejected) {
