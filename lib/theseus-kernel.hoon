@@ -524,6 +524,35 @@
     |=  [n=(set duct) y=(jug duct ship)]
     +>(nel.zim.pki.lex n, yen.zim.pki.lex y)
   (put-vane snap %jael (slam mutator !>([nel yen])))
+::  +key-followers: who Jael gives the ship's own private keys to
+::
+::    Ames, and any agent that asked (%poker-room does).
+::
+++  key-followers
+  |=  snap=vase
+  ^-  (set duct)
+  !<  (set duct)
+  (slap (vane-of snap %jael) !,(*hoon yen.own.pki.lex))
+::  +set-key-followers: replace them, e.g. to aim a %rekey at one duct
+::
+::    The same +exec:su fold as with %ruin (see +set-jael-trackers): Jael
+::    gives %private-keys to the last of these ducts only.
+::
+++  set-key-followers
+  |=  [snap=vase yen=(set duct)]
+  ^-  vase
+  =/  mutator
+    %+  slap  (vane-of snap %jael)
+    !,  *hoon
+    |=  y=(set duct)
+    +>(yen.own.pki.lex y)
+  (put-vane snap %jael (slam mutator !>(yen)))
+::  +ames-life: the life Ames signs and reads packets with
+::
+++  ames-life
+  |=  snap=vase
+  ^-  @ud
+  !<(@ud (slap (vane-of snap %ames) !,(*hoon life.ames-state)))
 ::  +snap-peers: every ship the snapshot's Ames holds state for
 ::
 ++  snap-peers

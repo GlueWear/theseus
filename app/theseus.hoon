@@ -2308,6 +2308,51 @@
     run(snap (set-jael-trackers:theseus-kernel snap.run (sy u.tracker ~) ~))
   (poke-theseus-events [who /j/theseus/recovery %ruin peers]~)
 ::
+::  +rekey-moon: give a moon its new private key, so every vane and agent
+::  that follows its keys hears
+::
+::    Jael's %rekey tells only the last of its key followers (see
+::    +set-key-followers).  With Ames and %poker-room both following, Ames
+::    could miss it and go on signing with the old life, which no peer can
+::    read: the moon looks healthy but every message to it is dropped.  So
+::    rekey with Ames alone following, %resend to each other follower alone,
+::    then put them all back.
+::
+++  rekey-moon
+  |=  [who=ship =life key=ring]
+  ^-  (quip card _state)
+  =/  all=(set duct)
+    (key-followers:theseus-kernel snap:(unpack-pier (~(got by piers) who)))
+  =/  order=(list duct)
+    =/  ducts  ~(tap in all)
+    =|  [ames=(list duct) rest=(list duct)]
+    |-
+    ?~  ducts  (weld ames rest)
+    ?:  ?=([[%ames *] *] i.ducts)
+      $(ducts t.ducts, ames [i.ducts ames])
+    $(ducts t.ducts, rest [i.ducts rest])
+  ?:  =(~ order)
+    (poke-theseus-events [who /j/theseus/recovery %rekey life key]~)
+  =|  cards=(list card)
+  =/  first=?  &
+  |-  ^-  (quip card _state)
+  ?~  order
+    =/  fin=pier  (unpack-pier (~(got by piers) who))
+    =.  piers
+      %+  ~(put by piers)  who
+      (pack-pier fin(snap (set-key-followers:theseus-kernel snap.fin all)))
+    [cards state]
+  =/  run=pier  (unpack-pier (~(got by piers) who))
+  =.  piers
+    %+  ~(put by piers)  who
+    (pack-pier run(snap (set-key-followers:theseus-kernel snap.run (sy i.order ~))))
+  =^  more  state
+    %-  poke-theseus-events
+    :_  ~
+    ?:  first  [who /j/theseus/recovery %rekey life key]
+    [who /j/theseus/recovery %resend ~]
+  $(order t.order, first |, cards (weld cards more))
+::
 ::  +finish-recovery: apply the confirmed era inside the offline moon.
 ::
 ++  finish-recovery
@@ -2336,11 +2381,13 @@
         next-events  *(qeu unix-event)
         snap         (set-own-point:theseus-kernel snap.pier who rift.job life.job pub.job)
     ==
+  =^  key-cards  state  (rekey-moon who life.job key.job)
+  =/  heard=@ud
+    (ames-life:theseus-kernel snap:(unpack-pier (~(got by piers) who)))
+  ?.  =(life.job heard)
+    ~|([%theseus-recovery-ames-old-life who want=life.job ames=heard] !!)
   =^  own-cards  state
-    %-  poke-theseus-events
-    :~  [who /j/theseus/recovery %rekey life.job key.job]
-        [who /a/theseus/recovery %stir 'rift']
-    ==
+    (poke-theseus-events [who /a/theseus/recovery %stir 'rift']~)
   ::  every peer breached, in Ames and then in Gall.  The Ames reset must
   ::  have wiped every flow with them before Gall reopens any: a flow left
   ::  over would carry on at old message numbers, which peers that processed
@@ -2354,6 +2401,13 @@
     ~|([%theseus-recovery-ames-not-reset who flows=left] !!)
   =^  gall-cards  state
     (ruin-peers who peers.job (find-tracker /gall/sys/era))
+  ::  and in Clay, which drops the requests it has out with them, such as
+  ::  each Kiln sync's wait for its source's next revision.  The peers
+  ::  dropped their side with the breach, so nothing would ever answer, and
+  ::  the desks would never update.  Cancelled, Kiln asks again.
+  ::
+  =^  clay-cards  state
+    (ruin-peers who peers.job (find-tracker /clay/sinks))
   ::  restore the trackers, less what Gall untracked on breach
   ::
   =/  gall  (find-tracker /gall/sys/era)
@@ -2373,7 +2427,7 @@
     :^  %pass  /theseus-pyre  %agent
     :+  [our.bowl %theseus-pyre]  %poke
     theseus-effect+!>(`theseus-effect`[who [/ %restart ~]])
-  [:(weld restart own-cards ames-cards gall-cards) state]
+  [:(weld restart key-cards own-cards ames-cards gall-cards clay-cards) state]
 ::
 ++  poke-action
   |=  act=action

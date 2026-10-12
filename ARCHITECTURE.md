@@ -333,10 +333,23 @@ breach:
 3. **The same identity inside the moon.** Its own Jael point gets the new
    rift, life and key (state surgery, `+set-own-point`), then `%rekey`, and
    Ames rereads its rift (`%stir %rift`).
+
+   `%rekey` meets the same Jael bug as `%ruin` (below): it tells only one of
+   the ducts that follow the ship's private keys. On a moon running
+   `%poker-room`, which follows them too, Ames could miss the new life and
+   keep signing with the old one. Every peer then drops its packets, and the
+   moon looks healthy but can't `|hi` anyone. So `+rekey-moon` rekeys with
+   Ames alone following, sends `%resend` to each other follower alone, then
+   puts them all back. The restore stops with
+   `%theseus-recovery-ames-old-life` if Ames still has the old life.
 4. **The moon forgets its side.** It treats the captured peer union as
    breached, first in
-   Ames (its flows are wiped) and then in Gall (its agents' subscriptions are
-   kicked, so they resubscribe on fresh flows).
+   Ames (its flows are wiped), then in Gall (its agents' subscriptions are
+   kicked, so they resubscribe on fresh flows), then in Clay. Clay drops the
+   requests it has out with them, such as each Kiln sync's wait for its
+   source's next revision. The peers dropped their side with the breach, so
+   without this no desk would update after a restore. Cancelled, Kiln asks
+   again on a fresh flow.
 
    This uses Jael's `%ruin`, aimed at one tracker at a time. In Jael's
    `+exec:su`, the fold over trackers keeps only the last one
