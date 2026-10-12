@@ -145,6 +145,16 @@ usable it explains why and offers the Gateway settings instead of opening a
 blank tab. If the moon has no `%landscape`, the console offers to run
 `|install <host> %landscape` in the moon's Dojo instead.
 
+**Fleet View** is the grid icon on a fleet row. It opens each member's real
+Landscape in a separate iframe at that moon's gateway origin. The toolbar
+offers all ships, two-wide, and three-wide layouts; panes can be reordered or
+focused without combining their sessions. Layout and order are saved in the
+browser. The local gateway adds `SameSite=None; Secure; Partitioned` only to
+moon auth cookies, because Eyre's default cookie is not sent from an embedded
+moon page. This keeps an embedded session scoped to the console's top-level
+site. The gateway must be reloaded after updating `ops/Caddyfile.local`;
+without that change, use the pane's open-in-tab button.
+
 **+code** shows the code in a dialog with a copy button; it is not kept after
 the dialog closes.
 

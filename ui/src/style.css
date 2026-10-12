@@ -241,6 +241,64 @@ footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 4
 .fleet-confirm code { padding: 1px 6px; border-radius: 4px; background: #00000040; }
 .fleet-confirm .tools { margin-left: auto; }
 
+/* Fleet View keeps each moon on its own browser origin and gives its page the
+   entire pane. Only the surrounding controls belong to the host console. */
+.fleet-view-shell { display: block; height: 100vh; overflow: hidden; }
+.fleet-view-shell .sidebar { display: none; }
+.fleet-view-shell main { width: 100%; max-width: none; height: 100vh; padding: 0; }
+.fleet-view { display: flex; flex-direction: column; height: 100vh; min-height: 0; background: var(--paper); }
+.fleet-view-toolbar { display: flex; align-items: center; gap: 16px; flex: 0 0 auto; min-height: 62px; padding: 8px 18px; border-bottom: 1px solid var(--line); background: var(--card); }
+.fleet-view-back { flex: 0 0 auto; border: 0; background: transparent; color: var(--ink-2); }
+.fleet-view-title { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; color: var(--ink); }
+.fleet-view-title > svg { color: var(--sea-deep); }
+.fleet-view-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; }
+.fleet-view-title span { flex: 0 0 auto; color: var(--ink-3); font-size: 12px; }
+.fleet-view-layout { display: inline-flex; flex: 0 0 auto; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 6px; background: var(--sand); }
+.fleet-view-layout button { min-height: 30px; padding: 4px 10px; border: 0; background: transparent; font-size: 12px; color: var(--ink-2); }
+.fleet-view-layout button.active { background: var(--card); box-shadow: 0 1px 3px #2e33381a; color: var(--sea-deep); font-weight: 650; }
+.fleet-view-grid-button { flex: 0 0 auto; }
+.fleet-view-warning { display: flex; align-items: center; gap: 9px; padding: 10px 18px; background: var(--warn-tint); color: var(--warn); font-size: 12px; }
+.fleet-view-grid { display: grid; align-content: start; gap: 12px; flex: 1; min-height: 0; padding: 12px; overflow: auto; }
+.fleet-view-grid.all { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+.fleet-view-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fleet-view-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.fleet-view-grid.single { display: block; overflow: hidden; padding: 0; }
+.fleet-view-grid.single .fleet-pane:not(.focused) { display: none; }
+.fleet-pane { display: flex; flex-direction: column; min-width: 0; height: clamp(410px, 66vh, 760px); border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; background: #fff; }
+.fleet-view-grid.all .fleet-pane { height: clamp(300px, 34vh, 380px); }
+.fleet-pane.focused { width: 100%; height: 100%; border: 0; border-radius: 0; }
+.fleet-pane-bar { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; min-height: 42px; padding: 4px 7px 4px 10px; border-bottom: 1px solid var(--line); background: var(--card); }
+.fleet-pane-identity { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.fleet-pane-identity > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.fleet-pane-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 650; }
+.fleet-pane-identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--ink-3); }
+.fleet-pane-status { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; font-size: 11px; color: var(--ink-3); }
+.fleet-pane-status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.fleet-pane-status.live { color: var(--ok); }
+.fleet-pane-actions { display: flex; align-items: center; gap: 0; flex: 0 0 auto; }
+.fleet-pane-actions .icon-button { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 5px; }
+.fleet-pane-actions [draggable] { cursor: grab; }
+.fleet-pane-body { position: relative; flex: 1; min-height: 0; }
+.fleet-pane-body iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+.fleet-pane-cover { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 11px; padding: 20px; background: #fff; color: var(--ink-3); text-align: center; }
+.fleet-pane-cover strong { color: var(--ink-2); font-size: 13px; font-weight: 600; }
+.fleet-pane-cover span { overflow-wrap: anywhere; font-size: 12px; }
+
+@media (max-width: 720px) {
+  .fleet-view-toolbar { flex-wrap: wrap; gap: 5px 9px; padding: 7px 10px; }
+  .fleet-view-title { order: -1; width: 100%; flex-basis: 100%; min-height: 28px; }
+  .fleet-view-title strong { font-size: 15px; }
+  .fleet-view-back { padding-left: 5px; }
+  .fleet-view-layout { margin-left: auto; }
+  .fleet-view-layout button { padding: 4px 7px; font-size: 11px; }
+  .fleet-view-grid.all, .fleet-view-grid.two, .fleet-view-grid.three { grid-template-columns: minmax(0, 1fr); }
+  .fleet-view-grid { gap: 8px; padding: 8px; }
+  .fleet-pane { height: min(72vh, 620px); }
+  .fleet-view-grid.all .fleet-pane { height: min(72vh, 620px); }
+  .fleet-pane-actions .icon-button { width: 26px; min-width: 26px; }
+  .fleet-pane-status { display: none; }
+}
+
 /* Names and pictures */
 .avatar { display: inline-block; flex-shrink: 0; border-radius: 6px; object-fit: cover; background: var(--sand); }
 .ship-name { display: inline-flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.2; text-align: left; }

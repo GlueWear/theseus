@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {Orbit, LayoutList, Camera, TerminalSquare, Plus, RefreshCw, Pause, Play, Trash2, RotateCcw, X, ArrowUpRight, ArrowLeft, AlertCircle, Check, CircleCheck, CircleAlert, Search, Download, LoaderCircle, Shuffle, AppWindow, KeyRound, Globe, Folder, FolderOpen, FolderPlus, ChevronRight, Pencil, ImageUp} from 'lucide-react';
+import {Orbit, LayoutList, LayoutGrid, GripVertical, Maximize2, Minimize2, ArrowUp, ArrowDown, Camera, TerminalSquare, Plus, RefreshCw, Pause, Play, Trash2, RotateCcw, X, ArrowUpRight, ArrowLeft, AlertCircle, Check, CircleCheck, CircleAlert, Search, Download, LoaderCircle, Shuffle, AppWindow, KeyRound, Globe, Folder, FolderOpen, FolderPlus, ChevronRight, Pencil, ImageUp} from 'lucide-react';
 import '@urbit/sigil-js';
 import {Terminal} from '@xterm/xterm';
 import {FitAddon} from '@xterm/addon-fit';
@@ -228,6 +228,129 @@ function FleetTerminal({group, members, host, online, close, runAll}) {
     {(idle.length > 0 || unbooted > 0) && <div className="term-note" role="status">{[idle.length && `${idle.length} paused or not running`, unbooted && `${unbooted} not booted`].filter(Boolean).join(', ')}: commands skip them.</div>}
   </section>;
 }
+function savedFleetView(name, ships) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(`theseus-fleet-view:${name}`) || '{}');
+    const order = Array.isArray(saved.order) ? saved.order.filter(ship => ships.includes(ship)) : [];
+    return {order: [...new Set([...order, ...ships])], layout: ['all', 'two', 'three'].includes(saved.layout) ? saved.layout : 'all'};
+  } catch { return {order: ships, layout: 'all'}; }
+}
+function FleetMoonPane({ship, moon, origin, focused, position, count, profile, onFocus, onGrid, onMove, onOpen, onInstall, onDragStart, onDragEnd, onDrop}) {
+  const pane = useRef(null);
+  const frame = useRef(null);
+  const frameName = useRef(`theseus-view-${ship.slice(1)}`);
+  const submitted = useRef(false);
+  const [visible, setVisible] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [phase, setPhase] = useState('waiting');
+  const [failure, setFailure] = useState('');
+  const available = moon?.status === 'healthy' && !moon.paused && !moon.recovery;
+  useEffect(() => {
+    if (visible || focused) {setVisible(true); return;}
+    if (!('IntersectionObserver' in window)) {setVisible(true); return;}
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) {setVisible(true); observer.disconnect();}
+    }, {rootMargin: '350px'});
+    if (pane.current) observer.observe(pane.current);
+    return () => observer.disconnect();
+  }, [visible, focused]);
+  useEffect(() => {
+    if (!visible || !available || !origin || !frame.current) return;
+    let current = true;
+    submitted.current = false;
+    setPhase('connecting'); setFailure('');
+    moonWeb(ship).then(info => {
+      if (!current) return;
+      if (!info.landscape) {setPhase('missing'); return;}
+      if (!info.code) throw new Error(`Could not log in to ${ship}.`);
+      const form = document.createElement('form');
+      form.method = 'POST'; form.action = `${origin}/~/login`; form.target = frameName.current;
+      for (const [name, value] of Object.entries({password: info.code, redirect: '/apps/landscape/'})) {
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = name; input.value = value; form.append(input);
+      }
+      document.body.append(form);
+      submitted.current = true;
+      setPhase('loading');
+      form.submit(); form.remove();
+    }).catch(err => {if (current) {setFailure(err.message || 'Could not open this moon.'); setPhase('failed');}});
+    return () => {current = false;};
+  }, [visible, available, origin, ship, attempt]);
+  const status = !moon ? 'Not booted' : moon.recovery ? 'Recovering' : moon.paused ? 'Paused' : moon.status !== 'healthy' ? moon.status : null;
+  return <article ref={pane} className={`fleet-pane${focused ? ' focused' : ''}`} onDragOver={event => event.preventDefault()} onDrop={event => {event.preventDefault(); onDrop(ship);}}>
+    <div className="fleet-pane-bar">
+      <span className="fleet-pane-identity"><ShipAvatar ship={ship} profile={profile} origin={origin} size={25}/><span><strong>{profile?.name?.trim() || ship}</strong>{profile?.name?.trim() && <small>{ship}</small>}</span></span>
+      {moon && <span className={`fleet-pane-status${available ? ' live' : ''}`}><i/>{status || 'Live'}</span>}
+      <div className="fleet-pane-actions">
+        {!focused && <IconButton label={`Drag ${ship} to arrange`} draggable onDragStart={event => {event.dataTransfer.effectAllowed = 'move'; onDragStart(ship);}} onDragEnd={onDragEnd}><GripVertical size={15}/></IconButton>}
+        {!focused && <IconButton label={`Move ${ship} earlier`} disabled={position === 0} onClick={() => onMove(ship, -1)}><ArrowUp size={15}/></IconButton>}
+        {!focused && <IconButton label={`Move ${ship} later`} disabled={position === count - 1} onClick={() => onMove(ship, 1)}><ArrowDown size={15}/></IconButton>}
+        {phase === 'failed' && <IconButton label={`Retry ${ship}`} onClick={() => setAttempt(value => value + 1)}><RotateCcw size={15}/></IconButton>}
+        {moon && <IconButton label={`Open ${ship} in a tab`} disabled={!available} onClick={() => onOpen(moon)}><ArrowUpRight size={15}/></IconButton>}
+        <IconButton label={focused ? `Show fleet grid` : `Focus ${ship}`} onClick={focused ? onGrid : () => onFocus(ship)}>{focused ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}</IconButton>
+      </div>
+    </div>
+    <div className="fleet-pane-body">
+      {visible && available && origin && <iframe ref={frame} name={frameName.current} title={`Landscape for ${ship}`} onLoad={event => {
+        if (!submitted.current) return;
+        try {if (event.currentTarget.contentWindow?.location.href === 'about:blank') return;} catch { /* Moon origins are isolated. */ }
+        setPhase('ready');
+      }}/>}
+      {(!visible || !available || !origin || phase !== 'ready') && <div className="fleet-pane-cover" role="status">
+        {!visible ? <LoaderCircle size={20} className="spin"/> : !moon ? <Folder size={22}/> : !available ? <Pause size={22}/> : !origin ? <Globe size={22}/> : phase === 'missing' ? <AppWindow size={22}/> : phase === 'failed' ? <CircleAlert size={22}/> : <LoaderCircle size={20} className="spin"/>}
+        <strong>{!visible ? 'Waiting to load' : status || (!origin ? 'Gateway unavailable' : {connecting: 'Connecting', loading: 'Opening Landscape', missing: 'Landscape not installed', failed: 'Could not open moon'}[phase] || 'Opening Landscape')}</strong>
+        {failure && <span>{failure}</span>}
+        {phase === 'missing' && moon && <button onClick={() => onInstall(moon)}>Install Landscape</button>}
+        {phase === 'failed' && <button onClick={() => setAttempt(value => value + 1)}>Retry</button>}
+      </div>}
+    </div>
+  </article>;
+}
+function FleetView({group, moons, gw, profiles, close, openMoon, installLandscape}) {
+  const [saved, setSaved] = useState(() => savedFleetView(group.name, group.ships));
+  const [focus, setFocus] = useState(null);
+  const dragging = useRef(null);
+  const order = [...saved.order.filter(ship => group.ships.includes(ship)), ...group.ships.filter(ship => !saved.order.includes(ship))];
+  useEffect(() => {
+    try {localStorage.setItem(`theseus-fleet-view:${group.name}`, JSON.stringify({order, layout: saved.layout}));} catch { /* private browsing */ }
+  }, [group.name, group.ships.join(','), saved]);
+  useEffect(() => {if (focus && !group.ships.includes(focus)) setFocus(null);}, [focus, group.ships.join(',')]);
+  function move(ship, delta) {
+    const next = [...order], from = next.indexOf(ship), to = from + delta;
+    if (from < 0 || to < 0 || to >= next.length) return;
+    [next[from], next[to]] = [next[to], next[from]];
+    setSaved(value => ({...value, order: next}));
+  }
+  function drop(ship) {
+    const from = order.indexOf(dragging.current), to = order.indexOf(ship);
+    dragging.current = null;
+    if (from < 0 || to < 0 || from === to) return;
+    const next = [...order]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved);
+    setSaved(value => ({...value, order: next}));
+  }
+  const problem = gatewayProblem(gw);
+  const layout = saved.layout;
+  return <section className="fleet-view" aria-label={`Fleet view for ${group.name}`}>
+    <div className="fleet-view-toolbar">
+      <button className="fleet-view-back" onClick={close}><ArrowLeft size={17}/>Moons</button>
+      <div className="fleet-view-title"><LayoutGrid size={19}/><strong>{group.name}</strong><span>{group.ships.length} moons</span></div>
+      {focus && <button className="fleet-view-grid-button" onClick={() => setFocus(null)}><LayoutGrid size={16}/>Show grid</button>}
+      <div className="fleet-view-layout" role="group" aria-label="Fleet layout">
+        {[['all', 'All ships'], ['two', '2 wide'], ['three', '3 wide']].map(([value, label]) => <button key={value} className={layout === value && !focus ? 'active' : ''} aria-pressed={layout === value && !focus} onClick={() => {setSaved(current => ({...current, layout: value})); setFocus(null);}}>{label}</button>)}
+      </div>
+    </div>
+    {problem && <div role="alert" className="fleet-view-warning"><Globe size={16}/><span>{problem}</span></div>}
+    <div className={`fleet-view-grid ${focus ? 'single' : layout}`}>
+      {order.map((ship, position) => {
+        const moon = moons.find(row => row.ship === ship);
+        const origin = !problem ? moonOrigin(gw.url, ship) : null;
+        return <FleetMoonPane key={ship} ship={ship} moon={moon} origin={origin} profile={profiles(ship)} focused={focus === ship} position={position} count={order.length}
+          onFocus={setFocus} onGrid={() => setFocus(null)} onMove={move} onOpen={openMoon} onInstall={installLandscape}
+          onDragStart={value => {dragging.current = value;}} onDragEnd={() => {dragging.current = null;}} onDrop={drop}/>;
+      })}
+    </div>
+  </section>;
+}
 // What a boot is doing, from the click until the moon's desks run.
 function BootStatus({boot, moon, dismiss}) {
   const [, tick] = useState(0);
@@ -416,6 +539,7 @@ function App() {
   const [profileData, setProfileData] = useState(null);
   const [hostBusy, setHostBusy] = useState(false);
   const [fleetTerm, setFleetTerm] = useState(null);
+  const [fleetView, setFleetView] = useState(null);
   const refreshing = useRef(false);
   const refreshError = useRef('');
   const mounted = useRef(true);
@@ -665,8 +789,8 @@ function App() {
     }
     return failed;
   }
-  const openDojo = ship => {setFleetTerm(null); setDojo(ship);};
-  const showView = next => {setView(next); setDojo(null); setFleetTerm(null);};
+  const openDojo = ship => {setFleetTerm(null); setFleetView(null); setDojo(ship);};
+  const showView = next => {setView(next); setDojo(null); setFleetTerm(null); setFleetView(null);};
   async function confirm(e) {
     e.preventDefault(); const {type, value} = modal;
     if (type === 'profile') {
@@ -748,6 +872,7 @@ function App() {
     : (setSize.get(v.set) || 1) > 1 ? `${snapshotLabel(v.set)} for ${v.ships[0]}` : snapshotLabel(v.set || v.path);
   const activeMoon = moons.find(m => m.ship === dojo);
   const fleetTermGroup = !activeMoon && fleets.find(group => group.name === fleetTerm);
+  const fleetViewGroup = !activeMoon && !fleetTermGroup && fleets.find(group => group.name === fleetView);
   const avatarOrigin = ship => ship === data?.host ? '' : gatewayProblem(gw) ? undefined : moonOrigin(gw.url, ship);
   const fleetBootGroup = fleetBoot && fleets.find(group => group.name === fleetBoot.name);
   useEffect(() => {
@@ -789,6 +914,7 @@ function App() {
       <IconButton label={`Add desks to fleet ${group.name}`} disabled={!canAct || !canAdd} onClick={() => open('fleet-add-desks',group)}><span className="desk-action-icon" aria-hidden="true">%</span></IconButton>
       <IconButton label={`${allPaused ? 'Resume' : 'Pause'} fleet ${group.name}`} disabled={!canAct || !ready} onClick={() => run(allPaused ? 'fleet-resume' : 'fleet-pause',{name:group.name})}>{allPaused ? <Play size={16}/> : <Pause size={16}/>}</IconButton>
       <IconButton label={`Open fleet terminal for ${group.name}`} disabled={!state.members.length} onClick={() => {setDojo(null); setFleetTerm(group.name);}}><TerminalSquare size={16}/></IconButton>
+      <IconButton label={`Open fleet view for ${group.name}`} disabled={!state.members.length} onClick={() => {setDojo(null); setFleetTerm(null); setFleetView(group.name);}}><LayoutGrid size={16}/></IconButton>
       <IconButton label={`Snapshots of fleet ${group.name}`} disabled={!canAct || !state.members.length} onClick={() => open('fleet-snapshots', group)}><Camera size={16}/></IconButton>
       <IconButton label={`Remove fleet ${group.name}`} disabled={!canAct} onClick={() => open('fleet-kill',group)}><Trash2 size={16}/></IconButton>
     </div>;
@@ -823,14 +949,14 @@ function App() {
     <label className="check"><input type="checkbox" checked={!!form.resume} onChange={e => setForm({...form, resume: e.target.checked})}/>Keep {many ? 'these moons' : who} running after saving</label>
     <p className="hint">A snapshot pauses {many ? 'the moons' : 'the moon'} while it is taken.{form.resume ? '' : ' They stay paused until you resume them.'}</p>
   </>;
-  return <div className="shell">
+  return <div className={`shell${fleetViewGroup ? ' fleet-view-shell' : ''}`}>
     <aside className="sidebar"><a href="#" className="brand" onClick={e => {e.preventDefault(); showView('moons');}}><img src={icon} alt="" className="brand-icon"/>Theseus</a><span className="section-label">WORKSPACE</span><nav>
       <button className={view === 'moons' ? 'active' : ''} onClick={() => showView('moons')}><LayoutList size={18}/>Moons<span>{moons.length}</span></button>
       <button className={view === 'snapshots' ? 'active' : ''} onClick={() => showView('snapshots')}><Camera size={18}/>Snapshots<span>{sets.length}</span></button>
       <button className={view === 'gateway' ? 'active' : ''} onClick={() => showView('gateway')}><Globe size={18}/>Gateway<span>{gw?.status === 'ok' || gw?.status === 'external' ? 'on' : gw === undefined ? '' : 'off'}</span></button>
       <button className={view === 'sidecar' ? 'active' : ''} onClick={() => showView('sidecar')}><Download size={18}/>Sidecar<span>optional</span></button>
     </nav><div className="host"><span className="section-label">HOST SHIP</span><div>{data ? <ShipIdentity ship={data.host} profile={profileOf(data.host)} origin="" edit={editable(data.host) ? () => openProfile(data.host) : null} disabled={!canAct}/> : <strong>Not connected</strong>}{data && editable(data.host) && <IconButton label="Edit the host's name and picture" disabled={!canAct} onClick={() => openProfile(data.host)}><Pencil size={14}/></IconButton>}</div><span className={`connection ${online ? 'live' : ''} ${online && hostBusy ? 'busy' : ''}`} title={online && hostBusy ? 'The host is busy with a long event and did not answer the last refresh in time.' : undefined}><i/>{online ? hostBusy ? 'Host busy' : 'Connected' : loading ? 'Connecting' : 'Offline'}</span></div></aside>
-    <main><header className="page-header"><div><span className="section-label">THESEUS / {view.toUpperCase()}</span><h1>{activeMoon ? 'Dojo' : fleetTermGroup ? 'Fleet terminal' : view === 'moons' ? 'Moons' : view === 'gateway' ? 'Gateway' : view === 'sidecar' ? 'Sidecar' : 'Snapshots'}</h1></div><div className="tools"><IconButton label="Refresh fleet" onClick={() => {setError(''); refresh(); loadProfiles();}} disabled={loading}><RefreshCw size={18}/></IconButton>{view === 'moons' && <><button className="primary" disabled={!canAct} onClick={() => open('boot-fleet')}><FolderPlus size={17}/>Boot Fleet</button><button className="primary" disabled={!canAct} onClick={() => open('boot')}><Plus size={17}/>Boot moon</button></>}</div></header>
+    <main>{fleetViewGroup ? <FleetView key={fleetViewGroup.name} group={fleetViewGroup} moons={moons} gw={gw} profiles={profileOf} close={() => setFleetView(null)} openMoon={openLandscape} installLandscape={moon => {setFleetView(null); open('landscape', moon);}}/> : <><header className="page-header"><div><span className="section-label">THESEUS / {view.toUpperCase()}</span><h1>{activeMoon ? 'Dojo' : fleetTermGroup ? 'Fleet terminal' : view === 'moons' ? 'Moons' : view === 'gateway' ? 'Gateway' : view === 'sidecar' ? 'Sidecar' : 'Snapshots'}</h1></div><div className="tools"><IconButton label="Refresh fleet" onClick={() => {setError(''); refresh(); loadProfiles();}} disabled={loading}><RefreshCw size={18}/></IconButton>{view === 'moons' && <><button className="primary" disabled={!canAct} onClick={() => open('boot-fleet')}><FolderPlus size={17}/>Boot Fleet</button><button className="primary" disabled={!canAct} onClick={() => open('boot')}><Plus size={17}/>Boot moon</button></>}</div></header>
       {boot && <BootStatus boot={boot} moon={bootRow} dismiss={() => setBoot(null)}/>}
       {fleetBoot && <FleetBootStatus boot={fleetBoot} group={fleetBootGroup} moons={moons} dismiss={() => setFleetBoot(null)}/>}
       {error && <div role="alert" className="banner error"><AlertCircle size={18}/><span>{error}</span>{!online && <a href="/~/login?redirect=/apps/theseus">Sign in <ArrowUpRight size={14}/></a>}<IconButton label="Dismiss error" onClick={() => setError('')}><X size={16}/></IconButton></div>}
@@ -869,7 +995,7 @@ function App() {
         {!sets.length && <div className="empty"><Camera size={34}/><h2>No snapshots</h2></div>}
       </>}
       </>}
-      <footer><span>{online ? data?.host : 'Host unavailable'}</span><span>{data ? `${fleets.length} fleets / ${moons.length} moons / ${sets.length} snapshots` : 'Awaiting fleet state'}</span></footer>
+      <footer><span>{online ? data?.host : 'Host unavailable'}</span><span>{data ? `${fleets.length} fleets / ${moons.length} moons / ${sets.length} snapshots` : 'Awaiting fleet state'}</span></footer></>}
     </main>
     {modal && <Dialog title={{boot: 'Boot moon', 'boot-fleet':'Boot Fleet', 'fleet-add-desks':'Add desks to fleet', 'moon-add-desks':`Add desks to ${modal.value?.ship}`, 'fleet-snapshots': `Snapshots of fleet ${modal.value?.name}`, 'moon-snapshots': `Snapshots of ${modal.value?.ship}`, profile: modal.value?.ship === data?.host ? 'Host name and picture' : `Name and picture of ${modal.value?.ship}`, restore: 'Restore snapshot', kill: 'Remove moon', 'fleet-kill':'Remove fleet', delete: 'Delete snapshot', landscape: 'Install Landscape', code: '+code', gateway: 'Web gateway'}[modal.type]} close={() => setModal(null)} busy={busy}><form onSubmit={confirm}>
       {modal.type === 'boot' && <><label>Moon name<div className="input-group"><input autoFocus aria-label="Moon name" value={form.ship} onChange={e => setForm({...form, ship: e.target.value})}/><IconButton type="button" label="Generate moon name" onClick={() => setForm({...form, ship: newMoon(data.host, moons.map(m => m.ship))})}><Shuffle size={18}/></IconButton></div></label>{deskPicker}</>}

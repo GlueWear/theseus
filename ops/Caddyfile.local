@@ -42,6 +42,9 @@ http://:{$THESEUS_WEB_PORT:8084} {
 
 	@moon header_regexp moon Host ^(?P<ship>[a-z-]+)\.localhost(?::[0-9]+)?$
 	handle @moon {
+		# Keep embedded moon sessions scoped to the host page's partition.
+		# Eyre's default Lax cookie is not sent from a Fleet View iframe.
+		header >Set-Cookie "^(urbauth-[^=]+=.*)$" "$1; SameSite=None; Secure; Partitioned"
 		rewrite * /theseus/~{re.moon.ship}{uri}
 		import eyre
 	}
