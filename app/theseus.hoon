@@ -152,12 +152,8 @@
           park=vase
           caches=(map @tas vase)
       ==
-    ::  desks chosen in the console at boot: each is seeded into the moon's
-    ::  Clay from a boot cache, then installed from its source: us, or the
-    ::  ship our copy syncs from
-    ::
-    ::  %catching-up: installed, while Kiln's first check of the source,
-    ::  and any merge it brings, are still under way
+    ::  install progress kept by states %6 to %12, read only to load them;
+    ::  %13 keeps none and reads each moon's Kiln when asked (+ui-desks)
     ::
     +$  desk-stage  ?(%seeded %installing %catching-up %running %failed)
     +$  desk-progress
@@ -311,7 +307,25 @@
           fleets=(map @tas managed-fleet)
           nicknames=(map ship @t)
       ==
-    +$  versioned-state  $%(state-5 state-6 state-7 state-8 state-9 state-10 state-11 state-12)
+    ::  %13 drops install progress and its timer: a moon's desks are read
+    ::  from its Kiln when a page or %manor asks (+ui-desks)
+    ::
+    +$  state-13
+      $:  %13
+          piers=fleet
+          fleet-snaps=(map path fleet-snapshot)
+          files=(axal (cask))
+          park=vase
+          caches=(map @tas vase)
+          boot-caches=(map (set desk) boot-cache)
+          booted=(map ship @da)
+          recoveries=(map ship recovery-job)
+          recovery-timer=(unit @da)
+          fleets=(map @tas managed-fleet)
+          nicknames=(map ship @t)
+      ==
+    +$  versioned-state
+      $%(state-5 state-6 state-7 state-8 state-9 state-10 state-11 state-12 state-13)
     ++  pack-park
       |=  pak=task:clay
       ^-  vase
@@ -374,7 +388,7 @@
     +$  card  $+(card card:agent:gall)
     --
 ::
-=|  state-12
+=|  state-13
 =*  state  -
 =<
   %-  agent:dbug
@@ -407,39 +421,44 @@
     ::  cast failure here used to erase every pier and every snapshot.
     |^
     ?+    -.q.old-vase  ~|([%theseus-unknown-state -.q.old-vase] !!)
+        %13
+      =/  old  !<(state-13 old-vase)
+      ~&  [%theseus-state-load %13]
+      (load-current old)
+    ::
         %12
       =/  old  !<(state-12 old-vase)
-      ~&  [%theseus-state-load %12]
+      ~&  [%theseus-state-migrate %12 %13]
       (load-state old)
     ::
         %11
       =/  old  !<(state-11 old-vase)
-      ~&  [%theseus-state-migrate %11 %12]
+      ~&  [%theseus-state-migrate %11 %13]
       (load-state (state-11-to-12 old))
     ::
         %10
       =/  old  !<(state-10 old-vase)
-      ~&  [%theseus-state-migrate %10 %12]
+      ~&  [%theseus-state-migrate %10 %13]
       (load-state (state-11-to-12 (state-10-to-11 old)))
     ::
         %9
       =/  old  !<(state-9 old-vase)
-      ~&  [%theseus-state-migrate %9 %12]
+      ~&  [%theseus-state-migrate %9 %13]
       (load-state (state-11-to-12 (state-10-to-11 (state-9-to-10 old))))
     ::
         %8
       =/  old  !<(state-8 old-vase)
-      ~&  [%theseus-state-migrate %8 %12]
+      ~&  [%theseus-state-migrate %8 %13]
       (load-state (state-11-to-12 (state-10-to-11 (state-9-to-10 (state-8-to-9 old)))))
     ::
         %7
       =/  old  !<(state-7 old-vase)
-      ~&  [%theseus-state-migrate %7 %12]
+      ~&  [%theseus-state-migrate %7 %13]
       (load-state (state-11-to-12 (state-10-to-11 (state-9-to-10 (state-7-to-9 old)))))
     ::
         %6
       =/  old  !<(state-6 old-vase)
-      ~&  [%theseus-state-migrate %6 %12]
+      ~&  [%theseus-state-migrate %6 %13]
       ::  every plan so far installed from us
       ::
       =/  plans=(map ship install-plan)
@@ -465,7 +484,7 @@
     ::
         %5
       =/  old  !<(state-5 old-vase)
-      ~&  [%theseus-state-migrate %5 %12]
+      ~&  [%theseus-state-migrate %5 %13]
       %-  load-state
       %-  state-11-to-12
       %-  state-10-to-11
@@ -476,11 +495,22 @@
     ::  timer and re-arm it from persisted jobs before accepting traffic.
     ::
     ++  load-state
-      |=  new=state-12
+      |=  old=state-12
+      ^-  (quip card _this)
+      (load-current (state-12-to-13 old))
+    ::
+    ++  load-current
+      |=  new=state-13
       ^-  (quip card _this)
       =.  this  this(state new(recovery-timer ~))
       =^  cards  state  arm-recovery-timer:hc
       [(weld cards noltbook-watch:hc) this]
+    ::  when an old install plan started, which dates a moon's boot
+    ::
+    ++  plan-started
+      |=  [plans=(map ship install-plan) who=ship]
+      ^-  (unit @da)
+      (bind (~(get by plans) who) |=(p=install-plan started.p))
     ::  moons from before %8 get the time of their boot commit
     ::
     ++  state-7-to-9
@@ -490,7 +520,8 @@
       :*  %9  piers.old  fleet-snaps.old  files.old  park.old  caches.old
           boot-caches.old  install-plans.old  install-timer.old
           %-  ~(urn by piers.old)
-          |=([who=ship saved=saved-pier] (moon-born:hc who saved install-plans.old dflt))
+          |=  [who=ship saved=saved-pier]
+          (moon-born:hc who saved (plan-started install-plans.old who) dflt)
       ==
     ::  %8 gave seeded moons their host's first %base commit time; redo those
     ::
@@ -506,7 +537,7 @@
                 !=(had (base-commit-date:hc who saved 1))
             ==
           u.had
-        (moon-born:hc who saved install-plans.old dflt)
+        (moon-born:hc who saved (plan-started install-plans.old who) dflt)
       [%9 +.old(booted fixed)]
     ::  %10 adds only persisted restore coordination; old states begin idle.
     ::
@@ -580,6 +611,25 @@
           recovery-timer.old
           fleets.old
           *(map ship @t)
+      ==
+    ::  %13 drops install progress and its timer; a wait left over from %12
+    ::  is ignored when it fires
+    ::
+    ++  state-12-to-13
+      |=  old=state-12
+      ^-  state-13
+      :*  %13
+          piers.old
+          fleet-snaps.old
+          files.old
+          park.old
+          caches.old
+          boot-caches.old
+          booted.old
+          recoveries.old
+          recovery-timer.old
+          fleets.old
+          nicknames.old
       ==
     --
   ::
@@ -842,11 +892,10 @@
     |=  [=wire =sign-arvo]
     ^-  (quip card _this)
     ?+    wire  (on-arvo:def wire sign-arvo)
+    ::  install progress was polled until %13; a wait set before then
+    ::
         [%install-plans @ ~]
-      ?>  ?=([%behn %wake *] sign-arvo)
-      =/  before  ui-print:hc
-      =^  cards  state  (wake-install-plans:hc (slav %da i.t.wire))
-      [?:(=(before ui-print:hc) cards [ui-signal:hc cards]) this]
+      `this
     ::
         [%recoveries @ ~]
       ?>  ?=([%behn %wake *] sign-arvo)
@@ -913,10 +962,14 @@
 ++  ui-state
   ^-  json
   =,  enjs:format
+  ::  our copies of the moons' desk sources, read once for every moon
+  ::
+  =/  hpk=kiln-pikes  (fall (mole |.(host-pikes)) ~)
   %-  pairs
   :~  [%host s+(scot %p our.bowl)]
       [%version (numb 3)]
-      [%moons a+(turn ~(tap by piers) ui-moon)]
+      :-  %moons
+      a+(turn ~(tap by piers) |=([who=@p saved=saved-pier] (ui-moon who saved hpk)))
       [%fleets a+(turn ~(tap by fleets) ui-fleet)]
       [%caches a+(turn ~(tap by caches) |=([name=@tas cache=vase] s+name))]
       [%snapshots a+(turn ~(tap by fleet-snaps) ui-snapshot)]
@@ -939,7 +992,7 @@
   ==
 ::
 ++  ui-moon
-  |=  [who=ship saved=saved-pier]
+  |=  [who=ship saved=saved-pier hpk=kiln-pikes]
   ^-  json
   =/  h  (health-of who saved)
   =/  recovery  (~(get by recoveries) who)
@@ -951,7 +1004,7 @@
       [%queued (numb queued.h)]
       [%identity b+identity-ok.h]
       [%vanes a+(turn ~(tap in vanes.h) |=(v=@tas s+v))]
-      [%desks a+(ui-plan who)]
+      [%desks a+(ui-desks who hpk)]
       :-  %recovery
       ?~  recovery  ~
       %-  pairs
@@ -964,15 +1017,14 @@
   ==
 ::  +moon-born: when a moon booted before boot times were kept was booted
 ::
-::    Its install plan's start, if it has one.  Otherwise its boot commit:
-::    the first %base commit after the history seeded from the boot cache
-::    (.dflt), which is the host's.  Now if neither can be read.
+::    When its old install plan .started, if it had one.  Otherwise its boot
+::    commit: the first %base commit after the history seeded from the boot
+::    cache (.dflt), which is the host's.  Now if neither can be read.
 ::
 ++  moon-born
-  |=  [who=ship saved=saved-pier plans=(map ship install-plan) dflt=(unit vase)]
+  |=  [who=ship saved=saved-pier started=(unit @da) dflt=(unit vase)]
   ^-  @da
-  =/  plan  (~(get by plans) who)
-  ?^  plan  started.u.plan
+  ?^  started  u.started
   =/  seeded=@ud
     ?~  dflt  0
     (fall (cache-base-let:theseus-kernel snap.saved u.dflt) 0)
@@ -988,22 +1040,42 @@
   =/  got  (mole |.(;;(cass:clay q.q.u.u.u.res)))
   ?~(got ~ `da.u.got)
 ::
-++  ui-plan
-  |=  who=ship
+::  +ui-desks: a moon's desks, as its Kiln has them now
+::
+::    Every desk with a source: %installing until Kiln runs it, then
+::    %catching-up while it differs from our copy of that source (ours, or
+::    our own desk when it syncs from the same place), else %running.  Read
+::    when a page or %manor asks; nothing is tracked, timed or given up on,
+::    so a desk shows its catching up after a boot, a restore, or a new
+::    release alike.
+::
+++  ui-desks
+  |=  [who=ship hpk=kiln-pikes]
   ^-  (list json)
-  =/  plan  (~(get by install-plans) who)
-  ?~  plan  ~
-  %+  turn  ~(tap by progress.u.plan)
-  |=  [=desk pro=desk-progress]
-  =/  src  (~(get by sources.u.plan) desk)
+  =/  pks=kiln-pikes  (fall (moon-pikes who) ~)
+  %+  murn  ~(tap by pks)
+  |=  [d=desk pik=kiln-pike]
+  ^-  (unit json)
+  ?~  sync.pik  ~
+  =*  src  u.sync.pik
+  =/  them=(unit kiln-pike)
+    ?:  =(ship.src our.bowl)  (~(get by hpk) desk.src)
+    =/  ours  (~(get by hpk) d)
+    ?~  ours  ~
+    ?.  =(sync.u.ours sync.pik)  ~
+    ours
+  =/  stage=@tas
+    ?.  ?=(%live zest.pik)  %installing
+    ?~  them  %running
+    ?:  =(hash.u.them hash.pik)  %running
+    %catching-up
   =,  enjs:format
+  :-  ~
   %-  pairs
-  :~  [%desk s+desk]
-      [%stage s+stage.pro]
-      [%reason ?~(reason.pro ~ s+u.reason.pro)]
-      :-  %source
-      ?~  src  ~
-      (pairs ~[[%ship s+(scot %p ship.u.src)] [%desk s+desk.u.src]])
+  :~  [%desk s+d]
+      [%stage s+stage]
+      [%reason ~]
+      [%source (pairs ~[[%ship s+(scot %p ship.src)] [%desk s+desk.src]])]
   ==
 ::
 ++  host-desk-set
@@ -1247,14 +1319,13 @@
   (profile-facts ~[who])
 ::  +ui-print: what the pages show that can change, cheaply.  Comparing it
 ::  before and after a poke or a timer says whether to tell them (/ui):
-::  paused moons, restore stages, install progress, fleets, snapshots.
-::  Health and queue lengths are read with ui.json, not pushed.
+::  paused moons, restore stages, fleets, snapshots.  Health, queue lengths
+::  and desk stages are read with ui.json, not pushed.
 ::
 ++  ui-print
   ^-  *
   :*  (~(run by piers) |=(p=saved-pier paused.p))
       (~(run by recoveries) |=(j=recovery-job [stage.j reason.j]))
-      (~(run by install-plans) |=(p=install-plan progress.p))
       fleets
       ~(key by fleet-snaps)
       ~(key by caches)
@@ -1767,34 +1838,6 @@
     (~(got by pks) d)
   [d hash.pik]
 ::
-::  +plan-for: progress for a new install plan, every desk but %base at .stage
-::
-++  plan-for
-  |=  [sources=(map desk [=ship =desk]) stage=desk-stage]
-  ^-  install-plan
-  =/  desks  ~(key by sources)
-  :*  desks
-      sources
-      %-  ~(gas by *(map desk desk-progress))
-      %+  turn  ~(tap in desks)
-      |=(d=desk [d d ?:(=(d %base) %catching-up stage) ~])
-      now.bowl
-      now.bowl
-  ==
-::  +extend-plan: retain completed progress and track newly added desks
-::
-++  extend-plan
-  |=  [who=ship sources=(map desk [=ship =desk])]
-  ^-  install-plan
-  =/  out  (plan-for sources %installing)
-  =/  prior  (~(get by install-plans) who)
-  ?~  prior  out
-  =.  desks.out  (~(uni in desks.out) desks.u.prior)
-  =.  sources.out
-    (~(gas by sources.out) ~(tap by sources.u.prior))
-  =.  progress.out
-    (~(gas by progress.out) ~(tap by progress.u.prior))
-  out(started now.bowl, updated now.bowl)
 ::  +kiln-install-event: |install .des from .src, inside the moon
 ::
 ::    Same as typing |install in the moon's dojo, without the parsing.  The
@@ -1840,177 +1883,6 @@
   ?.  ?=([~ ~ ~ *] res)  ~
   (mole |.(;;(kiln-pikes q.q.u.u.u.res)))
 ::
-++  plan-pending
-  |=  plan=install-plan
-  ^-  ?
-  %+  lien  ~(val by progress.plan)
-  |=(pro=desk-progress ?=(?(%seeded %installing %catching-up) stage.pro))
-::  +plan-runnable: paused moons retain pending installs without timing out
-::
-++  plan-runnable
-  |=  [who=ship plan=install-plan]
-  ^-  ?
-  ?.  (plan-pending plan)  |
-  =/  saved  (~(get by piers) who)
-  ?~  saved  |
-  !paused.u.saved
-::  +next-progress: one chosen desk's stage, from the moon's Kiln
-::
-::    Kiln may not have handled the install yet, and keeps a seeded desk
-::    %dead until its first merge from us, so neither is a failure until the
-::    plan is .late.  A desk that tracks some other source has failed.
-::
-++  next-progress
-  |=  $:  d=desk
-          src=[=ship =desk]
-          pik=(unit kiln-pike)
-          msy=kiln-syncs
-          hsy=kiln-syncs
-          hpk=kiln-pikes
-          late=?
-      ==
-  ^-  desk-progress
-  ?:  =(d %base)  (next-catch d src pik msy hsy hpk late)
-  =/  wait=desk-progress
-    ?.  late  [d %installing ~]
-    [d %failed `'Timed out waiting for Kiln to install the desk.']
-  ?~  pik  wait
-  ?~  sync.u.pik  wait
-  ?.  =(src u.sync.u.pik)
-    [d %failed `'The desk tracks another source.']
-  ?.  ?=(%live zest.u.pik)  wait
-  (next-catch d src pik msy hsy hpk late)
-::  +next-catch: an installed desk's stage while Kiln catches it up
-::
-::    Kiln's first check of a source downloads the source's latest revision,
-::    and merges it if it differs; the moon is busy until both are done.  A
-::    sync has heard back once the revision it waits for is one past the
-::    source's latest: our own, or what our own sync of a publisher has
-::    heard.  The desk is merged once it matches the source's contents, as
-::    our copy has them.  A source still unheard from when the plan is .late
-::    has failed; a desk that heard back but still differs (local changes,
-::    or a publisher ahead of our copy) runs anyway.
-::
-++  next-catch
-  |=  $:  d=desk
-          src=[=ship =desk]
-          pik=(unit kiln-pike)
-          msy=kiln-syncs
-          hsy=kiln-syncs
-          hpk=kiln-pikes
-          late=?
-      ==
-  ^-  desk-progress
-  =/  ours=?  =(ship.src our.bowl)
-  =/  want=(unit @ud)
-    ?.  ours
-      (bind (~(get by hsy) [d ship.src desk.src]) |=(s=kiln-sync let.s))
-    %+  bind
-      (mole |.(.^(cass:clay %cw /(scot %p our.bowl)/[desk.src]/(scot %da now.bowl))))
-    |=(c=cass:clay +(ud.c))
-  =/  zyn  (~(get by msy) [d ship.src desk.src])
-  =/  heard=?
-    ?~  want  &
-    ?~  zyn  |
-    (gte let.u.zyn u.want)
-  =/  same=?
-    ?~  pik  &
-    =/  them  (~(get by hpk) ?:(ours desk.src d))
-    ?~  them  &
-    =(hash.u.pik hash.u.them)
-  ?:  &(heard same)  [d %running ~]
-  ?.  late  [d %catching-up ~]
-  ?:  heard  [d %running ~]
-  :+  d  %failed
-  `(rap 3 ~['Kiln never heard back from ' (scot %p ship.src) '/%' desk.src '.'])
-::
-++  install-timeout  ~m20
-++  install-poll  ~s2
-++  catch-poll  ~s5
-::  +install-delay: poll quickly while desks install, gently while they
-::  only catch up
-::
-++  install-delay
-  ^-  @dr
-  =/  installing=?
-    %+  lien  ~(tap by install-plans)
-    |=  [who=ship plan=install-plan]
-    ?&  (plan-runnable who plan)
-        %+  lien  ~(val by progress.plan)
-        |=(pro=desk-progress ?=(?(%seeded %installing) stage.pro))
-    ==
-  ?:(installing install-poll catch-poll)
-::  +moon-syncs: a moon's Kiln syncs, read inside it
-::
-++  moon-syncs
-  |=  who=ship
-  ^-  (unit kiln-syncs)
-  =/  saved  (~(get by piers) who)
-  ?~  saved  ~
-  =/  res
-    %-  mole  |.
-    %+  peek-arvo:theseus-kernel  snap.u.saved
-    [[~ ~] / %gx [who %hood da+scry-time.u.saved] /kiln/syncs/noun]
-  ?.  ?=([~ ~ ~ *] res)  ~
-  (mole |.(;;(kiln-syncs q.q.u.u.u.res)))
-::
-++  host-syncs
-  ^-  kiln-syncs
-  %+  fall
-    %-  mole  |.
-    ;;  kiln-syncs
-    .^(* %gx /(scot %p our.bowl)/hood/(scot %da now.bowl)/kiln/syncs/noun)
-  ~
-::
-++  refresh-install-plans
-  ^-  (map ship install-plan)
-  =/  hsy=kiln-syncs  host-syncs
-  =/  hpk=kiln-pikes  (fall (mole |.(host-pikes)) ~)
-  %-  ~(urn by install-plans)
-  |=  [who=ship plan=install-plan]
-  ?.  (plan-runnable who plan)  plan
-  =/  pks  (moon-pikes who)
-  =/  late=?  (gth now.bowl (add started.plan install-timeout))
-  ?:  &(?=(~ pks) !late)  plan
-  =/  got=kiln-pikes  (fall pks ~)
-  =/  msy=kiln-syncs  (fall (moon-syncs who) ~)
-  %=    plan
-      updated  now.bowl
-      progress
-    %-  ~(urn by progress.plan)
-    |=  [d=desk pro=desk-progress]
-    ?.  ?=(?(%seeded %installing %catching-up) stage.pro)  pro
-    %:  next-progress
-      d
-      (~(gut by sources.plan) d [our.bowl d])
-      (~(get by got) d)
-      msy
-      hsy
-      hpk
-      late
-    ==
-  ==
-::  +arm-install-timer: poll Kiln while any install is pending
-::
-++  arm-install-timer
-  ^-  (quip card _state)
-  ?^  install-timer  `state
-  =/  pending=?
-    %+  lien  ~(tap by install-plans)
-    |=  [who=ship plan=install-plan]
-    (plan-runnable who plan)
-  ?.  pending  `state
-  =/  when  (add now.bowl install-delay)
-  :_  state(install-timer `when)
-  [%pass /install-plans/(scot %da when) %arvo %b %wait when]~
-::
-++  wake-install-plans
-  |=  when=@da
-  ^-  (quip card _state)
-  ?.  =(`when install-timer)  `state
-  =.  install-timer  ~
-  =.  install-plans  refresh-install-plans
-  arm-install-timer
 ::  +arm-recovery-timer: advance persisted restore transactions.
 ::
 ++  recovery-poll  ~s1
@@ -2217,8 +2089,6 @@
     (pe who.act)
   =/  boot-cards  (weld reg-cards cards)
   =.  booted  (~(put by booted) who.act now.bowl)
-  =?  install-plans  !=(~ installs)
-    (~(put by install-plans) who.act (plan-for installs %installing))
   ?:  =(~ later)  [boot-cards state]
   =.  piers
     =/  pier=pier  (unpack-pier (~(got by piers) who.act))
@@ -2239,8 +2109,7 @@
       (turn ~(tap in allies) |=(her=ship (treaty-ally-event who.act her)))
     ==
   =^  event-cards  state  (poke-theseus-events events)
-  =^  timer-cards  state  arm-install-timer
-  [:(weld boot-cards event-cards timer-cards) state]
+  [(weld boot-cards event-cards) state]
 ::
 ++  is-our-moon
   |=  who=ship
@@ -2515,8 +2384,6 @@
       %+  ~(put by piers)  who.act
       %-  pack-pier
       run(snap (add-desks:theseus-kernel snap.run cache added))
-    =.  install-plans
-      (~(put by install-plans) who.act (extend-plan who.act sources))
     =/  allies  (desk-publishers added)
     =/  events=(list theseus-event)
       ;:  weld
@@ -2530,9 +2397,8 @@
         (turn ~(tap in allies) |=(her=ship (treaty-ally-event who.act her)))
       ==
     =^  event-cards  state  (poke-theseus-events events)
-    =^  timer-cards  state  arm-install-timer
     ~&  [%theseus-add-desks who.act ~(tap in added)]
-    [(weld event-cards timer-cards) state]
+    [event-cards state]
   ::
       %add-fleet-desks
     =/  group  (~(get by fleets) name.act)
@@ -2574,10 +2440,6 @@
       :-  who
       ^-  saved-pier
       (pack-pier run(snap (add-desks:theseus-kernel snap.run cache added)))
-    =.  install-plans
-      %-  ~(gas by install-plans)
-      %+  turn  hers
-      |=(who=ship [who (extend-plan who sources)])
     =/  recipe=(list [=desk from=desk-from])
       %+  turn  ~(tap by sources)
       |=  [d=desk src=[=ship =desk]]
@@ -2600,9 +2462,8 @@
         (turn ~(tap in allies) |=(her=ship (treaty-ally-event who her)))
       ==
     =^  event-cards  state  (poke-theseus-events all-events)
-    =^  timer-cards  state  arm-install-timer
     ~&  [%theseus-fleet-add-desks name.act ~(tap in added) hers]
-    [(weld event-cards timer-cards) state]
+    [event-cards state]
   ::
       %init-planet
     ?:  (~(has by piers) who.act)
@@ -2721,10 +2582,6 @@
       %-  ~(dif by piers)
       %-  ~(gas by *fleet)
       (turn hers.act |=(=ship [ship *saved-pier]))
-    =.  install-plans
-      %-  ~(dif by install-plans)
-      %-  ~(gas by *(map ship install-plan))
-      (turn hers.act |=(=ship [ship *install-plan]))
     =.  booted
       %-  ~(dif by booted)
       (~(gas by *(map ship @da)) (turn hers.act |=(=ship [ship *@da])))
@@ -2884,7 +2741,7 @@
       =/  dflt  (~(get by caches) %default)
       %-  ~(uni by booted)
       %-  ~(urn by (~(dif by restored) booted))
-      |=([who=ship saved=saved-pier] (moon-born who saved install-plans dflt))
+      |=([who=ship saved=saved-pier] (moon-born who saved ~ dflt))
     =/  kill-cards=(list card)
       %+  turn  hers
       |=  who=ship
@@ -2944,26 +2801,7 @@
       ?~  active  this
       =.  this  abet-pe:plow:(pe u.active)
       $
-    ::  Paused time does not count against a desk installation timeout.
-    =/  resumed=(set ship)  (~(gas in *(set ship)) hers.act)
-    =.  install-plans
-      %-  ~(urn by install-plans)
-      |=  [who=ship plan=install-plan]
-      ?:  &((~(has in resumed) who) (plan-pending plan))
-        plan(started now.bowl, updated now.bowl)
-      plan
-    ::  Stay in the parent Theseus core so the surrounding +abet-theseus can
-    ::  collect this wait card along with the effects emitted while resuming.
-    =/  timer=(unit @da)  install-timer
-    ?^  timer  this
-    =/  runnable=?
-      %+  lien  ~(tap by install-plans)
-      |=  [who=ship plan=install-plan]
-      (plan-runnable who plan)
-    ?.  runnable  this
-    =/  when  (add now.bowl install-delay)
-    =.  this  this(install-timer `when)
-    (emit-cards [%pass /install-plans/(scot %da when) %arvo %b %wait when]~)
+    this
   ::
       %pause-ships
     =/  blocked  (skim hers.act |=(who=ship (~(has by recoveries) who)))

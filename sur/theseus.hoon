@@ -180,19 +180,6 @@
   ==
 +$  kiln-pikes  (map desk kiln-pike)
 ::
-::  Kiln's state for one sync, as /hood/kiln/syncs gives it ($sync-state in
-::  /lib/hood/kiln): .let is the source revision it waits for next.
-::
-+$  kiln-sync
-  $:  nun=@ta
-      kid=(unit desk)
-      let=@ud
-      nit=(unit ?)
-      hav=(unit @ud)
-      yea=?
-  ==
-+$  kiln-syncs  (map [syd=desk her=ship sud=desk] kiln-sync)
-::
 ::  A visitor's session on a moon, for an agent on this ship (such as
 ::  %manor): watch /session/<rid> on %theseus, then poke
 ::  %theseus-session with the request.  The one fact on that path is the

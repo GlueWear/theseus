@@ -19,9 +19,10 @@ const rejectedDesk = 'noltbook-data';
 // Mirrors %theseus: each desk tracks the host, or the host's own source.
 const sourceOf = (desk, from) => from === 'publisher' ? deskRows.find(r => r.desk === desk).source : {ship:host, desk: desk === 'base' ? 'kids' : desk};
 const moon = (ship, desks=[{desk:'base',from:'host'},{desk:'landscape',from:'host'}], {booted=Date.now(), stage='running'}={}) => ({ship,status:'healthy',paused:false,queued:0,identity:true,vanes,booted,desks:desks.map(({desk,from}) => ({desk,stage:desk === 'base' ? (stage === 'running' ? 'running' : 'catching-up') : stage,reason:null,source:sourceOf(desk,from)}))});
-// Desks of a fresh boot install for a moment, then catch up with their
-// sources, as Kiln does on the host. .held moons stay catching up until a
-// test lets them go.
+// A moon's desks as %theseus reads them from its Kiln when ui.json is asked
+// for: a booted moon's desks are seeded from the host's own copies, so they
+// match at once. .held moons differ from the host (as after a reset or a new
+// release) until a test lets them go; nothing is pushed when that changes.
 let installing = new Map();
 let held = new Set();
 const settle = () => {
@@ -62,15 +63,19 @@ let deletes = 0;
 const channels = new Map();
 // Mirrors %theseus /x/profiles: Noltbook's profile, else a nickname.
 const profileRow = ship => {const p = profiles.get(ship) || {noltbook: false, name: null, avatar: null}; return {ship, noltbook: p.noltbook, name: p.name, avatar: p.noltbook ? p.avatar : null};};
-// Mirrors %theseus's /ui facts: "something changed", after an action and
-// while installs move on.
+// Added desks arrive seeded from the host's copies, but a paused moon runs
+// their install only when resumed: until then its Kiln doesn't list them.
+const addDesks = (member, rows) => {
+  const desks = rows.map(({desk,from})=>({desk,stage:'running',reason:null,source:sourceOf(desk,from)}));
+  if (member.paused) member.pending = [...(member.pending || []), ...desks];
+  else member.desks.push(...desks);
+};
+const setPaused = (member, paused) => {
+  member.paused = paused;
+  if (!paused && member.pending) {member.desks.push(...member.pending); delete member.pending;}
+};
+// Mirrors %theseus's /ui facts: "something changed", after an action.
 const pushUi = () => {for (const ch of channels.values()) if (ch.ui) send(ch, {id: ch.ui, response: 'diff', json: true});};
-// The host's install timer: desks move on, and the pages are told.
-setInterval(() => {
-  const before = JSON.stringify(data.moons.map(m => m.desks.map(d => d.stage)));
-  settle();
-  if (JSON.stringify(data.moons.map(m => m.desks.map(d => d.stage))) !== before) pushUi();
-}, 250);
 // Mirrors %theseus's /profiles facts: one row per change, to every watcher.
 const pushProfile = ship => {for (const ch of channels.values()) if (ch.profiles) send(ch, {id: ch.profiles, response: 'diff', json: profileRow(ship)});};
 const send = (channel, event) => {
@@ -90,7 +95,6 @@ createServer(async (req,res) => {
     const m = data.moons.find(row => row.ship === hold[2]);
     if (hold[1] === 'hold') {held.add(hold[2]); installing.set(hold[2], Date.now()); m?.desks.forEach(d => {d.stage = 'catching-up';});}
     else held.delete(hold[2]);
-    pushUi();
     return res.end('ok');
   }
   if (req.url === '/uploads') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(uploads));}
@@ -123,7 +127,7 @@ createServer(async (req,res) => {
     res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({ship: web[1], code, landscape: installed.has(web[1])}));
   }
   if (req.url === '/~/name') return res.end(host);
-  if (req.url === '/~/scry/theseus/ui.json') {settle(); res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(data));}
+  if (req.url === '/~/scry/theseus/ui.json') {settle(); res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(data, (key, value) => key === 'pending' ? undefined : value));}
   if (req.url === '/~/scry/theseus/desks.json') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({version:1,desks:deskRows}));}
   if (!req.url.startsWith('/~/channel/')) {res.statusCode=404; return res.end();}
   const channel = channels.get(req.url) || {pending:[],response:null,sub:0}; channels.set(req.url,channel);
@@ -174,8 +178,7 @@ createServer(async (req,res) => {
       for (const ship of group.ships) {
         const member=data.moons.find(row=>row.ship===ship);if(!member)continue;
         const have=new Set(member.desks.map(row=>row.desk));
-        member.desks.push(...fresh.filter(row=>!have.has(row.desk)).map(({desk,from})=>({desk,stage:desk==='base'?'running':'installing',reason:null,source:sourceOf(desk,from)})));
-        installing.set(ship,Date.now()+1500);
+        addDesks(member, fresh.filter(row=>!have.has(row.desk)));
         if(fresh.some(row=>row.desk==='landscape'))installed.add(ship);
       }
     }
@@ -185,8 +188,7 @@ createServer(async (req,res) => {
       const existing=new Set(member.desks.map(row=>row.desk));
       const fresh=value.desks.filter(row=>!existing.has(row.desk));
       if (!fresh.length || fresh.some(row=>row.desk===rejectedDesk)) {send(channel,{id:action.id,response:'poke',err:'rejected'});continue;}
-      member.desks.push(...fresh.map(({desk,from})=>({desk,stage:desk==='base'?'running':'installing',reason:null,source:sourceOf(desk,from)})));
-      installing.set(member.ship,Date.now()+1500);
+      addDesks(member, fresh);
       if(fresh.some(row=>row.desk==='landscape'))installed.add(member.ship);
     }
     if (kind === 'boot') {
@@ -194,11 +196,11 @@ createServer(async (req,res) => {
       if (!Array.isArray(value.desks) || !value.desks.every(d => typeof d?.desk === 'string' && ['host','publisher'].includes(d.from))) {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
       // The host acknowledges a boot only once the moon is built.
       await new Promise(resolve => setTimeout(resolve, 700));
-      data.moons.push(moon(value.who,value.desks,{stage:'installing'})); installing.set(value.who, Date.now() + 1500);
+      data.moons.push(moon(value.who,value.desks));
       if (value.desks.some(d => d.desk === 'landscape')) installed.add(value.who);
     }
-    if (kind === 'pause' || kind === 'resume') data.moons.find(m=>m.ship===value.who).paused=kind==='pause';
-    if (kind === 'fleet-pause' || kind === 'fleet-resume') {const group=data.fleets.find(g=>g.name===value.name);for(const ship of group?.ships||[]){const m=data.moons.find(row=>row.ship===ship);if(m)m.paused=kind==='fleet-pause';}}
+    if (kind === 'pause' || kind === 'resume') setPaused(data.moons.find(m=>m.ship===value.who), kind==='pause');
+    if (kind === 'fleet-pause' || kind === 'fleet-resume') {const group=data.fleets.find(g=>g.name===value.name);for(const ship of group?.ships||[]){const m=data.moons.find(row=>row.ship===ship);if(m)setPaused(m, kind==='fleet-pause');}}
     if (kind === 'kill') {data.moons=data.moons.filter(m=>m.ship!==value.who);data.fleets=data.fleets.map(group=>({...group,ships:group.ships.filter(ship=>ship!==value.who)})).filter(group=>group.ships.length);}
     if (kind === 'fleet-kill') {const group=data.fleets.find(g=>g.name===value.name);const ships=new Set(group?.ships||[]);data.moons=data.moons.filter(m=>!ships.has(m.ship));data.fleets=data.fleets.filter(g=>g.name!==value.name);}
     if (kind === 'snapshot') {

@@ -129,8 +129,9 @@ test('a fleet generates moons and applies folder actions to every member',async(
   await expect(add.getByLabel('Include %landscape')).toHaveCount(0);
   await add.getByLabel('Include %groups').check();
   await add.getByRole('button',{name:'Add desks',exact:true}).click();
+  // the fleet lists the desk at once; its paused moons install it when resumed
   await expect(group.locator('.desk-state',{hasText:'%groups'}).first()).toBeVisible();
-  await expect(page.locator('tr.fleet-child .desk-column .desk-state.installing',{hasText:'%groups'})).toHaveCount(2);
+  await expect(page.locator('tr.fleet-child .desk-column .desk-state',{hasText:'%groups'})).toHaveCount(0);
   await page.getByRole('button',{name:'Resume fleet workers'}).click();
   await expect(page.locator('tr.fleet-child .desk-column .desk-state.running',{hasText:'%groups'})).toHaveCount(2,{timeout:10000});
   // A fleet snapshot is one snapshot per moon, restored together.

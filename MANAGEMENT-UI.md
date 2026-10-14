@@ -30,11 +30,14 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
   together share a `set`, and their paths are `<set>/~ship`. Older snapshots
   are a set of their own.
   `booted` is the boot time in Unix ms. The console lists moons oldest first.
-  `desks` is the moon's install plan, `[{desk, stage, reason, source: {ship, desk}}]`,
-  with `stage` one of `installing`, `catching-up`, `running`, `failed`.
-  `catching-up` means installed, while Kiln's first check of the source, and
-  any merge it brings, are under way; the moon is busy on the host until
-  then. It is empty for moons booted before the desk picker.
+  `desks` is each desk the moon's Kiln syncs from a source, read from its Kiln
+  when `ui.json` is asked for: `[{desk, stage, reason, source: {ship, desk}}]`,
+  with `stage` one of `installing` (Kiln isn't running it yet),
+  `catching-up` (it differs from the host's copy of that source: the host's
+  own desk, or the host's desk that syncs from the same place) or `running`.
+  `reason` is always null. Nothing is tracked or timed: a page sees a change
+  the next time it reads `ui.json`, and `%manor` checks it as it hands out a
+  moon.
   `recovery` is null or `{stage, attempts, reason}`; its stages are
   `registering`, `restarting`, and `failed`.
   A fleet record is durable even while some members are not booted. Membership

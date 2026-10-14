@@ -197,9 +197,9 @@ Under the hood the page:
 - **No refresh timer.** The console reads `ui.json` when it opens and when
   `%theseus` says something changed (`/ui`). `%theseus` compares a cheap
   fingerprint of what the console shows (paused moons, restore stages,
-  install progress, fleets, snapshots, caches) before and after each poke
-  and each install or restore timer, and sends the signal only when it
-  differs. Moon traffic never triggers it. While the host is busy or out of
+  fleets, snapshots, caches) before and after each poke and each restore
+  timer, and sends the signal only when it differs. Desk stages aren't in
+  it: they're read with `ui.json`. Moon traffic never triggers it. While the host is busy or out of
   reach, the console retries once at a time. An idle console makes no
   requests at all.
 - **Gateway health check.** The local gateway's Caddy forwards to the host
@@ -269,17 +269,20 @@ What happens on boot (`%init-moon-desks` in `app/theseus.hoon`):
    ship the host's copy syncs from) is allied in the moon's `%treaty`, as a
    Landscape install would do. Docket only installs apps whose treaty it has,
    so an app's in-app "install X" button needs this.
-6. **Progress.** A 2-second timer reads the moon's Kiln until each desk runs
-   from the expected source. Then each desk is *catching up* until Kiln has
-   heard back from its source (the revision its sync waits for is one past
-   the source's latest: the host's own, or what the host's sync of that
-   publisher has heard) and the desk's contents match the source's as the
-   host has them. That polls every 5 seconds. A desk is marked failed on a
-   wrong source, or when, after 20 minutes, it is not installed or its
-   source was never heard from; a desk that heard back but still differs
-   then runs anyway. The moon's badge reads "catching up" meanwhile, and a
-   fleet's boot bar says "settling" until every member is done. Each moon row
-   shows each desk's stage, and hovering shows its source.
+6. **Readiness, read when asked.** Nothing tracks the install. When
+   `ui.json` is read (a page loading, or `%manor` handing out a moon),
+   `+ui-desks` reads the moon's Kiln: each desk that syncs from a source is
+   *installing* until Kiln runs it, *catching up* while its contents differ
+   from the host's copy of that source (the host's own desk, or the host's
+   desk that syncs from the same place), and otherwise *running*. A moon
+   just booted from the host's copies matches at once; one reset to an older
+   snapshot, or behind a new release, shows catching up until Kiln merges
+   the update, and clears by itself. There is no timer, no deadline and no
+   "failed": until state `%13` a 2-to-5-second timer polled each moon's Kiln
+   and gave up after 20 minutes, which flagged moons that were only slow and
+   never noticed a later update. The moon's badge reads "catching up" while
+   any desk does; each moon row shows each desk's stage, and hovering shows
+   its source.
 
 Verified live on 2026-10-03:
 

@@ -81,12 +81,12 @@ function Badge({moon}) {
   const catching = !recovery && moon.status === 'healthy' && !moon.paused && catchingUp(moon);
   const label = recovery ? recovery.stage === 'failed' ? 'recovery failed' : recovery.stage : moon.status !== 'healthy' ? moon.status : moon.paused ? 'paused' : catching ? 'catching up' : 'running';
   const tone = recovery ? recovery.stage === 'failed' ? 'degraded' : 'paused' : catching ? 'catching' : label;
-  return <span className={`badge ${tone}`} title={recovery?.reason || (catching ? 'Kiln is still checking this moon\'s desks against their sources and merging what they bring. The moon may respond slowly until it is done.' : undefined)}><i/>{label}</span>;
+  return <span className={`badge ${tone}`} title={recovery?.reason || (catching ? 'Some of this moon\'s desks differ from the host\'s copies: Kiln is downloading or merging an update. The moon may respond slowly until it is done. Refresh to check again.' : undefined)}><i/>{label}</span>;
 }
 function DeskProgress({desks}) {
   if (!desks?.length) return <span className="muted">Untracked</span>;
   const stage = row => row.stage === 'catching-up' ? 'catching up' : row.stage;
-  const about = row => row.stage === 'catching-up' ? `%${row.desk}: catching up with ${row.source ? `${row.source.ship}/%${row.source.desk}` : 'its source'}: Kiln's first check, and any merge it brings` : `%${row.desk}: ${row.stage}${row.source ? `, updates from ${row.source.ship}/%${row.source.desk}` : ''}`;
+  const about = row => row.stage === 'catching-up' ? `%${row.desk}: catching up with ${row.source ? `${row.source.ship}/%${row.source.desk}` : 'its source'}: it differs from the host's copy until Kiln downloads and merges the update` : `%${row.desk}: ${row.stage}${row.source ? `, updates from ${row.source.ship}/%${row.source.desk}` : ''}`;
   return <div className="desk-progress">{desks.map(row => <span key={row.desk} className={`desk-state ${row.stage}`} title={row.reason || about(row)}><b>%{row.desk}</b><i/>{stage(row)}</span>)}</div>;
 }
 function Dialog({title, children, close, busy}) {
@@ -352,7 +352,9 @@ function FleetView({group, moons, gw, profiles, close, openMoon, installLandscap
   </section>;
 }
 // What a boot is doing, from the click until the moon's desks run.
-function BootStatus({boot, moon, dismiss}) {
+// Desk stages are read when the page asks, not pushed: while desks are still
+// installing or catching up, the panel says so and offers a refresh.
+function BootStatus({boot, moon, dismiss, refresh}) {
   const [, tick] = useState(0);
   const finished = boot.phase === 'ready' || boot.phase === 'failed';
   useEffect(() => {if (finished) return; const timer = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(timer);}, [finished]);
@@ -363,7 +365,7 @@ function BootStatus({boot, moon, dismiss}) {
   const title = {booting: `Booting ${boot.ship}`, installing: settling ? `${boot.ship} is catching up` : `Installing desks on ${boot.ship}`, ready: `${boot.ship} is ready`, failed: `${boot.ship} did not finish booting`}[boot.phase];
   const detail = {
     booting: 'Building the moon and starting its vanes. This takes a few seconds.',
-    installing: `${tally.running} of ${tally.total} desks running${tally.catching ? `; ${tally.catching} catching up with their sources` : ''}.`,
+    installing: `${tally.running} of ${tally.total} desks running${tally.catching ? `; ${tally.catching} catching up with their sources` : ''}. Refresh to check again.`,
     ready: `${tally.total ? `All ${tally.total} desks running. ` : ''}Took ${seconds} seconds.`,
     failed: boot.error,
   }[boot.phase];
@@ -372,6 +374,7 @@ function BootStatus({boot, moon, dismiss}) {
       {boot.phase === 'ready' ? <CircleCheck size={18}/> : boot.phase === 'failed' ? <CircleAlert size={18}/> : <LoaderCircle size={18} className="spin"/>}
       <strong>{title}</strong>
       {!finished && <span className="muted">{seconds}s</span>}
+      {boot.phase === 'installing' && <IconButton label="Check desks again" onClick={refresh}><RefreshCw size={15}/></IconButton>}
       {finished && <IconButton label="Dismiss boot status" onClick={dismiss}><X size={15}/></IconButton>}
     </div>
     <div className="progress" role="progressbar" aria-label={title} aria-valuemin={0} aria-valuemax={100} {...(percent === null ? {} : {'aria-valuenow': percent})}>
@@ -380,7 +383,7 @@ function BootStatus({boot, moon, dismiss}) {
     {detail && <p>{detail}</p>}
   </div>;
 }
-function FleetBootStatus({boot, group, moons, dismiss}) {
+function FleetBootStatus({boot, group, moons, dismiss, refresh}) {
   const [, tick] = useState(0);
   const finished = boot.phase === 'ready' || boot.phase === 'failed';
   useEffect(() => {if (finished) return; const timer = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(timer);}, [finished]);
@@ -392,11 +395,12 @@ function FleetBootStatus({boot, group, moons, dismiss}) {
   const installing = state.members.some(m => deskTally(m.desks).installing);
   const settling = boot.phase === 'installing' && !installing && state.catching > 0;
   const title = {creating:`Creating ${boot.name}`,booting:`Booting ${boot.name}`,installing:settling ? `${boot.name} is settling` : `Installing ${boot.name}`,ready:`${boot.name} is ready`,failed:`${boot.name} needs attention`}[boot.phase];
-  const detail = boot.phase === 'creating' ? 'Allocating moon identities.' : boot.phase === 'booting' ? `${state.members.length} of ${total} moons built${boot.current ? `; starting ${boot.current}` : ''}.` : boot.phase === 'installing' ? `${complete} of ${total} moons ready${state.catching ? `; ${state.catching} still catching up with their sources` : ''}.` : boot.phase === 'ready' ? `${total} moons are ready. Took ${seconds} seconds.` : boot.error;
+  const detail = boot.phase === 'creating' ? 'Allocating moon identities.' : boot.phase === 'booting' ? `${state.members.length} of ${total} moons built${boot.current ? `; starting ${boot.current}` : ''}.` : boot.phase === 'installing' ? `${complete} of ${total} moons ready${state.catching ? `; ${state.catching} still catching up with their sources` : ''}. Refresh to check again.` : boot.phase === 'ready' ? `${total} moons are ready. Took ${seconds} seconds.` : boot.error;
   return <div className={`boot-status ${boot.phase}`} role="status" aria-live="polite" aria-label="Fleet boot status">
     <div className="boot-status-head">
       {boot.phase === 'ready' ? <CircleCheck size={18}/> : boot.phase === 'failed' ? <CircleAlert size={18}/> : <LoaderCircle size={18} className="spin"/>}
       <strong>{title}</strong><span className="muted">{seconds}s</span>
+      {boot.phase === 'installing' && <IconButton label="Check fleet desks again" onClick={refresh}><RefreshCw size={15}/></IconButton>}
       {finished && <IconButton label="Dismiss fleet boot status" onClick={dismiss}><X size={15}/></IconButton>}
     </div>
     <div className="progress" role="progressbar" aria-label={title} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{width:`${percent}%`}}/></div>
@@ -957,8 +961,8 @@ function App() {
       <button className={view === 'sidecar' ? 'active' : ''} onClick={() => showView('sidecar')}><Download size={18}/>Sidecar<span>optional</span></button>
     </nav><div className="host"><span className="section-label">HOST SHIP</span><div>{data ? <ShipIdentity ship={data.host} profile={profileOf(data.host)} origin="" edit={editable(data.host) ? () => openProfile(data.host) : null} disabled={!canAct}/> : <strong>Not connected</strong>}{data && editable(data.host) && <IconButton label="Edit the host's name and picture" disabled={!canAct} onClick={() => openProfile(data.host)}><Pencil size={14}/></IconButton>}</div><span className={`connection ${online ? 'live' : ''} ${online && hostBusy ? 'busy' : ''}`} title={online && hostBusy ? 'The host is busy with a long event and did not answer the last refresh in time.' : undefined}><i/>{online ? hostBusy ? 'Host busy' : 'Connected' : loading ? 'Connecting' : 'Offline'}</span></div></aside>
     <main>{fleetViewGroup ? <FleetView key={fleetViewGroup.name} group={fleetViewGroup} moons={moons} gw={gw} profiles={profileOf} close={() => setFleetView(null)} openMoon={openLandscape} installLandscape={moon => {setFleetView(null); open('landscape', moon);}}/> : <><header className="page-header"><div><span className="section-label">THESEUS / {view.toUpperCase()}</span><h1>{activeMoon ? 'Dojo' : fleetTermGroup ? 'Fleet terminal' : view === 'moons' ? 'Moons' : view === 'gateway' ? 'Gateway' : view === 'sidecar' ? 'Sidecar' : 'Snapshots'}</h1></div><div className="tools"><IconButton label="Refresh fleet" onClick={() => {setError(''); refresh(); loadProfiles();}} disabled={loading}><RefreshCw size={18}/></IconButton>{view === 'moons' && <><button className="primary" disabled={!canAct} onClick={() => open('boot-fleet')}><FolderPlus size={17}/>Boot Fleet</button><button className="primary" disabled={!canAct} onClick={() => open('boot')}><Plus size={17}/>Boot moon</button></>}</div></header>
-      {boot && <BootStatus boot={boot} moon={bootRow} dismiss={() => setBoot(null)}/>}
-      {fleetBoot && <FleetBootStatus boot={fleetBoot} group={fleetBootGroup} moons={moons} dismiss={() => setFleetBoot(null)}/>}
+      {boot && <BootStatus boot={boot} moon={bootRow} dismiss={() => setBoot(null)} refresh={() => refresh()}/>}
+      {fleetBoot && <FleetBootStatus boot={fleetBoot} group={fleetBootGroup} moons={moons} dismiss={() => setFleetBoot(null)} refresh={() => refresh()}/>}
       {error && <div role="alert" className="banner error"><AlertCircle size={18}/><span>{error}</span>{!online && <a href="/~/login?redirect=/apps/theseus">Sign in <ArrowUpRight size={14}/></a>}<IconButton label="Dismiss error" onClick={() => setError('')}><X size={16}/></IconButton></div>}
       {notice && <div role="status" className="banner success"><Check size={17}/><span>{notice}</span><IconButton label="Dismiss notification" onClick={() => setNotice('')}><X size={16}/></IconButton></div>}
       {busy && boot?.phase !== 'booting' && <div className="pending" role="status"><LoaderCircle size={16} className="spin"/>Waiting for host acknowledgement</div>}

@@ -183,10 +183,12 @@ From the console, click **Boot moon**:
   host, so nothing is downloaded.
 - For each desk, choose whether it takes updates from the host or from the
   ship the host got it from.
-- A status bar shows the boot, then each desk installing, then catching up
-  with its source (Kiln's first check, and any merge it brings) until the
-  moon is ready. While a moon is catching up, its badge says so: it works,
-  but it is busy on the host and slow to answer.
+- A status bar shows the boot until the moon's desks run. A desk is
+  *catching up* while it differs from the host's copy of its source, for
+  example after a reset to an older snapshot or a new release, until Kiln
+  downloads and merges the update. The moon's badge says so: it works, but
+  it is busy on the host and slow to answer. Theseus checks this when a page
+  loads or asks, not on a timer, so press refresh to check again.
 
 The moon's Dojo opens as a terminal: click it and type. Its camera button holds
 the moon's snapshots: take one, or restore an earlier one.
