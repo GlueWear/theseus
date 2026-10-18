@@ -365,6 +365,16 @@ breach:
    unpaused, empty-queue moon before the recovery lock is removed. A Gall
    reload re-arms any persisted recovery timer.
 
+   Until then the moon's packets stay on the host. Steps 3 and 4 run the
+   restored moon, and the rekey and `%stir` make its Ames resend what the
+   snapshot had in flight. Its peers have already reset their side, so they
+   would take that as the first messages of new flows, which the moon then
+   wipes in step 4 and reuses for something else. The peer answers on a flow
+   the moon now gives to another vane, and the moon crashes on every retry:
+   seen as the host's Jael sending key updates to Clay's first `%kids`
+   request. Ames keeps the held-back messages and resends them after the
+   restart, on the flows it has by then.
+
 Before Gall's step, the restore checks that the moon's Ames holds no flows
 with those peers (`+stale-flows`); otherwise it fails and stops the moon, so
 it can't run on with stalled flows. An earlier version ran the Gall step from

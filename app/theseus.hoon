@@ -990,6 +990,9 @@
 =|  cards=(list card)
 ::  moons whose own Noltbook profile changed in this event
 =|  profile-changes=(set ship)
+::  moons whose packets are kept on the host in this event (see
+::  +finish-recovery); their Ames resends them later
+=|  hushed=(set ship)
 |_  =bowl:gall
 ::
 ++  this  .
@@ -1806,6 +1809,8 @@
     %-  zing
     %+  turn  ~(tap by unix-effects)
     |=  [=ship ufs=(list unix-effect)]
+    =?  ufs  (~(has in hushed) ship)
+      (skip ufs |=(uf=unix-effect ?=(?(%send %push) -.q.uf)))
     %+  turn  ufs
     |=  uf=unix-effect
     :^  %pass  /theseus-pyre  %agent
@@ -2392,6 +2397,18 @@
     ?:  &(?=(^ i.ducts) =(pre i.i.ducts))  `i.ducts
     $(ducts t.ducts)
   ~&  [%theseus-recovery-reset who rift=rift.job life=life.job peers=~(wyt in peers.job)]
+  ::  Nothing the moon sends leaves the host until it restarts.  Its
+  ::  restored Ames still holds what the snapshot had in flight, and the
+  ::  rekey and %stir below make it resend that.  Its peers have already
+  ::  reset their side for the new era, so they take those as the first
+  ::  messages of new flows; the moon then forgets them in its own reset
+  ::  and reuses the bones for something else, and the peer answers on a
+  ::  flow the moon now gives another vane.  (Seen as the host's Jael
+  ::  sending key updates to Clay's first %kids request, which crashed on
+  ::  every retry.)  Ames keeps what is held back and resends it after the
+  ::  restart, on the flows it has then.
+  ::
+  =.  hushed  (~(put in hushed) who)
   ::  Remove the lock only within this Gall event so the internal reset
   ::  events can run.  No external event can interleave before it is restored.
   ::
