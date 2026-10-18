@@ -55,6 +55,7 @@
             [%count ni]
             [%desks (ar (ot ~[[%desk (se %tas)] [%from (su (perk %host %publisher ~))]]))]
         ==
+        [%fleet-boot (ot ~[[%name (se %tas)]])]
         :-  %fleet-add-desks
         %-  ot
         :~  [%name (se %tas)]

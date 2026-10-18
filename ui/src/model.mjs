@@ -110,6 +110,7 @@ export function validateFleet(data) {
   const members = new Set();
   for (const group of data.fleets) {
     if (!/^[a-z][a-z0-9-]{0,63}$/.test(group?.name) || !Array.isArray(group.ships) || !Array.isArray(group.desks) || typeof group.created !== 'number') throw new Error('Theseus returned an invalid fleet record.');
+    if (group.boot != null && (!Array.isArray(group.boot.pending) || !Array.isArray(group.boot.failed) || typeof group.boot.started !== 'number' || typeof group.boot.updated !== 'number' || group.boot.pending.some(ship => !group.ships.includes(ship)) || group.boot.failed.some(row => !group.ships.includes(row?.ship) || typeof row.reason !== 'string'))) throw new Error('Theseus returned an invalid fleet boot job.');
     for (const ship of group.ships) {
       if (validateMoon(ship, data.host) || members.has(ship)) throw new Error('Theseus returned overlapping fleet membership.');
       members.add(ship);

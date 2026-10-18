@@ -2,6 +2,7 @@
 +$  command
   $%  [%boot who=ship desks=(list [=desk from=?(%host %publisher)])]
       [%fleet-new name=@tas count=@ud desks=(list [=desk from=?(%host %publisher)])]
+      [%fleet-boot name=@tas]
       [%fleet-add-desks name=@tas desks=(list [=desk from=?(%host %publisher)])]
       [%moon-add-desks who=ship desks=(list [=desk from=?(%host %publisher)])]
       [%fleet-pause name=@tas]

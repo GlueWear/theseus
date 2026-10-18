@@ -48,10 +48,12 @@ let dojoLog = [];
 // A 1x1 PNG, served as a picture a profile can point at.
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 let installed = new Set();
+let bootGeneration = 0;
+let failNextFleetMember = false;
 // Pictures uploaded to Noltbook: the host's from the browser, moons' via %theseus.
 let uploads = [];
 const code = 'lidlut-tabwed-pillex-ridrup';
-const reset = () => {uploads = []; installing = new Map(); held = new Set(); termLog = []; dojoLog = []; lines.clear(); profiles = new Map([[host, {noltbook: true, name: null, avatar: null}], [first, {noltbook: true, name: null, avatar: null}]]); data={version:3,host,moons:[moon(first, undefined, {booted: Date.UTC(2026,9,2,12)}), moon(older, undefined, {booted: Date.UTC(2026,9,1,9)})],fleets:[],caches:['default'],snapshots:[{path:'/baseline',set:'/baseline',ships:[first],compatible:true,created:'~2026.10.2..12.00.00'}]}; installed=new Set([first]); gw={mode:'auto',port:null,template:null,live:{port:5174,upstream:8083,at:'~2026.10.2..12.00.00'}};}; reset();
+const reset = () => {bootGeneration++; failNextFleetMember = false; uploads = []; installing = new Map(); held = new Set(); termLog = []; dojoLog = []; lines.clear(); profiles = new Map([[host, {noltbook: true, name: null, avatar: null}], [first, {noltbook: true, name: null, avatar: null}]]); data={version:3,host,moons:[moon(first, undefined, {booted: Date.UTC(2026,9,2,12)}), moon(older, undefined, {booted: Date.UTC(2026,9,1,9)})],fleets:[],caches:['default'],snapshots:[{path:'/baseline',set:'/baseline',ships:[first],compatible:true,created:'~2026.10.2..12.00.00'}]}; installed=new Set([first]); gw={mode:'auto',port:null,template:null,live:{port:5174,upstream:8083,at:'~2026.10.2..12.00.00'}};}; reset();
 // Mirrors %theseus-ui's /x/gateway status logic.
 const gatewayJson = () => {
   const url = gw.mode === 'hosting' ? gw.template : gw.mode === 'declared' ? `http://{moon}.localhost:${gw.port}` : gw.live ? `http://{moon}.localhost:${gw.live.port}` : null;
@@ -76,6 +78,25 @@ const setPaused = (member, paused) => {
 };
 // Mirrors %theseus's /ui facts: "something changed", after an action.
 const pushUi = () => {for (const ch of channels.values()) if (ch.ui) send(ch, {id: ch.ui, response: 'diff', json: true});};
+const advanceFleetBoot = (name, generation) => {
+  setTimeout(() => {
+    if (generation !== bootGeneration) return;
+    const group = data.fleets.find(row => row.name === name);
+    const ship = group?.boot?.pending.shift();
+    if (!ship) return;
+    if (failNextFleetMember) {
+      failNextFleetMember = false;
+      group.boot.failed.push({ship,reason:'Test boot failure'});
+    } else if (!data.moons.some(row => row.ship === ship)) {
+      data.moons.push(moon(ship, group.desks));
+      if (group.desks.some(row => row.desk === 'landscape')) installed.add(ship);
+    }
+    group.boot.updated = Date.now();
+    if (!group.boot.pending.length && !group.boot.failed.length) group.boot = null;
+    pushUi();
+    if (group.boot?.pending.length) advanceFleetBoot(name, generation);
+  }, 700);
+};
 // Mirrors %theseus's /profiles facts: one row per change, to every watcher.
 const pushProfile = ship => {for (const ch of channels.values()) if (ch.profiles) send(ch, {id: ch.profiles, response: 'diff', json: profileRow(ship)});};
 const send = (channel, event) => {
@@ -85,6 +106,7 @@ const send = (channel, event) => {
 createServer(async (req,res) => {
   if (req.url === '/health') return res.end('ok');
   if (req.url === '/reset') {reset(); deletes = 0; return res.end('ok');}
+  if (req.url === '/fail-next-fleet-member') {failNextFleetMember = true; return res.end('ok');}
   if (req.url === '/deletes') return res.end(String(deletes));
   if (req.url === '/term-log') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(termLog));}
   if (req.url === '/dojo-log') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(dojoLog));}
@@ -127,7 +149,7 @@ createServer(async (req,res) => {
     res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({ship: web[1], code, landscape: installed.has(web[1])}));
   }
   if (req.url === '/~/name') return res.end(host);
-  if (req.url === '/~/scry/theseus/ui.json') {settle(); res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(data, (key, value) => key === 'pending' ? undefined : value));}
+  if (req.url === '/~/scry/theseus/ui.json') {settle(); res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({...data, moons:data.moons.map(({pending, ...moon}) => moon)}));}
   if (req.url === '/~/scry/theseus/desks.json') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({version:1,desks:deskRows}));}
   if (!req.url.startsWith('/~/channel/')) {res.statusCode=404; return res.end();}
   const channel = channels.get(req.url) || {pending:[],response:null,sub:0}; channels.set(req.url,channel);
@@ -166,7 +188,16 @@ createServer(async (req,res) => {
       if (!/^[a-z][a-z0-9-]{0,63}$/.test(value.name) || !Number.isInteger(value.count) || value.count < 1 || value.count > 64 || data.fleets.some(group => group.name === value.name)) {send(channel,{id:action.id,response:'poke',err:'rejected'}); continue;}
       const existing = [...data.moons.map(m => m.ship),...data.fleets.flatMap(group => group.ships)], ships=[];
       for (let i=0;i<value.count;i++) {const ship=newMoon(host,[...existing,...ships],1000+i);ships.push(ship);}
-      data.fleets.push({name:value.name,ships,desks:value.desks,created:Date.now()});
+      const now = Date.now();
+      data.fleets.push({name:value.name,ships,desks:value.desks,created:now,boot:{pending:[...ships],failed:[],started:now,updated:now}});
+      advanceFleetBoot(value.name, bootGeneration);
+    }
+    if (kind === 'fleet-boot') {
+      const group = data.fleets.find(row => row.name === value.name);
+      if (!group || group.boot?.pending.length) {send(channel,{id:action.id,response:'poke',err:'rejected'});continue;}
+      const pending = group.ships.filter(ship => !data.moons.some(moon => moon.ship === ship));
+      group.boot = pending.length ? {pending,failed:[],started:Date.now(),updated:Date.now()} : null;
+      if (pending.length) advanceFleetBoot(group.name, bootGeneration);
     }
     if (kind === 'fleet-add-desks') {
       const group=data.fleets.find(row=>row.name===value.name);

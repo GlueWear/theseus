@@ -384,23 +384,27 @@ function BootStatus({boot, moon, dismiss, refresh}) {
   </div>;
 }
 function FleetBootStatus({boot, group, moons, dismiss, refresh}) {
-  const [, tick] = useState(0);
-  const finished = boot.phase === 'ready' || boot.phase === 'failed';
-  useEffect(() => {if (finished) return; const timer = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(timer);}, [finished]);
-  const seconds = Math.max(0, Math.round(((boot.finished || Date.now()) - boot.started) / 1000));
-  const state = group ? fleetState(group, moons) : {members:[],missing:[],running:0,paused:0,attention:0};
+  const state = group ? fleetState(group, moons) : {members:[],missing:[],catching:0};
+  const queue = group?.boot;
   const complete = state.members.filter(m => deskTally(m.desks).done).length;
-  const total = group?.ships.length || boot.total || 0;
-  const percent = total ? Math.round(100 * (boot.phase === 'installing' || finished ? complete : state.members.length) / total) : 0;
+  const total = group?.ships.length || boot?.total || 0;
+  const deskFailures = state.members.flatMap(m => deskTally(m.desks).failed.map(d => `${m.ship}/%${d.desk}: ${d.reason || 'failed'}`));
+  const phase = queue?.pending.length ? 'booting' : queue?.failed.length ? 'failed'
+    : !group ? boot?.phase || 'creating' : state.missing.length ? 'booting'
+      : complete < total ? 'installing' : deskFailures.length ? 'failed' : 'ready';
+  const finished = phase === 'ready' || phase === 'failed';
+  const percent = total ? Math.round(100 * (phase === 'booting' ? state.members.length : complete) / total) : 0;
   const installing = state.members.some(m => deskTally(m.desks).installing);
-  const settling = boot.phase === 'installing' && !installing && state.catching > 0;
-  const title = {creating:`Creating ${boot.name}`,booting:`Booting ${boot.name}`,installing:settling ? `${boot.name} is settling` : `Installing ${boot.name}`,ready:`${boot.name} is ready`,failed:`${boot.name} needs attention`}[boot.phase];
-  const detail = boot.phase === 'creating' ? 'Allocating moon identities.' : boot.phase === 'booting' ? `${state.members.length} of ${total} moons built${boot.current ? `; starting ${boot.current}` : ''}.` : boot.phase === 'installing' ? `${complete} of ${total} moons ready${state.catching ? `; ${state.catching} still catching up with their sources` : ''}. Refresh to check again.` : boot.phase === 'ready' ? `${total} moons are ready. Took ${seconds} seconds.` : boot.error;
-  return <div className={`boot-status ${boot.phase}`} role="status" aria-live="polite" aria-label="Fleet boot status">
+  const settling = phase === 'installing' && !installing && state.catching > 0;
+  const name = group?.name || boot?.name;
+  const title = {creating:`Creating ${name}`,booting:`Booting ${name}`,installing:settling ? `${name} is settling` : `Installing ${name}`,ready:`${name} is ready`,failed:`${name} needs attention`}[phase];
+  const failures = [...(queue?.failed || []).map(({ship,reason}) => `${ship}: ${reason}`), ...deskFailures];
+  const detail = phase === 'creating' ? 'Allocating moon identities.' : phase === 'booting' ? `${state.members.length} of ${total} moons built; ${queue?.pending.length ?? state.missing.length} queued.` : phase === 'installing' ? `${complete} of ${total} moons ready${state.catching ? `; ${state.catching} still catching up with their sources` : ''}.` : phase === 'ready' ? `${total} moons are ready.` : failures.join(' ') || boot?.error || 'Check the fleet members below.';
+  return <div className={`boot-status ${phase}`} role="status" aria-live="polite" aria-label="Fleet boot status">
     <div className="boot-status-head">
-      {boot.phase === 'ready' ? <CircleCheck size={18}/> : boot.phase === 'failed' ? <CircleAlert size={18}/> : <LoaderCircle size={18} className="spin"/>}
-      <strong>{title}</strong><span className="muted">{seconds}s</span>
-      {boot.phase === 'installing' && <IconButton label="Check fleet desks again" onClick={refresh}><RefreshCw size={15}/></IconButton>}
+      {phase === 'ready' ? <CircleCheck size={18}/> : phase === 'failed' ? <CircleAlert size={18}/> : <LoaderCircle size={18} className="spin"/>}
+      <strong>{title}</strong>
+      {phase === 'installing' && <IconButton label="Check fleet desks again" onClick={refresh}><RefreshCw size={15}/></IconButton>}
       {finished && <IconButton label="Dismiss fleet boot status" onClick={dismiss}><X size={15}/></IconButton>}
     </div>
     <div className="progress" role="progressbar" aria-label={title} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{width:`${percent}%`}}/></div>
@@ -659,40 +663,29 @@ function App() {
     if (busy || !online) return false;
     setBusy(true); setError(''); setNotice(''); setModal(null);
     setExpanded(current => new Set(current).add(group.name));
-    setFleetBoot({name:group.name,phase:'booting',started:Date.now(),total:group.ships.length,current:null});
-    const failed = [];
+    setFleetBoot({name:group.name,phase:'booting',total:group.ships.length});
     try {
-      let current = await readFleet();
-      for (const who of group.ships) {
-        if (current.moons.some(m => m.ship === who)) continue;
-        setFleetBoot(value => ({...value,current:who}));
-        try {await command('boot',{who,desks:group.desks});}
-        catch (err) {failed.push(`${who}: ${err.message || 'boot rejected'}`);}
-        current = await readFleet();
-      }
-      if (failed.length) setFleetBoot(value => ({...value,phase:'failed',finished:Date.now(),current:null,error:failed.join(' ')}));
-      else setFleetBoot(value => ({...value,phase:'installing',current:null}));
-      return failed.length === 0;
+      await command('fleet-boot',{name:group.name});
+      try {await readFleet();} catch {scheduleRefresh();}
+      return true;
     } catch (err) {
-      setFleetBoot(value => ({...value,phase:'failed',finished:Date.now(),current:null,error:err.message || 'Fleet boot failed.'}));
-      setError(err.message || 'Fleet boot failed.'); return false;
+      setError(`${err.message || 'Fleet request failed.'} The host may still be booting moons; refresh to check.`);
+      return false;
     } finally {setBusy(false);}
   }
   async function createFleet(payload) {
     if (busy || !online) return;
     setBusy(true); setError(''); setNotice(''); setModal(null);
-    setFleetBoot({name:payload.name,phase:'creating',started:Date.now(),total:payload.count,current:null});
+    setFleetBoot({name:payload.name,phase:'creating',total:payload.count});
     try {
       await command('fleet-new',payload);
-      const next = await readFleet();
-      const group = next.fleets.find(row => row.name === payload.name);
-      if (!group) throw new Error('The host created no fleet record.');
-      setBusy(false);
-      await bootFleetMembers(group);
+      setFleetBoot(value => ({...value,phase:'booting'}));
+      setExpanded(current => new Set(current).add(payload.name));
+      try {await readFleet();} catch {scheduleRefresh();}
     } catch (err) {
-      setFleetBoot(value => ({...value,phase:'failed',finished:Date.now(),error:err.message || 'Fleet creation failed.'}));
-      setError(err.message || 'Fleet creation failed.'); setBusy(false);
-    }
+      setFleetBoot(value => ({...value,phase:'failed',error:err.message || 'Fleet creation failed.'}));
+      setError(`${err.message || 'Fleet creation failed.'} Refresh before trying again; the host may have accepted it.`);
+    } finally {setBusy(false);}
   }
   async function saveGateway(settings) {
     if (busy || !online) return false;
@@ -878,15 +871,7 @@ function App() {
   const fleetTermGroup = !activeMoon && fleets.find(group => group.name === fleetTerm);
   const fleetViewGroup = !activeMoon && !fleetTermGroup && fleets.find(group => group.name === fleetView);
   const avatarOrigin = ship => ship === data?.host ? '' : gatewayProblem(gw) ? undefined : moonOrigin(gw.url, ship);
-  const fleetBootGroup = fleetBoot && fleets.find(group => group.name === fleetBoot.name);
-  useEffect(() => {
-    if (fleetBoot?.phase !== 'installing' || !fleetBootGroup) return;
-    const state = fleetState(fleetBootGroup, moons);
-    if (state.missing.length || state.members.some(moon => !deskTally(moon.desks).done)) return;
-    const failed = state.members.flatMap(moon => deskTally(moon.desks).failed.map(desk => `${moon.ship}/%${desk.desk}: ${desk.reason || 'failed'}`));
-    setFleetBoot(value => ({...value,phase:failed.length ? 'failed' : 'ready',finished:Date.now(),error:failed.join(' ') || undefined}));
-  }, [fleetBoot?.phase, fleetBootGroup, moons]);
-  useEffect(() => {if (fleetBoot?.phase !== 'ready') return; loadProfiles(); const timer = setTimeout(() => setFleetBoot(null), 12000); return () => clearTimeout(timer);}, [fleetBoot?.phase]);
+  const fleetBootGroup = fleets.find(group => group.name === fleetBoot?.name) || fleets.find(group => group.boot?.pending.length || group.boot?.failed.length);
   const canAct = online && !busy;
   const grouped = new Set(fleets.flatMap(group => group.ships));
   const query = filter.toLowerCase();
@@ -914,7 +899,7 @@ function App() {
     const ready = state.members.length > 0 && state.members.every(moon => moon.status === 'healthy' && !moon.recovery);
     const canAdd = state.members.length > 0 && state.members.every(moon => moon.status !== 'empty' && !moon.recovery);
     return <div className="moon-actions fleet-actions">
-      {!!state.missing.length && <IconButton label={`Boot missing moons in ${group.name}`} disabled={!canAct} onClick={() => bootFleetMembers(group)}><Plus size={16}/></IconButton>}
+      {!!state.missing.length && <IconButton label={`Boot missing moons in ${group.name}`} disabled={!canAct || !!group.boot?.pending.length} onClick={() => bootFleetMembers(group)}><Plus size={16}/></IconButton>}
       <IconButton label={`Add desks to fleet ${group.name}`} disabled={!canAct || !canAdd} onClick={() => open('fleet-add-desks',group)}><span className="desk-action-icon" aria-hidden="true">%</span></IconButton>
       <IconButton label={`${allPaused ? 'Resume' : 'Pause'} fleet ${group.name}`} disabled={!canAct || !ready} onClick={() => run(allPaused ? 'fleet-resume' : 'fleet-pause',{name:group.name})}>{allPaused ? <Play size={16}/> : <Pause size={16}/>}</IconButton>
       <IconButton label={`Open fleet terminal for ${group.name}`} disabled={!state.members.length} onClick={() => {setDojo(null); setFleetTerm(group.name);}}><TerminalSquare size={16}/></IconButton>
@@ -942,7 +927,7 @@ function App() {
         <td className="moon-cell"><button className="fleet-link" aria-expanded={open} onClick={() => setExpanded(current => {const next=new Set(current); next.has(group.name)?next.delete(group.name):next.add(group.name); return next;})}><ChevronRight size={15} className={open ? 'open' : ''}/>{open ? <FolderOpen size={22}/> : <Folder size={22}/>}<span><strong>{group.name}</strong><small>{state.members.length} of {group.ships.length} moons booted</small></span></button>{fleetActions(group)}<div className="mobile-desks"><DeskProgress desks={deskNames}/></div></td>
         <td><span className={`badge ${state.attention ? 'degraded' : paused ? 'paused' : state.catching ? 'catching' : 'running'}`}><i/>{status}</span></td><td className="desk-column"><DeskProgress desks={deskNames}/></td><td>{vaneCount} / {group.ships.length * 9}</td><td>{state.members.reduce((sum,moon) => sum + moon.queued,0)}</td>
       </tr>
-      {open && group.ships.map(ship => {const moon=moons.find(row => row.ship===ship); return moon ? moonRow(moon,true) : <tr className="fleet-child pending-member" key={ship}><td className="select-cell"/><td className="moon-cell"><div className="ship-id"><span className="ship-link"><LoaderCircle size={20}/><strong>{ship}</strong></span></div></td><td><span className="badge paused"><i/>not booted</span></td><td className="desk-column"><span className="muted">Waiting</span></td><td>0 / 9</td><td>0</td></tr>;})}
+      {open && group.ships.map(ship => {const moon=moons.find(row => row.ship===ship), failure=group.boot?.failed.find(row => row.ship === ship); return moon ? moonRow(moon,true) : <tr className="fleet-child pending-member" key={ship}><td className="select-cell"/><td className="moon-cell"><div className="ship-id"><span className="ship-link"><LoaderCircle size={20}/><strong>{ship}</strong></span></div></td><td><span className="badge paused"><i/>{failure ? 'boot failed' : group.boot?.pending.includes(ship) ? 'queued' : 'not booted'}</span></td><td className="desk-column"><span className="muted">{failure?.reason || 'Waiting'}</span></td><td>0 / 9</td><td>0</td></tr>;})}
     </React.Fragment>;
   };
   const existingDesks = new Set(['fleet-add-desks','moon-add-desks'].includes(modal?.type) ? (modal.value.desks || []).map(row => row.desk) : []);
@@ -962,7 +947,7 @@ function App() {
     </nav><div className="host"><span className="section-label">HOST SHIP</span><div>{data ? <ShipIdentity ship={data.host} profile={profileOf(data.host)} origin="" edit={editable(data.host) ? () => openProfile(data.host) : null} disabled={!canAct}/> : <strong>Not connected</strong>}{data && editable(data.host) && <IconButton label="Edit the host's name and picture" disabled={!canAct} onClick={() => openProfile(data.host)}><Pencil size={14}/></IconButton>}</div><span className={`connection ${online ? 'live' : ''} ${online && hostBusy ? 'busy' : ''}`} title={online && hostBusy ? 'The host is busy with a long event and did not answer the last refresh in time.' : undefined}><i/>{online ? hostBusy ? 'Host busy' : 'Connected' : loading ? 'Connecting' : 'Offline'}</span></div></aside>
     <main>{fleetViewGroup ? <FleetView key={fleetViewGroup.name} group={fleetViewGroup} moons={moons} gw={gw} profiles={profileOf} close={() => setFleetView(null)} openMoon={openLandscape} installLandscape={moon => {setFleetView(null); open('landscape', moon);}}/> : <><header className="page-header"><div><span className="section-label">THESEUS / {view.toUpperCase()}</span><h1>{activeMoon ? 'Dojo' : fleetTermGroup ? 'Fleet terminal' : view === 'moons' ? 'Moons' : view === 'gateway' ? 'Gateway' : view === 'sidecar' ? 'Sidecar' : 'Snapshots'}</h1></div><div className="tools"><IconButton label="Refresh fleet" onClick={() => {setError(''); refresh(); loadProfiles();}} disabled={loading}><RefreshCw size={18}/></IconButton>{view === 'moons' && <><button className="primary" disabled={!canAct} onClick={() => open('boot-fleet')}><FolderPlus size={17}/>Boot Fleet</button><button className="primary" disabled={!canAct} onClick={() => open('boot')}><Plus size={17}/>Boot moon</button></>}</div></header>
       {boot && <BootStatus boot={boot} moon={bootRow} dismiss={() => setBoot(null)} refresh={() => refresh()}/>}
-      {fleetBoot && <FleetBootStatus boot={fleetBoot} group={fleetBootGroup} moons={moons} dismiss={() => setFleetBoot(null)} refresh={() => refresh()}/>}
+      {(fleetBoot || fleetBootGroup?.boot) && <FleetBootStatus boot={fleetBoot} group={fleetBootGroup} moons={moons} dismiss={() => setFleetBoot(null)} refresh={() => refresh()}/>}
       {error && <div role="alert" className="banner error"><AlertCircle size={18}/><span>{error}</span>{!online && <a href="/~/login?redirect=/apps/theseus">Sign in <ArrowUpRight size={14}/></a>}<IconButton label="Dismiss error" onClick={() => setError('')}><X size={16}/></IconButton></div>}
       {notice && <div role="status" className="banner success"><Check size={17}/><span>{notice}</span><IconButton label="Dismiss notification" onClick={() => setNotice('')}><X size={16}/></IconButton></div>}
       {busy && boot?.phase !== 'booting' && <div className="pending" role="status"><LoaderCircle size={16} className="spin"/>Waiting for host acknowledgement</div>}

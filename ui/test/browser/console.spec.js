@@ -182,6 +182,34 @@ test('a fleet generates moons and applies folder actions to every member',async(
   await expect(group).toHaveCount(0);
   await expect(page.locator('tr.fleet-child')).toHaveCount(0);
 });
+test('fleet boot continues on the host after the page reloads',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:'Boot Fleet',exact:true}).click();
+  const dialog=page.getByRole('dialog');
+  await dialog.getByLabel('Fleet name').fill('durable');
+  await dialog.getByLabel('Number of moons').fill('4');
+  await dialog.getByRole('button',{name:'Boot Fleet',exact:true}).click();
+  await expect(page.locator('tr.fleet-row').filter({hasText:'durable'})).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('status',{name:'Fleet boot status'})).toContainText('Booting durable');
+  await expect(page.locator('tr.fleet-row').filter({hasText:'durable'})).toContainText('4 of 4 moons booted',{timeout:15000});
+  await page.locator('tr.fleet-row').filter({hasText:'durable'}).getByRole('button',{name:/durable/}).first().click();
+  await expect(page.locator('tr.fleet-child')).toHaveCount(4);
+});
+test('a failed fleet member stays visible and can be retried',async({page,request})=>{
+  await request.get('http://127.0.0.1:8085/fail-next-fleet-member');
+  await page.goto('/');
+  await page.getByRole('button',{name:'Boot Fleet',exact:true}).click();
+  const dialog=page.getByRole('dialog');
+  await dialog.getByLabel('Fleet name').fill('retryable');
+  await dialog.getByLabel('Number of moons').fill('2');
+  await dialog.getByRole('button',{name:'Boot Fleet',exact:true}).click();
+  const row=page.locator('tr.fleet-row').filter({hasText:'retryable'});
+  await expect(page.getByRole('status',{name:'Fleet boot status'})).toContainText('Test boot failure');
+  await expect(row).toContainText('1 of 2 moons booted');
+  await row.getByRole('button',{name:'Boot missing moons in retryable'}).click();
+  await expect(row).toContainText('2 of 2 moons booted',{timeout:15000});
+});
 test('fleet view opens independent interactive moon pages and keeps their layout',async({page,context})=>{
   const logins=[];
   const pageCookies=[];

@@ -25,7 +25,7 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
 ### API
 
 - `GET /~/scry/theseus/ui.json` →
-  `{version: 3, host, caches: [..], moons: [{ship, status, paused, queued, identity, vanes, desks, booted, recovery}], fleets: [{name, ships, desks, created}], snapshots: [{path, set, created, compatible, ships}]}`.
+  `{version: 3, host, caches: [..], moons: [{ship, status, paused, queued, identity, vanes, desks, booted, recovery}], fleets: [{name, ships, desks, created, boot}], snapshots: [{path, set, created, compatible, ships}]}`.
   Each snapshot holds one ship (`ships` has one entry); snapshots taken
   together share a `set`, and their paths are `<set>/~ship`. Older snapshots
   are a set of their own.
@@ -41,13 +41,18 @@ deleting snapshots. The guest HTTP proxy at `/theseus` is unchanged.
   `recovery` is null or `{stage, attempts, reason}`; its stages are
   `registering`, `restarting`, and `failed`.
   A fleet record is durable even while some members are not booted. Membership
-  is exclusive, and `desks` is the shared boot recipe for every member.
+  is exclusive, and `desks` is the shared boot recipe for every member. `boot`
+  is null or `{pending: [ship], failed: [{ship, reason}], started, updated}`.
+  The host boots one pending member per Behn wake, records failures without
+  stopping the rest, and resumes the queue after an agent reload. The console
+  only starts or retries the queue; closing the tab does not stop it.
 - `GET /~/scry/theseus/desks.json` → `{version: 1, desks: [{desk, title, running, hash, source: {ship, desk} | null, dependencies}]}`:
   every host desk except `%kids` and `%theseus`. `source` is where the host's
   own copy syncs from.
 - Poke `%theseus` with mark `theseus-ui`, one key per command:
   `boot {who, desks: [{desk, from: "host"|"publisher"}]}`,
-  `fleet-new {name, count, desks}`, `fleet-add-desks {name, desks}`,
+  `fleet-new {name, count, desks}`, `fleet-boot {name}` (retry missing members),
+  `fleet-add-desks {name, desks}`,
   `moon-add-desks {who, desks}`,
   `fleet-pause|fleet-resume|fleet-kill {name}`,
   `dojo {who, command}`,

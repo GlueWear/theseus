@@ -264,8 +264,8 @@
           recovery-timer=(unit @da)
       ==
     ::  A managed fleet is a durable grouping and one shared boot recipe.
-    ::  Members may briefly be absent while the console drives their separate
-    ::  boot events; retaining planned identities makes a partial boot retryable.
+    ::  Members may briefly be absent while the persisted boot queue runs;
+    ::  retaining planned identities makes a partial boot retryable.
     ::
     +$  managed-fleet
       $:  ships=(set ship)
@@ -324,8 +324,30 @@
           fleets=(map @tas managed-fleet)
           nicknames=(map ship @t)
       ==
+    +$  fleet-boot-job
+      $:  pending=(list ship)
+          failed=(map ship @t)
+          started=@da
+          updated=@da
+      ==
+    +$  state-14
+      $:  %14
+          piers=fleet
+          fleet-snaps=(map path fleet-snapshot)
+          files=(axal (cask))
+          park=vase
+          caches=(map @tas vase)
+          boot-caches=(map (set desk) boot-cache)
+          booted=(map ship @da)
+          recoveries=(map ship recovery-job)
+          recovery-timer=(unit @da)
+          fleets=(map @tas managed-fleet)
+          nicknames=(map ship @t)
+          fleet-boots=(map @tas fleet-boot-job)
+          fleet-boot-timer=(unit @da)
+      ==
     +$  versioned-state
-      $%(state-5 state-6 state-7 state-8 state-9 state-10 state-11 state-12 state-13)
+      $%(state-5 state-6 state-7 state-8 state-9 state-10 state-11 state-12 state-13 state-14)
     ++  pack-park
       |=  pak=task:clay
       ^-  vase
@@ -388,7 +410,7 @@
     +$  card  $+(card card:agent:gall)
     --
 ::
-=|  state-13
+=|  state-14
 =*  state  -
 =<
   %-  agent:dbug
@@ -421,44 +443,49 @@
     ::  cast failure here used to erase every pier and every snapshot.
     |^
     ?+    -.q.old-vase  ~|([%theseus-unknown-state -.q.old-vase] !!)
+        %14
+      =/  old  !<(state-14 old-vase)
+      ~&  [%theseus-state-load %14]
+      (load-current old)
+    ::
         %13
       =/  old  !<(state-13 old-vase)
-      ~&  [%theseus-state-load %13]
-      (load-current old)
+      ~&  [%theseus-state-migrate %13 %14]
+      (load-current (state-13-to-14 old))
     ::
         %12
       =/  old  !<(state-12 old-vase)
-      ~&  [%theseus-state-migrate %12 %13]
+      ~&  [%theseus-state-migrate %12 %14]
       (load-state old)
     ::
         %11
       =/  old  !<(state-11 old-vase)
-      ~&  [%theseus-state-migrate %11 %13]
+      ~&  [%theseus-state-migrate %11 %14]
       (load-state (state-11-to-12 old))
     ::
         %10
       =/  old  !<(state-10 old-vase)
-      ~&  [%theseus-state-migrate %10 %13]
+      ~&  [%theseus-state-migrate %10 %14]
       (load-state (state-11-to-12 (state-10-to-11 old)))
     ::
         %9
       =/  old  !<(state-9 old-vase)
-      ~&  [%theseus-state-migrate %9 %13]
+      ~&  [%theseus-state-migrate %9 %14]
       (load-state (state-11-to-12 (state-10-to-11 (state-9-to-10 old))))
     ::
         %8
       =/  old  !<(state-8 old-vase)
-      ~&  [%theseus-state-migrate %8 %13]
+      ~&  [%theseus-state-migrate %8 %14]
       (load-state (state-11-to-12 (state-10-to-11 (state-9-to-10 (state-8-to-9 old)))))
     ::
         %7
       =/  old  !<(state-7 old-vase)
-      ~&  [%theseus-state-migrate %7 %13]
+      ~&  [%theseus-state-migrate %7 %14]
       (load-state (state-11-to-12 (state-10-to-11 (state-9-to-10 (state-7-to-9 old)))))
     ::
         %6
       =/  old  !<(state-6 old-vase)
-      ~&  [%theseus-state-migrate %6 %13]
+      ~&  [%theseus-state-migrate %6 %14]
       ::  every plan so far installed from us
       ::
       =/  plans=(map ship install-plan)
@@ -484,7 +511,7 @@
     ::
         %5
       =/  old  !<(state-5 old-vase)
-      ~&  [%theseus-state-migrate %5 %13]
+      ~&  [%theseus-state-migrate %5 %14]
       %-  load-state
       %-  state-11-to-12
       %-  state-10-to-11
@@ -497,14 +524,15 @@
     ++  load-state
       |=  old=state-12
       ^-  (quip card _this)
-      (load-current (state-12-to-13 old))
+      (load-current (state-13-to-14 (state-12-to-13 old)))
     ::
     ++  load-current
-      |=  new=state-13
+      |=  new=state-14
       ^-  (quip card _this)
-      =.  this  this(state new(recovery-timer ~))
+      =.  this  this(state new(recovery-timer ~, fleet-boot-timer ~))
       =^  cards  state  arm-recovery-timer:hc
-      [(weld cards noltbook-watch:hc) this]
+      =^  boots  state  arm-fleet-boot:hc
+      [(weld (weld cards boots) noltbook-watch:hc) this]
     ::  when an old install plan started, which dates a moon's boot
     ::
     ++  plan-started
@@ -631,6 +659,24 @@
           fleets.old
           nicknames.old
       ==
+    ++  state-13-to-14
+      |=  old=state-13
+      ^-  state-14
+      :*  %14
+          piers.old
+          fleet-snaps.old
+          files.old
+          park.old
+          caches.old
+          boot-caches.old
+          booted.old
+          recoveries.old
+          recovery-timer.old
+          fleets.old
+          nicknames.old
+          *(map @tas fleet-boot-job)
+          *(unit @da)
+      ==
     --
   ::
   ++  on-poke
@@ -666,8 +712,28 @@
               =/  ships  (allocate-fleet-ships:hc name.cmd count.cmd)
               =.  fleets
                 (~(put by fleets) name.cmd [ships desks.cmd now.bowl])
+              =.  fleet-boots
+                %+  ~(put by fleet-boots)  name.cmd
+                [~(tap in ships) ~ now.bowl now.bowl]
               ~&  [%theseus-fleet-created name.cmd ~(wyt in ships)]
-              `state
+              =^  boot-cards  state  arm-fleet-boot:hc
+              [boot-cards state]
+            %fleet-boot
+              =/  group  (~(get by fleets) name.cmd)
+              ?~  group  ~|([%theseus-fleet-missing name.cmd] !!)
+              =/  active  (~(get by fleet-boots) name.cmd)
+              =/  busy=?  ?~(active | ?=(^ pending.u.active))
+              ?:  busy  `state
+              =/  missing=(list ship)
+                %+  skim  ~(tap in ships.u.group)
+                |=(who=ship !(~(has by piers) who))
+              ?:  =(~ missing)
+                =.  fleet-boots  (~(del by fleet-boots) name.cmd)
+                `state
+              =.  fleet-boots
+                (~(put by fleet-boots) name.cmd [missing ~ now.bowl now.bowl])
+              =^  boot-cards  state  arm-fleet-boot:hc
+              [boot-cards state]
             %fleet-add-desks
               ?>  ?&((gth (lent desks.cmd) 0) (lte (lent desks.cmd) 64))
               (poke-action:hc [%add-fleet-desks name.cmd desks.cmd])
@@ -690,6 +756,7 @@
               =/  hers  (skim ~(tap in ships.u.group) |=(who=ship (~(has by piers) who)))
               =^  kill-cards  state  (poke-action:hc [%kill-ships hers])
               =.  fleets  (~(del by fleets) name.cmd)
+              =.  fleet-boots  (~(del by fleet-boots) name.cmd)
               [kill-cards state]
             %dojo
               ?>  (lte (met 3 command.cmd) 16.384)
@@ -902,6 +969,13 @@
       =/  before  ui-print:hc
       =^  cards  state  (wake-recoveries:hc (slav %da i.t.wire))
       [?:(=(before ui-print:hc) cards [ui-signal:hc cards]) this]
+    ::  One persisted fleet member per wake.  Reloads re-arm the pending job.
+    ::
+        [%fleet-boots @ ~]
+      ?>  ?=([%behn %wake *] sign-arvo)
+      =/  before  ui-print:hc
+      =^  cards  state  (wake-fleet-boot:hc (slav %da i.t.wire))
+      [?:(=(before ui-print:hc) cards [ui-signal:hc cards]) this]
     ==
   ++  on-fail   on-fail:def
   --
@@ -983,12 +1057,27 @@
     |=  [d=@tas from=desk-from]
     =,  enjs:format
     (pairs ~[[%desk s+d] [%from s+from]])
+  =/  job  (~(get by fleet-boots) name)
+  =/  js-failed=(list json)
+    ?~  job  ~
+    %+  turn  ~(tap by failed.u.job)
+    |=  [who=@p reason=@t]
+    =,  enjs:format
+    (pairs ~[[%ship s+(scot %p who)] [%reason s+reason]])
   =,  enjs:format
   %-  pairs
   :~  [%name s+name]
       [%ships a+(turn ~(tap in ships.group) |=(who=@p s+(scot %p who)))]
       [%desks a+js-desks]
       [%created (numb (unm:chrono:userlib created.group))]
+      :-  %boot
+      ?~  job  ~
+      %-  pairs
+      :~  [%pending a+(turn pending.u.job |=(who=@p s+(scot %p who)))]
+          [%failed a+js-failed]
+          [%started (numb (unm:chrono:userlib started.u.job))]
+          [%updated (numb (unm:chrono:userlib updated.u.job))]
+      ==
   ==
 ::
 ++  ui-moon
@@ -1327,6 +1416,7 @@
   :*  (~(run by piers) |=(p=saved-pier paused.p))
       (~(run by recoveries) |=(j=recovery-job [stage.j reason.j]))
       fleets
+      fleet-boots
       ~(key by fleet-snaps)
       ~(key by caches)
       booted
@@ -1976,6 +2066,70 @@
   ?~  current  $(jobs t.jobs)
   =^  more  state  (poll-recovery p.i.jobs u.current)
   $(jobs t.jobs, out (weld out more))
+::  Each Behn wake boots one member.  The remaining work is in Gall state,
+::  so a reload can re-arm the next wake without replaying completed boots.
+::
+++  arm-fleet-boot
+  ^-  (quip card _state)
+  ?^  fleet-boot-timer  `state
+  ?.  (lien ~(val by fleet-boots) |=(job=fleet-boot-job ?=(^ pending.job)))
+    `state
+  =/  when  (add now.bowl ~s1)
+  :_  state(fleet-boot-timer `when)
+  [%pass /fleet-boots/(scot %da when) %arvo %b %wait when]~
+::
+++  finish-fleet-boot
+  |=  $:  name=@tas
+          job=fleet-boot-job
+          who=ship
+          remaining=(list ship)
+          reason=(unit @t)
+          boot-cards=(list card)
+      ==
+  ^-  (quip card _state)
+  =/  errors=(map ship @t)
+    ?~  reason  failed.job
+    (~(put by failed.job) who u.reason)
+  =/  next=fleet-boot-job  job(pending remaining, failed errors, updated now.bowl)
+  =.  fleet-boots
+    ?:  ?&(=(~ pending.next) =(~ failed.next))
+      (~(del by fleet-boots) name)
+    (~(put by fleet-boots) name next)
+  =^  timer-cards  state  arm-fleet-boot
+  [(weld boot-cards timer-cards) state]
+::
+++  wake-fleet-boot
+  |=  when=@da
+  ^-  (quip card _state)
+  ?.  =(`when fleet-boot-timer)  `state
+  =.  fleet-boot-timer  ~
+  =/  chosen=(unit [name=@tas job=fleet-boot-job])
+    =/  jobs  ~(tap by fleet-boots)
+    |-
+    ?~  jobs  ~
+    ?:  ?=(^ pending.q.i.jobs)  `i.jobs
+    $(jobs t.jobs)
+  ?~  chosen  `state
+  =/  name  name.u.chosen
+  =/  job  job.u.chosen
+  =/  todo=(list ship)  pending.job
+  ?~  todo  arm-fleet-boot
+  =/  who  i.todo
+  =/  group  (~(get by fleets) name)
+  ?~  group
+    =.  fleet-boots  (~(del by fleet-boots) name)
+    =^  cards  state  arm-fleet-boot
+    [cards state]
+  ?:  |(!(~(has in ships.u.group) who) (~(has by piers) who))
+    (finish-fleet-boot name job who t.todo ~ ~)
+  =/  kp  (gen-keypair:dingy (key-seed:dingy who 0 eny.bowl))
+  =/  result=(each (quip card _state) tang)
+    (mule |.((poke-action [%init-moon-desks who desks.u.group pub.kp priv.kp])))
+  ?:  ?=(%| -.result)
+    ~&  [%theseus-fleet-boot-failed name who p.result]
+    (finish-fleet-boot name job who t.todo `'Boot failed; check the host Dojo.' ~)
+  =^  cards  state  p.result
+  (finish-fleet-boot name job who t.todo ~ cards)
 ::  +prune-boot-caches: keep the newest few still matching our desks
 ::
 ::    Each boot cache holds a copy of our Clay data, so drop any whose desk
