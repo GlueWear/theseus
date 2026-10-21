@@ -2260,13 +2260,19 @@
     ::  boot %dawn with the real key (ring), the sponsor chain (spon, czar)
     ::  and turf, scried from our Jael.
     ::  feed %2 = [[%2 ~] who rift [life ring]~].
+    ::
+    ::  %base is committed exactly as ours, so it matches the %kids its Kiln
+    ::  syncs from and the first check has nothing to merge.  (It once left
+    ::  out the |moon generators; Kiln merged them straight back from %kids,
+    ::  so every new moon spent its first minutes rebuilding %base.)
+    ::
     :~  [/d/term/1 %boot & %dawn [[%2 ~] who.act moon-rift [moon-life key.act]~] spon.boot czar.boot turves 0 ~]
         [/b/behn/0v1n.2m9vh %born ~]
         [/i/http-client/0v1n.2m9vh %born ~]
         [/e/http-server/0v1n.2m9vh %born ~]
         [/e/http-server/0v1n.2m9vh %live 8.080 `8.445]
         [/a/newt/0v1n.2m9vh %born ~]
-        [/c/commit/(scot %p who.act) (prune-boot-park (unpack-park park))]
+        [/c/commit/(scot %p who.act) (unpack-park park)]
     ==
     (pe who.act)
   =/  boot-cards  (weld reg-cards cards)
@@ -2521,7 +2527,7 @@
           [/e/http-server/0v1n.2m9vh %born ~]
           [/e/http-server/0v1n.2m9vh %live 8.080 `8.445]  :: TODO do we need this event
           [/a/newt/0v1n.2m9vh %born ~]
-          [/c/commit/(scot %p who.act) (prune-boot-park (unpack-park park))]
+          [/c/commit/(scot %p who.act) (unpack-park park)]
       ==
     (pe who.act)
   ::
@@ -2751,7 +2757,7 @@
           [/e/http-server/0v1n.2m9vh %born ~]
           [/e/http-server/0v1n.2m9vh %live 8.080 `8.445]
           [/a/newt/0v1n.2m9vh %born ~]
-          [/c/commit/(scot %p who.act) (prune-boot-park (unpack-park park))]
+          [/c/commit/(scot %p who.act) (unpack-park park)]
       ==
       (pe who.act)
     [cards state]
@@ -3203,32 +3209,6 @@
   =|  pot=point:azimuth-types
   =.  net.pot  `[life.u.key pass.u.key rift.u.key [!=(dad i.chain) dad] ~]
   $(chain t.chain, spon [[i.chain pot] spon])
-::
-++  drop-paths
-  |=  [pax=(list path) dat=(map path (each page lobe:clay))]
-  ^-  (map path (each page lobe:clay))
-  ?~  pax  dat
-  $(pax t.pax, dat (~(del by dat) i.pax))
-::
-++  prune-boot-park
-  |=  pak=task:clay
-  ^-  task:clay
-  ?.  ?=(%park -.pak)  pak
-  =/  drop=(list path)
-    :~  /gen/hood/moon/hoon
-        /gen/hood/moon-breach/hoon
-        /gen/hood/moon-cycle-keys/hoon
-        /gen/hood/jael/moon/hoon
-        /gen/hood/jael/moon/breach/hoon
-        /gen/hood/jael/moon/cycle-keys/hoon
-    ==
-  =/  yok=yoki:clay  yok.pak
-  =.  yok
-    ?-  -.yok
-      %|  yok
-      %&  yok(q.p (drop-paths drop q.p.yok))
-    ==
-  pak(yok yok)
 ::
 ::  Run a callback function against a list of ships, aggregating state
 ::  and plowing all ships at the end.
