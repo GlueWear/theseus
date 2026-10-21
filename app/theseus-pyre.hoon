@@ -235,6 +235,9 @@
     ::  lick gives a bare address atom; wrap it [%| addr], typed lane:ames by the
     ::  `action` cast (can't name lane:ames here -- shadowed by the dead ++ames).
     =/  inb  ;;([addr=@ux blob=@] noun.sign-arvo)
+    ::  not an Ames packet: drop it here, as Vere would
+    ::
+    ?.  (ames-packet-ok:hc blob.inb)  `this
     :_  this
     :~  :*  %pass  /ames/in  %agent  [our.bowl %theseus]  %poke
             %theseus-action  !>(`action`[%ames-inbound who [%| addr.inb] blob.inb])
@@ -261,6 +264,7 @@
       ==  ==
     ?.  =(%ames-in mark.sign-arvo)  `this
     =/  inb  ;;([who=@p from=@p addr=@ux blob=@] noun.sign-arvo)
+    ?.  (ames-packet-ok:hc blob.inb)  `this
     =/  lan  ?:(=(0 addr.inb) [%& from.inb] [%| addr.inb])
     :_  this
     :~  :*  %pass  /ames/in  %agent  [our.bowl %theseus]  %poke
@@ -371,6 +375,34 @@
   |=  [=binding:^eyre * act=action:^eyre]
   ?.  &(?=([%app %theseus-pyre] act) ?=(^ site.binding))  ~
   `[%pass /bind-site %arvo %e %disconnect binding]
+::  +ames-packet-ok: whether a moon's Ames can read .pac as a packet
+::
+::    The header checks of +sift-shot (protocol version, checksum, ship
+::    sizes), without its printing.  Vere drops what fails them before
+::    Arvo sees it; Lick hands a moon everything that isn't STUN or Mesa,
+::    so port scans and stray datagrams on a moon's public port would
+::    reach its Ames, crash it (sift-shot-fail), and print a trace each.
+::
+++  ames-packet-ok
+  |=  pac=@
+  ^-  ?
+  =;  ok=(unit ?)  =(`& ok)
+  %-  mole  |.
+  =/  header  (end 5 pac)
+  =/  body    (rsh 5 pac)
+  ?.  =(protocol-version:^ames (cut 0 [4 3] header))  |
+  =/  sndr-size  (sift-ship-size:^ames (cut 0 [7 2] header))
+  =/  rcvr-size  (sift-ship-size:^ames (cut 0 [9 2] header))
+  ::  a relayed packet carries its 6-octet origin after the checksummed body
+  ::
+  =/  relayed=?  =(& (cut 0 [31 1] header))
+  ?:  &(relayed (lth (met 3 body) 6))  |
+  =?  body  relayed  (rsh [3 6] body)
+  ?.  =((cut 0 [11 20] header) (end [0 20] (mug body)))  |
+  ?.  (is-valid-rank:^ames (cut 3 [1 sndr-size] body) sndr-size)  |
+  =/  rcvr-at  +(sndr-size)
+  ?.  (is-valid-rank:^ames (cut 3 [rcvr-at rcvr-size] body) rcvr-size)  |
+  (lte (add rcvr-at rcvr-size) (met 3 body))
 ++  ames
   |%
   ++  send

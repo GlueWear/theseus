@@ -79,7 +79,13 @@ On the preferred native path:
    `lick: udp transport ... bound 0.0.0.0:<port>`.
 2. Outgoing packets go to that port as `%send`/`%push` and leave from the moon's
    socket. Incoming datagrams on the socket come back as `%hear`/`%heer` and are
-   injected into the moon's Ames.
+   injected into the moon's Ames. The runtime calls anything that is not STUN or
+   Mesa `%hear`, so pyre first runs the header checks of Ames's `+sift-shot`
+   (version, checksum, ship sizes) and drops what fails, as stock Vere does
+   before Arvo. Otherwise a port scan on a moon's public port would crash its
+   Ames once per datagram. A moon event that does crash is reported in one line
+   (`theseus: ~moon dropped %hear on /a/newt/…: sift-shot-fail; …`), keeping the
+   trace's messages and dropping its source locations.
 3. **STUN:** the moon's Ames reports its sponsorship chain (moon → host →
    `~nolset` → galaxy `~rus`). The runtime then runs STUN from the moon's socket
    to that galaxy every 25 seconds and reports the result back to the moon's

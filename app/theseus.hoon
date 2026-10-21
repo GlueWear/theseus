@@ -1675,6 +1675,29 @@
     =.  next-events  (~(gas to next-events) ues)
     ..abet-pe
   ::
+  ::  +crash-line: a moon event that crashed, in one line
+  ::
+  ::    The trace runs to hundreds of source spots through the moon's whole
+  ::    Arvo, and printing it costs the host about as much as the event did;
+  ::    a stray packet brings one per packet.  Keep what says what happened:
+  ::    the event's kind and wire, and the trace's messages, such as
+  ::    sift-shot-fail, call: failed or wire=/warp-index/....
+  ::
+  ++  crash-line
+    |=  [ue=unix-event =tang]
+    ^-  tank
+    =|  seen=(list tape)
+    =|  says=tape
+    |-  ^-  tank
+    ?~  tang
+      :-  %leaf
+      "theseus: {(scow %p who)} dropped %{(trip -.q.ue)} on {(spud p.ue)}{says}"
+    ?.  ?=([%leaf *] i.tang)  $(tang t.tang)
+    =/  line=tape  (scag 120 p.i.tang)
+    ?:  |((gte (lent seen) 6) ?=(^ (find ~[line] seen)))  $(tang t.tang)
+    =/  sep=tape  ?~(seen ": " "; ")
+    $(tang t.tang, seen [line seen], says :(weld says sep line))
+  ::
   ::  Process the events in our queue.
   ::
   ++  plow
@@ -1696,7 +1719,7 @@
     =/  res  (poke-arvo:theseus-kernel snap now.bowl ue)
     ?:  ?=(%| -.res)
       ?:  ?=(%poke stage.p.res)
-        ((slog >%theseus-crash< >who< tang.p.res) $)
+        ((slog (crash-line ue tang.p.res) ~) $)
       ((slog >%theseus-snap-cast-crash< >who< tang.p.res) $)
     =.  snap  snap.p.res
     =.  scry-time  now.bowl
