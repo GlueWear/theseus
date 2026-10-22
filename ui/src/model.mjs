@@ -104,6 +104,47 @@ export function deskTally(desks = []) {
 }
 // Still catching up with a desk's source: running, but busy on the host.
 export const catchingUp = moon => (moon?.desks || []).some(d => d.stage === 'catching-up');
+// The desks a moon already has, for the add-desks dialog. A desk can be
+// held when it updates from the host's desk of the same name: holding
+// stops Kiln's updates, so only an update from the dialog changes it.
+export function installedDesks(moon, host) {
+  return (moon?.desks || []).filter(row => row.desk !== 'base').map(row => ({
+    desk: row.desk, stage: row.stage, source: row.source || null,
+    held: !!row.held, behind: !!row.behind, count: 1, heldCount: row.held ? 1 : 0,
+    holdable: !!row.held || (row.source?.ship === host && row.source?.desk === row.desk),
+  }));
+}
+// The same for a fleet: its recipe's desks, held when every booted member
+// holds them.
+export function fleetInstalledDesks(group, moons) {
+  const {members} = fleetState(group, moons);
+  return group.desks.filter(row => row.desk !== 'base').map(row => {
+    const rows = members.map(moon => moon.desks.find(d => d.desk === row.desk)).filter(Boolean);
+    const heldCount = rows.filter(d => d.held).length;
+    return {desk: row.desk, stage: null, source: null, count: rows.length, heldCount,
+      held: rows.length > 0 && heldCount === rows.length, behind: rows.some(d => d.held && d.behind), holdable: row.from === 'host'};
+  });
+}
+export function installedLabel(row) {
+  if (row.stage === null) {
+    const held = row.heldCount ? `held on ${row.heldCount} of ${row.count}${row.behind ? ', behind the host' : ''}` : 'updates from the host';
+    return `${row.count} ${row.count === 1 ? 'moon' : 'moons'} · ${held}`;
+  }
+  if (row.held) return row.behind ? 'held · the host has a newer version' : 'held · same as the host';
+  const stage = row.stage === 'catching-up' ? 'catching up' : row.stage;
+  return `${stage}${row.source ? ` · ${row.source.ship}/%${row.source.desk}` : ''}`;
+}
+// What the installed-desk choices ask for, in the order to send it: holds
+// first, so Kiln can't merge an older update over the new one, and
+// releases last, so Kiln resumes from what the update left.
+export function deskChanges(rows, update = [], hold = {}) {
+  return {
+    hold: rows.filter(row => row.holdable && hold[row.desk] === true && !row.held).map(row => row.desk),
+    update: rows.filter(row => update.includes(row.desk)).map(row => row.desk),
+    release: rows.filter(row => hold[row.desk] === false && row.heldCount > 0).map(row => row.desk),
+  };
+}
+export const anyDeskChange = c => c.hold.length + c.update.length + c.release.length > 0;
 export function validateFleet(data) {
   if (data?.version !== 3 || !Array.isArray(data.moons) || !Array.isArray(data.fleets) || !Array.isArray(data.snapshots) || !Array.isArray(data.caches) || !ob.isValidPatp(data.host)) throw new Error('Theseus management API is unavailable or incompatible.');
   if (data.moons.some(m => !Array.isArray(m.desks) || (m.recovery != null && (!['registering', 'restarting', 'failed'].includes(m.recovery.stage) || typeof m.recovery.attempts !== 'number')))) throw new Error('Theseus returned an invalid moon record.');

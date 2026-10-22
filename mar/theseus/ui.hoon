@@ -66,6 +66,10 @@
         :~  [%who (se %p)]
             [%desks (ar (ot ~[[%desk (se %tas)] [%from (su (perk %host %publisher ~))]]))]
         ==
+        [%fleet-update-desks (ot ~[[%name (se %tas)] [%desks (ar (se %tas))]])]
+        [%moon-update-desks (ot ~[[%who (se %p)] [%desks (ar (se %tas))]])]
+        [%fleet-hold-desks (ot ~[[%name (se %tas)] [%desks (ar (se %tas))] [%hold bo]])]
+        [%moon-hold-desks (ot ~[[%who (se %p)] [%desks (ar (se %tas))] [%hold bo]])]
         [%fleet-pause (ot ~[[%name (se %tas)]])]
         [%fleet-resume (ot ~[[%name (se %tas)]])]
         [%fleet-kill (ot ~[[%name (se %tas)]])]

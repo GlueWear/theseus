@@ -740,6 +740,18 @@
             %moon-add-desks
               ?>  ?&((gth (lent desks.cmd) 0) (lte (lent desks.cmd) 64))
               (poke-action:hc [%add-ship-desks who.cmd desks.cmd])
+            %fleet-update-desks
+              ?>  ?&((gth (lent desks.cmd) 0) (lte (lent desks.cmd) 64))
+              (poke-action:hc [%push-fleet-desks name.cmd desks.cmd])
+            %moon-update-desks
+              ?>  ?&((gth (lent desks.cmd) 0) (lte (lent desks.cmd) 64))
+              (poke-action:hc [%push-ship-desks who.cmd desks.cmd])
+            %fleet-hold-desks
+              ?>  ?&((gth (lent desks.cmd) 0) (lte (lent desks.cmd) 64))
+              (poke-action:hc [%hold-fleet-desks name.cmd desks.cmd hold.cmd])
+            %moon-hold-desks
+              ?>  ?&((gth (lent desks.cmd) 0) (lte (lent desks.cmd) 64))
+              (poke-action:hc [%hold-ship-desks who.cmd desks.cmd hold.cmd])
             %fleet-pause
               =/  group  (~(get by fleets) name.cmd)
               ?~  group  ~|([%theseus-fleet-missing name.cmd] !!)
@@ -1139,7 +1151,10 @@
 ::    our own desk when it syncs from the same place), else %running.  Read
 ::    when a page or %manor asks; nothing is tracked, timed or given up on,
 ::    so a desk shows its catching up after a boot, a restore, or a new
-::    release alike.
+::    release alike.  A running desk of ours with no source is held
+::    (+hold-events): %running, with .behind when ours has moved on.  A
+::    sourceless desk that doesn't run, such as %noltbook-data, isn't
+::    listed, as before holds: %manor waits for every listed desk to run.
 ::
 ++  ui-desks
   |=  [who=ship hpk=kiln-pikes]
@@ -1148,7 +1163,23 @@
   %+  murn  ~(tap by pks)
   |=  [d=desk pik=kiln-pike]
   ^-  (unit json)
-  ?~  sync.pik  ~
+  ?~  sync.pik
+    ::  a held desk keeps running; one that doesn't, such as a data desk
+    ::  with no agents, has no source of its own and isn't shown
+    ?.  ?=(%live zest.pik)  ~
+    ?:  |(=(%base d) =(%kids d))  ~
+    =/  ours  (~(get by hpk) d)
+    ?~  ours  ~
+    =,  enjs:format
+    :-  ~
+    %-  pairs
+    :~  [%desk s+d]
+        [%stage s+%running]
+        [%reason ~]
+        [%source ~]
+        [%held b+&]
+        [%behind b+!=(hash.u.ours hash.pik)]
+    ==
   =*  src  u.sync.pik
   =/  them=(unit kiln-pike)
     ?:  =(ship.src our.bowl)  (~(get by hpk) desk.src)
@@ -1971,6 +2002,154 @@
       %hood
       `deal:gall`[%raw-poke %kiln-install [des ship.src desk.src]]
   ==
+::  +kiln-pause-event: |pause .des inside the moon
+::
+::    Kiln stops taking updates from the desk's source, and the desk keeps
+::    running.  +kiln-install-event from us starts them again.
+::
+++  kiln-pause-event
+  |=  [who=ship des=desk]
+  ^-  theseus-event
+  :-  who
+  :*  /g
+      %deal
+      `sack`[who who /theseus/hold/[des]]
+      %hood
+      `deal:gall`[%raw-poke %kiln-pause des]
+  ==
+::
+++  host-rang
+  ^-  rang:clay
+  .^(rang:clay %cx /(scot %p our.bowl)//(scot %da now.bowl)/rang)
+::
+++  host-domes
+  ^-  cone:clay
+  .^(cone:clay %cx /(scot %p our.bowl)//(scot %da now.bowl)/domes)
+::  +push-desks: commit our copy of .desks to .who, one %park each
+::
+::    Only desks .who already has (adding one is %add-ship-desks), never
+::    %base or %kids, whose syncs are their own, and nothing while .who is
+::    being restored or has no Arvo.  A desk whose files already match ours
+::    is left out.  .rng and .cone are ours, read once per push.
+::
+++  push-desks
+  |=  [who=ship desks=(list desk) rng=rang:clay cone=cone:clay]
+  ^-  (list [=desk =theseus-event])
+  =/  saved  (~(get by piers) who)
+  ?~  saved  ~
+  ?:  (~(has by recoveries) who)  ~
+  ?:  =(%empty status:(health-of who u.saved))  ~
+  =/  snap=vase  snap.u.saved
+  =/  present=(set desk)  (snap-raft-desks:theseus-kernel snap)
+  =/  todo=(list desk)
+    %+  skim  ~(tap in (silt desks))
+    |=  d=desk
+    ?&  !=(%base d)
+        !=(%kids d)
+        (~(has in present) d)
+        (~(has by cone) [our.bowl d])
+    ==
+  ?:  =(~ todo)  ~
+  =/  has=rang:clay  (snap-rang:theseus-kernel snap)
+  %+  murn  todo
+  |=  d=desk
+  ^-  (unit [=desk =theseus-event])
+  =/  park  (push-park rng cone has (snap-head:theseus-kernel snap d) d)
+  ?~  park  ~
+  `[d who u.park]
+::  +push-park: a %park committing our top commit of .des to a moon
+::
+::    Kiln would download our new commits and merge them with %only-that,
+::    which takes ours.  This hands the moon's Clay that commit itself,
+::    with every commit and file behind it that .has, the moon's own Clay
+::    store, lacks.  Clay checks and records it like any commit, telling
+::    its subscribers and reloading the desk's agents.  The moon's top
+::    commit is then ours exactly, so Kiln's later merge of it does
+::    nothing (%only-that skips a commit it already has on top).  ~ when
+::    the moon's files already match ours.
+::
+++  push-park
+  |=  $:  rng=rang:clay
+          cone=cone:clay
+          has=rang:clay
+          top=(unit tako:clay)
+          des=desk
+      ==
+  ^-  (unit unix-event)
+  =/  dom  (~(got by cone) [our.bowl des])
+  =/  head=tako:clay  (~(got by hit.dom) let.dom)
+  ?:  =(top `head)  ~
+  =/  yak=yaki:clay  (~(got by hut.rng) head)
+  =/  files=(unit (map path lobe:clay))
+    ?~  top  ~
+    (bind (~(get by hut.has) u.top) |=(y=yaki:clay q.y))
+  ?:  =(files `q.yak)  ~
+  =/  hut=(map tako:clay yaki:clay)  (missing-commits rng has head)
+  =/  lat=(map lobe:clay page:clay)  (missing-pages rng has ~(val by hut))
+  `[/c/push/[des] %park des |+yak [hut lat]]
+::  +missing-commits: .top and its ancestors that .has lacks
+::
+::    The walk stops at commits .has holds, whose ancestors it holds too,
+::    and at any we no longer hold ourselves.
+::
+++  missing-commits
+  |=  [rng=rang:clay has=rang:clay top=tako:clay]
+  ^-  (map tako:clay yaki:clay)
+  =|  out=(map tako:clay yaki:clay)
+  =/  next=(list tako:clay)  ~[top]
+  |-  ^+  out
+  ?~  next  out
+  ?:  |((~(has by hut.has) i.next) (~(has by out) i.next))
+    $(next t.next)
+  =/  yak  (~(get by hut.rng) i.next)
+  ?~  yak  $(next t.next)
+  $(next (weld p.u.yak t.next), out (~(put by out) i.next u.yak))
+::  +missing-pages: the file contents .yaks name that .has lacks
+::
+::    Clay needs every file of the commit it records; older commits' files
+::    we have since dropped stay dropped, as they are here.
+::
+++  missing-pages
+  |=  [rng=rang:clay has=rang:clay yaks=(list yaki:clay)]
+  ^-  (map lobe:clay page:clay)
+  =|  out=(map lobe:clay page:clay)
+  |-  ^+  out
+  ?~  yaks  out
+  =/  lobes=(list lobe:clay)  ~(val by q.i.yaks)
+  =.  out
+    |-  ^+  out
+    ?~  lobes  out
+    ?:  |((~(has by lat.has) i.lobes) (~(has by out) i.lobes))
+      $(lobes t.lobes)
+    =/  pag  (~(get by lat.rng) i.lobes)
+    ?~  pag  $(lobes t.lobes)
+    $(lobes t.lobes, out (~(put by out) i.lobes u.pag))
+  $(yaks t.yaks)
+::  +hold-events: hold (.hold) or restart Kiln's updates of .desks on .who
+::
+::    Holding applies to desks .who takes from us, by the same name;
+::    restarting, to held desks we have.  A held desk shows no source in
+::    the moon's Kiln, which is how +ui-desks tells.  Others are left out.
+::
+++  hold-events
+  |=  [who=ship desks=(list desk) hold=?]
+  ^-  (list [=desk =theseus-event])
+  ?.  (~(has by piers) who)  ~
+  ?:  (~(has by recoveries) who)  ~
+  =/  pks=kiln-pikes  (fall (moon-pikes who) ~)
+  =/  ours=(set desk)  host-desk-set
+  %+  murn  ~(tap in (silt desks))
+  |=  d=desk
+  ^-  (unit [=desk =theseus-event])
+  ?:  |(=(%base d) =(%kids d) !(~(has in ours) d))  ~
+  =/  pik  (~(get by pks) d)
+  ?~  pik  ~
+  ?:  hold
+    ?.  =(sync.u.pik `[our.bowl d])  ~
+    `[d (kiln-pause-event who d)]
+  ?^  sync.u.pik  ~
+  ?.  ?=(%live zest.u.pik)  ~
+  `[d (kiln-install-event who d [our.bowl d])]
 ::  +treaty-ally-event: ally .her in the moon's %treaty
 ::
 ::    Landscape allies a publisher before installing its apps, and Docket
@@ -2664,6 +2843,55 @@
     =^  event-cards  state  (poke-theseus-events all-events)
     ~&  [%theseus-fleet-add-desks name.act ~(tap in added) hers]
     [event-cards state]
+  ::
+      %push-ship-desks
+    =/  saved
+      ~|  [%theseus-push-desks-missing who.act]
+      (~(got by piers) who.act)
+    ?:  (~(has by recoveries) who.act)
+      ~|([%theseus-push-desks-recovery-active who.act] !!)
+    ?:  =(%empty status:(health-of who.act saved))
+      ~|([%theseus-push-desks-empty who.act] !!)
+    =/  pushes  (push-desks who.act desks.act host-rang host-domes)
+    ~&  [%theseus-push-desks who.act (turn pushes head)]
+    (poke-theseus-events (turn pushes tail))
+  ::
+      %push-fleet-desks
+    =/  group  (~(get by fleets) name.act)
+    ?~  group  ~|([%theseus-fleet-missing name.act] !!)
+    =/  rng  host-rang
+    =/  cone  host-domes
+    =/  pushes=(list [who=ship desks=(list desk) events=(list theseus-event)])
+      %+  turn  ~(tap in ships.u.group)
+      |=  who=ship
+      =/  got  (push-desks who desks.act rng cone)
+      [who (turn got head) (turn got tail)]
+    ~&  :+  %theseus-push-fleet-desks  name.act
+        (turn pushes |=([who=ship desks=(list desk) *] [who desks]))
+    %-  poke-theseus-events
+    (zing (turn pushes |=([* * events=(list theseus-event)] events)))
+  ::
+      %hold-ship-desks
+    ?.  (~(has by piers) who.act)
+      ~|([%theseus-hold-desks-missing who.act] !!)
+    ?:  (~(has by recoveries) who.act)
+      ~|([%theseus-hold-desks-recovery-active who.act] !!)
+    =/  holds  (hold-events who.act desks.act hold.act)
+    ~&  [%theseus-hold-desks who.act hold.act (turn holds head)]
+    (poke-theseus-events (turn holds tail))
+  ::
+      %hold-fleet-desks
+    =/  group  (~(get by fleets) name.act)
+    ?~  group  ~|([%theseus-fleet-missing name.act] !!)
+    =/  holds=(list [who=ship desks=(list desk) events=(list theseus-event)])
+      %+  turn  ~(tap in ships.u.group)
+      |=  who=ship
+      =/  got  (hold-events who desks.act hold.act)
+      [who (turn got head) (turn got tail)]
+    ~&  :+  %theseus-hold-fleet-desks  [name.act hold.act]
+        (turn holds |=([who=ship desks=(list desk) *] [who desks]))
+    %-  poke-theseus-events
+    (zing (turn holds |=([* * events=(list theseus-event)] events)))
   ::
       %init-planet
     ?:  (~(has by piers) who.act)

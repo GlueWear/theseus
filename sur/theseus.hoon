@@ -114,6 +114,16 @@
       [%add-fleet-desks name=@tas desks=(list [=desk from=desk-from])]
       ::  add host desks to one existing virtual ship
       [%add-ship-desks who=ship desks=(list [=desk from=desk-from])]
+      ::  commit our current copy of desks a virtual ship (or every booted
+      ::  member of a fleet) already has, as Kiln would once it caught up,
+      ::  but without the download
+      [%push-ship-desks who=ship desks=(list desk)]
+      [%push-fleet-desks name=@tas desks=(list desk)]
+      ::  stop (.hold) or restart Kiln's updates of desks a virtual ship
+      ::  takes from us, so that only pushes change them while an app is
+      ::  being worked on
+      [%hold-ship-desks who=ship desks=(list desk) hold=?]
+      [%hold-fleet-desks name=@tas desks=(list desk) hold=?]
       ::  boot a real Azimuth planet with a supplied keyfile feed.
       ::  continuity and public-key data come from host Jael; no Jael mutation.
       [%init-planet who=ship cache=@tas =feed:jael]

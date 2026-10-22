@@ -141,7 +141,7 @@ login page.
 
 | View | What it does |
 | --- | --- |
-| Moons | Health (vanes, identity, queue), oldest boot first; boot with a status bar; per moon: Dojo, name and picture, Landscape, `+code`, pause/resume, snapshots, remove; per fleet: fleet terminal, snapshots, pause/resume, add desks, remove |
+| Moons | Health (vanes, identity, queue), oldest boot first; boot with a status bar; per moon: Dojo, name and picture, Landscape, `+code`, add, update or hold desks, pause/resume, snapshots, remove; per fleet: fleet terminal, snapshots, pause/resume, add, update or hold desks, remove |
 | Snapshots | Every snapshot set, newest first: restore, delete |
 | Gateway | Gateway status and settings (see below) |
 
@@ -301,6 +301,66 @@ Verified live on 2026-10-03:
   Eyre has docket's and glurff's bindings.
 
 Not yet tested live: the "publisher" source choice and the treaty allies.
+
+### Updating installed desks, and holding them
+
+The **Add desks** dialog for a moon or a fleet also lists the desks already
+installed. There you can update each one from the host now, instead of
+waiting for Kiln, and hold it, so that only those updates change it. This is
+meant for an app you are working on: commit on the host, then update the
+moons. Kiln never downloads it.
+
+**Update** (`%push-ship-desks`, `%push-fleet-desks`; `+push-desks`).
+
+- Kiln on a moon merges the host's new commits with `%only-that`, which
+  takes the host's version. An update hands the moon's Clay that same
+  commit directly, as a `%park` of the host's exact commit (a `yaki`).
+- With it go every commit behind that commit, and every file blob, that the
+  moon's Clay doesn't already have (`+missing-commits`, `+missing-pages`).
+  Theseus finds these by walking back from the host's top commit until it
+  reaches commits the moon holds.
+- Clay checks and records the commit as it would any other. It tells its
+  subscribers and reloads the desk's agents, which run their `+on-load` with
+  their state kept.
+- The moon's top commit is then the host's exact commit. When Kiln later
+  merges that commit itself, `%only-that` sees it already on top and does
+  nothing. So updating and Kiln's own sync can run side by side.
+- Never `%base` or `%kids`, nor a desk the moon doesn't have (adding one is
+  `%add-ship-desks`). Nothing happens while the moon is being restored or has
+  no Arvo, nor for a desk whose files already match the host's.
+- A paused moon applies the update when it resumes, like any queued event.
+- 408 Clay keeps no compiled-build cache in its state, so each moon still
+  compiles the changed agents itself. An update saves the download, not the
+  build.
+
+**Hold** (`%hold-ship-desks`, `%hold-fleet-desks`; `+hold-events`).
+
+- Kiln's `%kiln-pause` in the moon: the desk keeps running but takes no
+  updates from its source. Releasing it is `%kiln-install` from the host
+  again. After an update that merge has nothing to do.
+- Holding is offered only for desks that sync from the host's desk of the
+  same name, so releasing them knows where to sync from.
+- Without a hold, the one collision is a moon whose Kiln is still merging
+  an older commit when a newer one is pushed. `%only-that` doesn't check
+  which commit is newer, so Kiln copies the older version back, then catches
+  up again on its next check: correct in the end, but two rebuilds. A hold
+  avoids this, and also stops every moon downloading each commit while you
+  iterate.
+- Nothing is stored. A held desk is one of the host's desks that still runs
+  but has no source in the moon's Kiln. A sourceless desk that doesn't run,
+  such as `%noltbook-data`, isn't listed at all: `%manor` waits for every
+  listed desk to run, and the first version listed it, so the lever handed
+  out nothing until this was fixed. `+ui-desks` reports it with the stage it would
+  otherwise have (so `%manor` still sees *running*), plus `held` and
+  `behind`. `behind` means the host's copy has moved on.
+- A fleet's moons booted later sync normally.
+
+Not yet tested live: everything in this section. Covered so far:
+
+- the console flows, against the mock host;
+- on `~nolset`, with its own Clay data: the walk-back and the `%park` it
+  builds (one commit and its five new blobs, the host's exact commit), and
+  the kernel reads of a moon's Clay.
 
 ## Snapshots and restore
 

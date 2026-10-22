@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {newMoon, validateMoon, blitsToAnsi, validateFleet, validateHostDesks, resolveDeskSelection, bootDesks, deskPublisher, keysToBelts, byBoot, deskTally, catchingUp, snapshotName, shipNumber, fleetState, snapshotSets, snapshotLabel, blitLines, riskyCommand, shortMoon, avatarSrc, validateProfiles} from '../src/model.mjs';
+import {newMoon, validateMoon, blitsToAnsi, validateFleet, validateHostDesks, resolveDeskSelection, bootDesks, deskPublisher, keysToBelts, byBoot, deskTally, catchingUp, snapshotName, shipNumber, fleetState, snapshotSets, snapshotLabel, blitLines, riskyCommand, shortMoon, avatarSrc, validateProfiles, installedDesks, fleetInstalledDesks, installedLabel, deskChanges, anyDeskChange} from '../src/model.mjs';
 test('generated moon belongs to host and avoids existing identities', () => {
   const a = newMoon('~siglup-narwet', [], 123);
   assert.equal(validateMoon(a, '~siglup-narwet'), '');
@@ -128,4 +128,31 @@ test('moons are named without their host, and pictures resolve to where they liv
   assert.equal(avatarSrc({type: 'urbit', url: ''}, '', '~siglup-narwet'), '/apps/noltbook/user-avatar/~siglup-narwet');
   assert.throws(() => validateProfiles({host: {ship: '~zod'}, moons: []}));
   assert.ok(validateProfiles({host: {ship: '~zod', noltbook: true, name: 'Z', avatar: null}, moons: []}));
+});
+test('installed desks can be updated, and held when they update from the host', () => {
+  const host = '~siglup-narwet';
+  const moon = {ship: '~sampel-siglup-narwet', desks: [
+    {desk: 'base', stage: 'running', source: {ship: host, desk: 'kids'}},
+    {desk: 'landscape', stage: 'catching-up', source: {ship: host, desk: 'landscape'}},
+    {desk: 'glurff', stage: 'running', source: {ship: '~nolset', desk: 'glurff'}},
+    {desk: 'summon', stage: 'running', source: null, held: true, behind: true},
+  ]};
+  const rows = installedDesks(moon, host);
+  assert.deepEqual(rows.map(r => [r.desk, r.holdable, r.held]), [['landscape', true, false], ['glurff', false, false], ['summon', true, true]]);
+  assert.equal(installedLabel(rows[0]), 'catching up · ~siglup-narwet/%landscape');
+  assert.equal(installedLabel(rows[2]), 'held · the host has a newer version');
+  // holds go first and releases last; a publisher's desk can't be held
+  const c = deskChanges(rows, ['summon', 'glurff'], {landscape: true, glurff: true, summon: false});
+  assert.deepEqual(c, {hold: ['landscape'], update: ['glurff', 'summon'], release: ['summon']});
+  assert.ok(anyDeskChange(c));
+  assert.ok(!anyDeskChange(deskChanges(rows, [], {landscape: false, summon: true})));
+});
+test('a fleet holds a desk when every booted member holds it', () => {
+  const group = {name: 'workers', ships: ['~a', '~b', '~c'], desks: [{desk: 'base', from: 'host'}, {desk: 'summon', from: 'host'}, {desk: 'glurff', from: 'publisher'}]};
+  const member = (ship, held) => ({ship, status: 'healthy', paused: false, desks: [{desk: 'summon', stage: 'running', held, behind: held}, {desk: 'glurff', stage: 'running'}]});
+  const rows = fleetInstalledDesks(group, [member('~a', true), member('~b', false)]);
+  assert.deepEqual(rows.map(r => [r.desk, r.holdable, r.held, r.heldCount, r.count]), [['summon', true, false, 1, 2], ['glurff', false, false, 0, 2]]);
+  assert.equal(installedLabel(rows[0]), '2 moons · held on 1 of 2, behind the host');
+  assert.deepEqual(deskChanges(rows, [], {summon: true}).hold, ['summon']);
+  assert.deepEqual(deskChanges(rows, [], {summon: false}).release, ['summon']);
 });

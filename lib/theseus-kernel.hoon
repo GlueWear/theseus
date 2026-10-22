@@ -290,6 +290,27 @@
       $(dez t.dez, dos.rom.ruf (~(put by dos.rom.ruf) i.dez dj))
     ==
   (put-clay-vane snap (slam mutator (slop cache !>(~(tap in desks)))))
+::  +snap-rang: a running virtual ship's Clay commits (.hut) and files (.lat)
+::
+::    For checking what it already has, so a push sends only the rest.
+::
+++  snap-rang
+  |=  snap=vase
+  ^-  rang:clay
+  !<(rang:clay (slap (clay-vane-of snap) !,(*hoon ran.ruf)))
+::  +snap-head: the commit at the top of a virtual ship's .des, if any
+::
+++  snap-head
+  |=  [snap=vase des=desk]
+  ^-  (unit tako:clay)
+  =/  get
+    %+  slap  (clay-vane-of snap)
+    !,  *hoon
+    |=  d=@tas
+    ^-  (unit @uvI)
+    ?~  doj=(~(get by dos.rom.ruf) d)  ~
+    (~(get by hit.dom.u.doj) let.dom.u.doj)
+  !<((unit tako:clay) (slam get !>(des)))
 ::  +pack-snap-raft: a running virtual ship's whole raft, packed as a cache vase
 ::  (== the raft vase +snap-raft already produces).  Used by %rebuild to re-make
 ::  the cache from the ship it rebuilt on.

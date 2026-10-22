@@ -186,6 +186,9 @@ td .badge { margin-top: 6px; }
 @media (prefers-reduced-motion: reduce) { .badge.catching i, .desk-state.catching-up i { animation: none; } }
 .desk-state.failed { border-color: #ecc4b5; color: var(--bad); }
 .desk-state.failed i { background: var(--bad); }
+/* held: running, but taking no updates from the host until released */
+.desk-state.held { border-style: dashed; border-color: var(--warn); }
+.desk-state.held i { background: var(--warn); }
 .empty { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 64px 20px; color: var(--ink-3); }
 .empty h2 { color: var(--ink-2); }
 footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 11px; color: var(--ink-3); }
@@ -360,6 +363,8 @@ dialog .form-error { margin-top: 12px; color: var(--bad); }
 .desk-choice > label { display: flex; flex: 1; align-items: flex-start; gap: 10px; min-width: 0; margin: 0; cursor: pointer; }
 .desk-choice input { flex: 0 0 auto; width: 16px; height: 16px; min-height: 0; margin: 2px 0 0; }
 .desk-choice select { flex: 0 0 auto; width: auto; max-width: 210px; height: 30px; min-height: 0; margin: 0; padding: 0 8px; font-size: 11px; }
+.desk-choice > label.hold-choice { flex: 0 0 auto; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-2); }
+.desk-choice > label.hold-choice input { margin: 0; }
 .desk-choice label > span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .desk-choice strong { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
 .desk-choice small { font-size: 10px; color: var(--ink-3); overflow-wrap: anywhere; }

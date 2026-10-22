@@ -5,6 +5,12 @@
       [%fleet-boot name=@tas]
       [%fleet-add-desks name=@tas desks=(list [=desk from=?(%host %publisher)])]
       [%moon-add-desks who=ship desks=(list [=desk from=?(%host %publisher)])]
+      ::  update desks a moon already has from ours now, and hold or
+      ::  restart their updates from us
+      [%fleet-update-desks name=@tas desks=(list desk)]
+      [%moon-update-desks who=ship desks=(list desk)]
+      [%fleet-hold-desks name=@tas desks=(list desk) hold=?]
+      [%moon-hold-desks who=ship desks=(list desk) hold=?]
       [%fleet-pause name=@tas]
       [%fleet-resume name=@tas]
       [%fleet-kill name=@tas]

@@ -100,6 +100,63 @@ test('a rejected desk addition stays open with the host error and changes nothin
   await expect(page.locator('tbody tr').filter({hasText:moon}).locator('.desk-state',{hasText:'%noltbook-data'})).toHaveCount(0);
   await expect(page.locator('.banner.success')).toHaveCount(0);
 });
+test('an installed desk can be held, updated from the host, and released',async({page,request})=>{
+  await page.goto('/');
+  const row=page.locator('tbody tr').filter({hasText:moon});
+  const landscape=row.locator('.desk-column .desk-state',{hasText:'%landscape'});
+  await page.getByRole('button',{name:`Add desks to ${moon}`}).click();
+  let dialog=page.getByRole('dialog');
+  await expect(dialog.getByLabel('Update %base from the host')).toHaveCount(0);
+  await expect(dialog.getByRole('button',{name:'Add desks',exact:true})).toBeDisabled();
+  await dialog.getByLabel('Hold updates of %landscape').check();
+  await dialog.getByRole('button',{name:'Apply',exact:true}).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(landscape).toHaveClass(/held/);
+  await expect(landscape).toContainText('held');
+  // the host commits a new %landscape: the held copy falls behind it
+  await request.get('http://127.0.0.1:8085/host-update/landscape');
+  await page.getByRole('button',{name:'Refresh fleet'}).click();
+  await expect(landscape).toContainText('held, behind');
+  await page.getByRole('button',{name:`Add desks to ${moon}`}).click();
+  dialog=page.getByRole('dialog');
+  await expect(dialog.getByLabel('Hold updates of %landscape')).toBeChecked();
+  await expect(dialog).toContainText('held · the host has a newer version');
+  await dialog.getByLabel('Update %landscape from the host').check();
+  await dialog.getByRole('button',{name:'Update desks',exact:true}).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(landscape).toContainText('held');
+  await expect(landscape).not.toContainText('behind');
+  // released, Kiln takes the host's updates again
+  await page.getByRole('button',{name:`Add desks to ${moon}`}).click();
+  dialog=page.getByRole('dialog');
+  await dialog.getByLabel('Hold updates of %landscape').uncheck();
+  await dialog.getByRole('button',{name:'Apply',exact:true}).click();
+  await expect(landscape).not.toHaveClass(/held/);
+  await expect(landscape).toHaveAttribute('title',/updates from ~siglup-narwet\/%landscape/);
+  const log=await (await request.get('http://127.0.0.1:8085/desk-log')).json();
+  expect(log.map(e=>[e.kind,e.value.who,e.value.desks,e.value.hold])).toEqual([['moon-hold-desks',moon,['landscape'],true],['moon-update-desks',moon,['landscape'],undefined],['moon-hold-desks',moon,['landscape'],false]]);
+});
+test('a fleet holds and updates an installed desk on every booted member',async({page,request})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:'Boot Fleet',exact:true}).click();
+  const dialog=page.getByRole('dialog');
+  await dialog.getByLabel('Fleet name').fill('devs');
+  await dialog.getByLabel('Number of moons').fill('2');
+  await dialog.getByLabel('Include %glurff').check();
+  await dialog.getByRole('button',{name:'Boot Fleet',exact:true}).click();
+  await expect(page.getByRole('status',{name:'Fleet boot status'})).toContainText('devs is ready',{timeout:15000});
+  await page.getByRole('button',{name:'Add desks to fleet devs'}).click();
+  const add=page.getByRole('dialog');
+  await expect(add).toContainText('2 moons · updates from the host');
+  await add.getByLabel('Hold updates of %glurff').check();
+  await add.getByLabel('Update %glurff from the host').check();
+  await add.getByRole('button',{name:'Apply',exact:true}).click();
+  await expect(add).toHaveCount(0);
+  await expect(page.locator('tr.fleet-child .desk-column .desk-state.held',{hasText:'%glurff'})).toHaveCount(2);
+  // holds are sent before the update, so Kiln can't merge an older one over it
+  const log=await (await request.get('http://127.0.0.1:8085/desk-log')).json();
+  expect(log.map(e=>[e.kind,e.value.name,e.value.desks,e.value.hold])).toEqual([['fleet-hold-desks','devs',['glurff'],true],['fleet-update-desks','devs',['glurff'],undefined]]);
+});
 test('a fleet generates moons and applies folder actions to every member',async({page,request})=>{
   await page.goto('/');
   await page.getByRole('button',{name:'Boot Fleet',exact:true}).click();

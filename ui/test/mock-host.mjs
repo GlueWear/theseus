@@ -52,8 +52,10 @@ let bootGeneration = 0;
 let failNextFleetMember = false;
 // Pictures uploaded to Noltbook: the host's from the browser, moons' via %theseus.
 let uploads = [];
+// Desk updates and holds the console sent, in order.
+let deskLog = [];
 const code = 'lidlut-tabwed-pillex-ridrup';
-const reset = () => {bootGeneration++; failNextFleetMember = false; uploads = []; installing = new Map(); held = new Set(); termLog = []; dojoLog = []; lines.clear(); profiles = new Map([[host, {noltbook: true, name: null, avatar: null}], [first, {noltbook: true, name: null, avatar: null}]]); data={version:3,host,moons:[moon(first, undefined, {booted: Date.UTC(2026,9,2,12)}), moon(older, undefined, {booted: Date.UTC(2026,9,1,9)})],fleets:[],caches:['default'],snapshots:[{path:'/baseline',set:'/baseline',ships:[first],compatible:true,created:'~2026.10.2..12.00.00'}]}; installed=new Set([first]); gw={mode:'auto',port:null,template:null,live:{port:5174,upstream:8083,at:'~2026.10.2..12.00.00'}};}; reset();
+const reset = () => {bootGeneration++; failNextFleetMember = false; uploads = []; deskLog = []; installing = new Map(); held = new Set(); termLog = []; dojoLog = []; lines.clear(); profiles = new Map([[host, {noltbook: true, name: null, avatar: null}], [first, {noltbook: true, name: null, avatar: null}]]); data={version:3,host,moons:[moon(first, undefined, {booted: Date.UTC(2026,9,2,12)}), moon(older, undefined, {booted: Date.UTC(2026,9,1,9)})],fleets:[],caches:['default'],snapshots:[{path:'/baseline',set:'/baseline',ships:[first],compatible:true,created:'~2026.10.2..12.00.00'}]}; installed=new Set([first]); gw={mode:'auto',port:null,template:null,live:{port:5174,upstream:8083,at:'~2026.10.2..12.00.00'}};}; reset();
 // Mirrors %theseus-ui's /x/gateway status logic.
 const gatewayJson = () => {
   const url = gw.mode === 'hosting' ? gw.template : gw.mode === 'declared' ? `http://{moon}.localhost:${gw.port}` : gw.live ? `http://{moon}.localhost:${gw.live.port}` : null;
@@ -119,6 +121,18 @@ createServer(async (req,res) => {
     else held.delete(hold[2]);
     return res.end('ok');
   }
+  // The host commits a new version of a desk: moons that take it from the
+  // host catch up (until updated), and held copies fall behind.
+  const newer = /^\/host-update\/([a-z-]+)$/.exec(req.url);
+  if (newer) {
+    for (const m of data.moons) for (const d of m.desks) {
+      if (d.desk !== newer[1]) continue;
+      if (d.held) d.behind = true;
+      else if (d.source?.ship === host) d.stage = 'catching-up';
+    }
+    return res.end('ok');
+  }
+  if (req.url === '/desk-log') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(deskLog));}
   if (req.url === '/uploads') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(uploads));}
   // The host's Noltbook: an owner's upload, and each ship's uploaded picture.
   if (req.url === '/apps/noltbook/upload-avatar' && req.method === 'POST') {
@@ -221,6 +235,28 @@ createServer(async (req,res) => {
       if (!fresh.length || fresh.some(row=>row.desk===rejectedDesk)) {send(channel,{id:action.id,response:'poke',err:'rejected'});continue;}
       addDesks(member, fresh);
       if(fresh.some(row=>row.desk==='landscape'))installed.add(member.ship);
+    }
+    // Mirrors %theseus +push-desks and +hold-events: a moon's own desks
+    // only, never %base; holding applies to desks it takes from the host.
+    const deskList = v => Array.isArray(v?.desks) && v.desks.length > 0 && v.desks.every(d => typeof d === 'string');
+    const targets = v => kind.startsWith('fleet-') ? (data.fleets.find(g => g.name === v.name)?.ships || []).map(ship => data.moons.find(m => m.ship === ship)).filter(Boolean) : [data.moons.find(m => m.ship === v.who)].filter(Boolean);
+    if (kind === 'moon-update-desks' || kind === 'fleet-update-desks') {
+      if (!deskList(value) || !targets(value).length) {send(channel,{id:action.id,response:'poke',err:'rejected'});continue;}
+      for (const m of targets(value)) for (const d of m.desks) {
+        if (d.desk === 'base' || !value.desks.includes(d.desk)) continue;
+        d.behind = false;
+        if (d.stage === 'catching-up') d.stage = 'running';
+      }
+      deskLog.push({kind, value});
+    }
+    if (kind === 'moon-hold-desks' || kind === 'fleet-hold-desks') {
+      if (!deskList(value) || typeof value.hold !== 'boolean' || !targets(value).length) {send(channel,{id:action.id,response:'poke',err:'rejected'});continue;}
+      for (const m of targets(value)) for (const d of m.desks) {
+        if (d.desk === 'base' || !value.desks.includes(d.desk)) continue;
+        if (value.hold && d.source?.ship === host && d.source?.desk === d.desk) {d.held = true; d.behind = false; d.source = null;}
+        else if (!value.hold && d.held) {delete d.held; delete d.behind; d.source = sourceOf(d.desk, 'host'); d.stage = 'running';}
+      }
+      deskLog.push({kind, value});
     }
     if (kind === 'boot') {
       // Mirrors mar/theseus/ui: every desk names its source, host or publisher.
