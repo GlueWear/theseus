@@ -605,6 +605,35 @@ ops/theseus-gateway uninstall    # remove the agents (keeps the helper)
 launchctl kickstart -k gui/$(id -u)/io.theseus.gateway.siglup-narwet   # restart it
 ```
 
+**Removed moons are breached on the host.** Removing a moon (`%kill-ships`,
+also behind fleet removal) bumps its rift in the host's Jael, as
+`|moon-breach` does (`+forget-card`). Jael tells the moon's subscribers it
+breached, and the host's Ames (`+on-publ-breach`) drops everything it held
+for the moon except its keys: message flows and their resend timers.
+
+Before this, the host's Ames resent forever to every removed moon. On
+2026-10-22 it held state for 112 removed moons, and was resending 43
+message flows to 37 of them, each roughly every two minutes.
+
+This is safe for later use of the same name:
+
+- a moon booted later under that name breaches again (`+boot-moon`);
+- a restore registers a newer rift of its own.
+
+To clean up moons removed before this, run once in the host's Dojo:
+
+```
+:theseus &theseus-action [%forget-ghosts ~]
+```
+
+It breaches the moons of the host that its Ames holds state for, that
+Theseus doesn't run, and that either appear in a Theseus snapshot or
+haven't been heard from in seven days (`+ghost-moons`). A moon of the host
+run outside Theseus looks the same from its Ames, so a moon heard from this
+week, or never heard from, is left alone; breach those with `|moon-breach`
+only if they are Theseus leftovers. On 2026-10-22 the rule picked 107 of
+the 112 and left five.
+
 ## Troubleshooting
 
 | Symptom | Likely cause | What to do |

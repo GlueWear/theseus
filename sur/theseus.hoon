@@ -128,6 +128,11 @@
       ::  continuity and public-key data come from host Jael; no Jael mutation.
       [%init-planet who=ship cache=@tas =feed:jael]
       [%kill-ships hers=(list ship)]
+      ::  breach every moon of ours that our Ames still holds messages for
+      ::  but that we no longer run, so Ames stops resending to it.  Only
+      ::  for moons removed before %kill-ships did this itself: a moon of
+      ::  ours run outside Theseus would look the same, and break.
+      [%forget-ghosts ~]
       ::  snapshot manipulation
       ::
       [%snap-ships =path hers=(list ship)]

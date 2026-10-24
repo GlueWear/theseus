@@ -2025,6 +2025,75 @@
 ++  host-domes
   ^-  cone:clay
   .^(cone:clay %cx /(scot %p our.bowl)//(scot %da now.bowl)/domes)
+::  +forget-card: breach .who in our Jael, as |moon-breach does
+::
+::    Bumping a moon's rift makes our Jael tell its subscribers it
+::    breached, and our Ames (+on-publ-breach) drops all it holds for
+::    .who but its keys: its message flows and their resend timers.
+::    Without this, our Ames resends forever to a moon we removed.  A moon
+::    booted later under the same name breaches again (+boot-moon), and a
+::    restore registers a newer rift of its own.  ~ when our Jael doesn't
+::    know .who.
+::
+++  forget-card
+  |=  who=ship
+  ^-  (unit card)
+  =/  ryf=(unit @ud)
+    .^  (unit @ud)  %j
+      /(scot %p our.bowl)/ryft/(scot %da now.bowl)/(scot %p who)
+    ==
+  ?~  ryf  ~
+  :-  ~
+  :*  %pass  /theseus/forget/(scot %p who)  %arvo  %j
+      %moon  who  [*id:block:jael %rift +(u.ryf) %.n]
+  ==
+::  +ghost-moons: moons we removed that our Ames still holds state for
+::
+::    Removed before %kill-ships breached them (+forget-card).  From our
+::    Ames alone, a moon of ours run outside Theseus looks the same, and
+::    breaching it would break it.  So a moon we don't run counts only if
+::    one of our snapshots has it, or if our Ames hasn't heard from it in
+::    a week.
+::
+++  ghost-moons
+  ^-  (list ship)
+  =/  pre  /(scot %p our.bowl)//(scot %da now.bowl)
+  =/  peers=(set ship)  ~(key by .^((map ship *) %ax (weld pre /peers)))
+  =/  known=(set ship)
+    (~(uni in peers) ~(key by .^((map ship *) %ax (weld pre /chums/all))))
+  =/  snapped=(set ship)
+    %-  ~(rep by fleet-snaps)
+    |=  [[* shot=fleet-snapshot] out=(set ship)]
+    (~(uni in out) ~(key by ships.shot))
+  =/  quiet=@da  (sub now.bowl ~d7)
+  %+  skim  ~(tap in known)
+  |=  her=ship
+  ?&  =(%earl (clan:title her))
+      =((end 5 her) our.bowl)
+      !(~(has by piers) her)
+      ?|  (~(has in snapped) her)
+          ?&  (~(has in peers) her)
+              =/  heard  (last-heard her)
+              &(?=(^ heard) (lte u.heard quiet))
+      ==  ==
+  ==
+::  +last-heard: when our Ames last heard from .her; ~ if we can't tell
+::
+::    Only for a ship in our Ames' /peers, whose /peers/<ship> answers
+::    rather than blocking.
+::
+++  last-heard
+  |=  her=ship
+  ^-  (unit @da)
+  =/  st
+    %-  mole  |.
+    .^  ship-state:ames  %ax
+      /(scot %p our.bowl)//(scot %da now.bowl)/peers/(scot %p her)
+    ==
+  ?~  st  ~
+  ?.  ?=(%known -.u.st)  ~
+  ?:  ?=(%unborn -.qos.+.u.st)  ~
+  `last-contact.qos.+.u.st
 ::  +push-desks: commit our copy of .desks to .who, one %park each
 ::
 ::    Only desks .who already has (adding one is %add-ship-desks), never
@@ -3006,6 +3075,9 @@
       :^  %pass  /theseus-pyre  %agent
       :+  [our.bowl %theseus-pyre]  %poke
       theseus-effect+!>(`theseus-effect`[who [/ %kill ~]])
+    ::  and our own Ames forgets them, rather than resending to them
+    ::  forever (+forget-card)
+    =/  forget-cards=(list card)  (murn hers.act forget-card)
     =.  piers
       %-  ~(dif by piers)
       %-  ~(gas by *fleet)
@@ -3026,7 +3098,13 @@
       ?~  pending  groups
       $(pending t.pending, groups (drop-fleet-ship i.pending groups))
     ~&  [%theseus-killed hers.act]
-    [kill-cards state]
+    [(weld kill-cards forget-cards) state]
+  ::
+      %forget-ghosts
+    =/  hers  ghost-moons
+    =/  breaches=(list card)  (murn hers forget-card)
+    ~&  [%theseus-forget-ghosts found=(lent hers) breached=(lent breaches)]
+    [breaches state]
   ::
       %snap-ships
     =/  recovering  (skim hers.act |=(who=ship (~(has by recoveries) who)))
