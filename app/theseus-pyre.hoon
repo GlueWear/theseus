@@ -209,9 +209,18 @@
     ?:  =(%connect mark.sign-arvo)
       =.  transport-states  (~(put by transport-states) who [%native ~])
       `this
+    ::  Lick's %born, when the host's Vere starts, re-binds every port and
+    ::  disconnects its owner; nothing else disconnects a UDP port.  The moon
+    ::  now has a new socket and lane, so give its Ames %born as Vere would:
+    ::  that resends %saxo, restarting STUN toward the current galaxy, and
+    ::  kicks %ping, so that galaxy learns the new lane and can relay to it.
     ?:  =(%disconnect mark.sign-arvo)
       =.  transport-states  (~(del by transport-states) who)
-      `this
+      :_  this
+      :~  :*  %pass  /theseus-events  %agent  [our.bowl %theseus]  %poke
+              %theseus-events
+              !>(`(list theseus-event)`[who /a/newt/0v1n.2m9vh %born ~]~)
+      ==  ==
     ?:  =(%error mark.sign-arvo)
       =.  transport-states  (~(put by transport-states) who [%sidecar ~])
       `this

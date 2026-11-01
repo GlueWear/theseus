@@ -651,12 +651,14 @@ the 112 and left five.
 | A moon's `/apps/landscape/` (or another app) returns 404 "Not Found" | It was booted by the first desk-picker build: chosen apps started during boot and lost their Eyre bindings | Remove it and boot a new one; the current build adds chosen desks after boot. |
 | After restoring a snapshot, a moon's apps can't reach other ships (e.g. Glurff "trying to reconnect to world") | The moon was restored by Theseus from before 2026-10-04, which didn't start a new network era | Restore it again with the current build, or remove it and boot a new moon. |
 | An app's in-app install button says "Docket refused the installation" (`peek bad result` in `/app/treaty`) | The moon has no treaty from that app's publisher | `:treaty\|ally ~<publisher>` in the moon's Dojo, wait a few seconds, try again; moons booted with the current build ally publishers automatically. |
+| After a host restart, moons can `\|hi` other ships but nobody can `\|hi` them; Glurff shows default avatars | Pyre before 2026-11-01 didn't give a moon's Ames `%born` on the new port, so it never ran STUN or pinged its galaxy | Commit the current desk; until the next host restart, `\|hi ~rus` or `:ping [%kick %.y]` from each moon. |
 | A new moon reaches the host but `\|hi ~nolset` hangs for a few minutes after boot | The moon's Azimuth snapshot predates `~nolset`'s escape, so it routes through `~set` until `%azimuth` catches up | Wait for `l2-sig-failed` in the log; the pending `\|hi` then succeeds. |
 
 ## Known limits
 
-- Needs the patched runtime. Automatic ports change on every host restart
-  (STUN re-establishes reachability).
+- Needs the patched runtime. Automatic ports change on every host restart;
+  Pyre gives each moon's Ames `%born` when Lick re-binds its port, which restarts
+  STUN and pings the current galaxy so it can relay to the new port.
 - The local gateway is loopback-only. Hosting mode needs an operator-run proxy
   with wildcard DNS and TLS that maps `<moon>.<domain>` to `/theseus/~<moon>/` on
   the host's Eyre, with the same identity check.
